@@ -89,7 +89,7 @@ export default function FanPanel({ fan }: FanPanelProps) {
             padding: 16,
             display: 'flex',
             flexDirection: 'column',
-            justifyContent: 'flex-end',
+            justifyContent: 'flex-start',
           }}
         >
           <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 4 }}>Tier</div>
