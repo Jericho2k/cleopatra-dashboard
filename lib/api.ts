@@ -1,23 +1,4 @@
-import type { SuggestionResponse } from '../types'
-
-// 1. Get AI suggestions for a fan message
-export async function getSuggestions(
-  fanId: string,
-  creatorId: string,
-  message: string
-): Promise<SuggestionResponse> {
-  const res = await fetch(process.env.NEXT_PUBLIC_API_URL + '/suggestions', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      fan_id: fanId,
-      creator_id: creatorId,
-      message,
-    }),
-  })
-  if (!res.ok) throw new Error('Suggestions request failed')
-  return res.json() as Promise<SuggestionResponse>
-}
+import { supabase } from './supabase'
 
 // 2. Send a selected reply back to the backend to save
 export async function sendReply(
@@ -40,4 +21,20 @@ export async function sendReply(
   } catch {
     // Silently fail
   }
+}
+
+export async function getLatestSuggestions(
+  fanId: string,
+  creatorId: string
+): Promise<string[]> {
+  const { data, error } = await supabase
+    .from('suggestions')
+    .select('suggestions')
+    .eq('fan_id', fanId)
+    .eq('creator_id', creatorId)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+  if (error || !data) return []
+  return data.suggestions as string[]
 }

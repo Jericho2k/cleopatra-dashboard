@@ -2,7 +2,8 @@
 
 import React, { useState, useRef, useEffect } from 'react'
 import type { Fan, Message } from '../types'
-import { getSuggestions, sendReply } from '../lib/api'
+import { sendReply, getLatestSuggestions } from '../lib/api'
+import { supabase } from '../lib/supabase'
 
 export interface ConversationViewProps {
   fan: Fan | null
@@ -34,14 +35,33 @@ export default function ConversationView({
   const stage = 'WARMING_UP'
 
   useEffect(() => {
-    if (!fan || messages.length === 0 || lastMessage?.role !== 'fan') return
-    setLoading(true)
-    console.log('fetching suggestions for:', fan.id, creatorId, lastMessage.content)
-    getSuggestions(fan.id, creatorId, lastMessage.content)
-      .then((res) => setSuggestions([...res.suggestions.slice(0, 3), '', '', ''].slice(0, 3)))
-      .catch(() => setSuggestions(['', '', '']))
-      .finally(() => setLoading(false))
-  }, [fan?.id, creatorId, messages])
+    if (!fan) return
+    getLatestSuggestions(fan.id, creatorId).then((s: string[]) => {
+      if (s.length > 0) setSuggestions(s)
+    })
+    const channel = supabase
+      .channel(`suggestions-${fan.id}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'suggestions',
+          filter: `fan_id=eq.${fan.id}`,
+        },
+        (payload) => {
+          const s = (payload.new as { suggestions: string[] }).suggestions
+          if (s?.length > 0) {
+            setSuggestions(s)
+            setLoading(false)
+          }
+        }
+      )
+      .subscribe()
+    return () => {
+      supabase.removeChannel(channel)
+    }
+  }, [fan?.id, creatorId])
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -55,12 +75,12 @@ export default function ConversationView({
   }
 
   const refetchSuggestions = () => {
-    if (!fan || messages.length === 0 || lastMessage?.role !== 'fan') return
+    if (!fan) return
     setLoading(true)
-    getSuggestions(fan.id, creatorId, lastMessage.content)
-      .then((res) => setSuggestions([...res.suggestions.slice(0, 3), '', '', ''].slice(0, 3)))
-      .catch(() => setSuggestions(['', '', '']))
-      .finally(() => setLoading(false))
+    getLatestSuggestions(fan.id, creatorId).then((s: string[]) => {
+      if (s.length > 0) setSuggestions(s)
+      setLoading(false)
+    })
   }
 
   const handleTextareaKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
