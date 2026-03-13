@@ -68,7 +68,9 @@ export default function Page() {
           }
         })
       )
-      setConversations(summaries)
+      setConversations(summaries.sort((a, b) =>
+        new Date(b.last_message_time).getTime() - new Date(a.last_message_time).getTime()
+      ))
     }
     load()
   }, [])
@@ -114,11 +116,15 @@ export default function Page() {
             })
           }
           setConversations((prev) =>
-            prev.map((c) =>
-              c.fan.id === msg.fan_id
-                ? { ...c, last_message: msg.content, last_message_time: msg.sent_at }
-                : c
-            )
+            [...prev]
+              .map((c) =>
+                c.fan.id === msg.fan_id
+                  ? { ...c, last_message: msg.content, last_message_time: msg.sent_at }
+                  : c
+              )
+              .sort((a, b) =>
+                new Date(b.last_message_time).getTime() - new Date(a.last_message_time).getTime()
+              )
           )
         }
       )
@@ -129,6 +135,31 @@ export default function Page() {
   useEffect(() => {
     const channel = supabase
       .channel('fans-realtime')
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'fans',
+          filter: `creator_id=eq.${CREATOR_ID}`,
+        },
+        (payload) => {
+          const row = payload.new as Record<string, unknown>
+          const newFan = rowToFan(row)
+          setConversations((prev) => {
+            if (prev.some((c) => c.fan.id === newFan.id)) return prev
+            return [
+              ...prev,
+              {
+                fan: newFan,
+                last_message: '',
+                last_message_time: new Date(0).toISOString(),
+                unread: false,
+              },
+            ]
+          })
+        }
+      )
       .on(
         'postgres_changes',
         {
