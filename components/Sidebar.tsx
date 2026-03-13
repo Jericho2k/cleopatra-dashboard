@@ -1,6 +1,6 @@
 'use client'
 
-import React from 'react'
+import React, { useState, useEffect } from 'react'
 import type { Fan, ConversationSummary } from '../types'
 
 export interface SidebarProps {
@@ -10,6 +10,13 @@ export interface SidebarProps {
 }
 
 export default function Sidebar({ conversations, activeFanId, onSelectFan }: SidebarProps) {
+  const [now, setNow] = useState(Date.now())
+
+  useEffect(() => {
+    const interval = setInterval(() => setNow(Date.now()), 60 * 1000)
+    return () => clearInterval(interval)
+  }, [])
+
   return (
     <>
       <style>{`
@@ -97,7 +104,7 @@ export default function Sidebar({ conversations, activeFanId, onSelectFan }: Sid
             const isActive = c.fan.id === activeFanId
             const preview = c.last_message.length > 40 ? c.last_message.slice(0, 40) + '…' : c.last_message
             const iso = c.last_message_time
-            const diff = Date.now() - new Date(iso).getTime()
+            const diff = now - new Date(iso).getTime()
             const m = 60 * 1000
             const h = 60 * m
             const dMs = 24 * h
