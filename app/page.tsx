@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { supabase } from '../lib/supabase'
 import type { Fan, Message, ConversationSummary } from '../types'
 import Sidebar from '../components/Sidebar'
@@ -38,6 +38,8 @@ export default function Page() {
   const [conversations, setConversations] = useState<ConversationSummary[]>([])
   const [activeFan, setActiveFan] = useState<Fan | null>(null)
   const [messages, setMessages] = useState<Message[]>([])
+  const activeFanRef = useRef<Fan | null>(null)
+  useEffect(() => { activeFanRef.current = activeFan }, [activeFan])
 
   useEffect(() => {
     async function load() {
@@ -104,27 +106,24 @@ export default function Page() {
         (payload) => {
           const row = payload.new as Record<string, unknown>
           const msg = rowToMessage(row)
-          if (msg.fan_id === activeFan?.id) {
-            setMessages((prev) => [...prev, msg])
+          if (msg.fan_id === activeFanRef.current?.id) {
+            setMessages((prev) => {
+              if (prev.some((m) => m.id === msg.id)) return prev
+              return [...prev, msg]
+            })
           }
           setConversations((prev) =>
             prev.map((c) =>
               c.fan.id === msg.fan_id
-                ? {
-                    ...c,
-                    last_message: msg.content,
-                    last_message_time: msg.sent_at,
-                  }
+                ? { ...c, last_message: msg.content, last_message_time: msg.sent_at }
                 : c
             )
           )
         }
       )
       .subscribe()
-    return () => {
-      supabase.removeChannel(channel)
-    }
-  }, [activeFan?.id])
+    return () => { supabase.removeChannel(channel) }
+  }, [])
 
   function onReplySent(content: string) {
     if (!activeFan) return
