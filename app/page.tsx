@@ -126,6 +126,30 @@ export default function Page() {
     return () => { supabase.removeChannel(channel) }
   }, [])
 
+  useEffect(() => {
+    const channel = supabase
+      .channel('fans-realtime')
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'fans',
+          filter: `creator_id=eq.${CREATOR_ID}`,
+        },
+        (payload) => {
+          const row = payload.new as Record<string, unknown>
+          const updatedFan = rowToFan(row)
+          setActiveFan((prev) => (prev?.id === updatedFan.id ? updatedFan : prev))
+          setConversations((prev) =>
+            prev.map((c) => (c.fan.id === updatedFan.id ? { ...c, fan: updatedFan } : c))
+          )
+        }
+      )
+      .subscribe()
+    return () => { supabase.removeChannel(channel) }
+  }, [])
+
   function onReplySent(content: string) {
     if (!activeFan) return
     const newMsg: Message = {
