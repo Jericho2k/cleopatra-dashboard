@@ -20,11 +20,8 @@ export default function Sidebar({ conversations, activeFanId, onSelectFan }: Sid
       `}</style>
       <aside
         style={{
-          position: 'fixed',
-          left: 0,
-          top: 0,
-          bottom: 0,
-          width: 320,
+          height: '100vh',
+          width: '100%',
           background: 'var(--bg-surface)',
           borderRight: '1px solid var(--border)',
           display: 'flex',

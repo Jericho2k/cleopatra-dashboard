@@ -12,11 +12,8 @@ export default function FanPanel({ fan }: FanPanelProps) {
     return (
       <aside
         style={{
-          position: 'fixed',
-          right: 0,
-          top: 0,
-          bottom: 0,
-          width: 320,
+          height: '100vh',
+          width: '100%',
           background: 'var(--bg-surface)',
           borderLeft: '1px solid var(--border)',
           display: 'flex',
@@ -43,11 +40,8 @@ export default function FanPanel({ fan }: FanPanelProps) {
   return (
     <aside
       style={{
-        position: 'fixed',
-        right: 0,
-        top: 0,
-        bottom: 0,
-        width: 320,
+        height: '100vh',
+        width: '100%',
         background: 'var(--bg-surface)',
         borderLeft: '1px solid var(--border)',
         overflow: 'auto',
