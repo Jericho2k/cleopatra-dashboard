@@ -36,6 +36,7 @@ export default function ConversationView({
   useEffect(() => {
     if (!fan || messages.length === 0 || lastMessage?.role !== 'fan') return
     setLoading(true)
+    console.log('fetching suggestions for:', fan.id, creatorId, lastMessage.content)
     getSuggestions(fan.id, creatorId, lastMessage.content)
       .then((res) => setSuggestions([...res.suggestions.slice(0, 3), '', '', ''].slice(0, 3)))
       .catch(() => setSuggestions(['', '', '']))
@@ -270,13 +271,15 @@ export default function ConversationView({
           onClick={refetchSuggestions}
           disabled={loading}
           style={{
-            background: 'none',
-            border: 'none',
-            color: 'var(--text-muted)',
+            background: 'var(--bg-elevated)',
+            border: '1px solid var(--border-strong)',
+            borderRadius: 6,
+            color: 'var(--text-secondary)',
             fontSize: 12,
             cursor: loading ? 'default' : 'pointer',
-            padding: 0,
+            padding: '5px 12px',
             marginBottom: 12,
+            opacity: loading ? 0.5 : 1,
           }}
         >
           Regenerate
@@ -294,6 +297,7 @@ export default function ConversationView({
           onInput={handleTextareaInput}
           onKeyDown={handleTextareaKeyDown}
           rows={1}
+          placeholder="type your own reply..."
           style={{
             width: '100%',
             padding: '10px 14px',
@@ -304,7 +308,7 @@ export default function ConversationView({
             fontSize: 14,
             lineHeight: 1.45,
             resize: 'none',
-            overflow: 'auto',
+            overflow: 'hidden',
             minHeight: 40,
           }}
         />
