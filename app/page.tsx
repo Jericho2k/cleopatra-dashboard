@@ -1,65 +1,167 @@
-import Image from "next/image";
+'use client'
 
-export default function Home() {
+import React, { useState, useEffect } from 'react'
+import { supabase } from '../lib/supabase'
+import type { Fan, Message, ConversationSummary } from '../types'
+import Sidebar from '../components/Sidebar'
+import ConversationView from '../components/ConversationView'
+import FanPanel from '../components/FanPanel'
+
+const CREATOR_ID = 'cc36c60d-21aa-44fc-b0c4-67cdc7376b2c'
+
+function rowToFan(row: Record<string, unknown>): Fan {
+  return {
+    id: row.id as string,
+    display_name: row.display_name as string,
+    total_spent: Number(row.total_spent),
+    spend_tier: row.spend_tier as Fan['spend_tier'],
+    last_active: (row.last_active as string) ?? null,
+    preferences: Array.isArray(row.preferences) ? (row.preferences as string[]) : [],
+    notes: (row.notes as string) ?? '',
+  }
+}
+
+function rowToMessage(row: Record<string, unknown>): Message {
+  return {
+    id: row.id as string,
+    fan_id: row.fan_id as string,
+    creator_id: row.creator_id as string,
+    role: row.role as Message['role'],
+    content: row.content as string,
+    sent_at: row.sent_at as string,
+    was_ai_suggested: Boolean(row.was_ai_suggested),
+    was_selected: Boolean(row.was_selected),
+  }
+}
+
+export default function Page() {
+  const [conversations, setConversations] = useState<ConversationSummary[]>([])
+  const [activeFan, setActiveFan] = useState<Fan | null>(null)
+  const [messages, setMessages] = useState<Message[]>([])
+
+  useEffect(() => {
+    async function load() {
+      const { data: fansData, error: fansError } = await supabase
+        .from('fans')
+        .select('*')
+        .eq('creator_id', CREATOR_ID)
+      if (fansError) return
+      const fans = (fansData ?? []).map((row) => rowToFan(row))
+      const summaries: ConversationSummary[] = await Promise.all(
+        fans.map(async (fan) => {
+          const { data: msgData } = await supabase
+            .from('messages')
+            .select('*')
+            .eq('fan_id', fan.id)
+            .eq('creator_id', CREATOR_ID)
+            .order('sent_at', { ascending: false })
+            .limit(1)
+            .maybeSingle()
+          const last = msgData ? rowToMessage(msgData) : null
+          return {
+            fan,
+            last_message: last?.content ?? '',
+            last_message_time: last?.sent_at ?? new Date(0).toISOString(),
+            unread: false,
+          }
+        })
+      )
+      setConversations(summaries)
+    }
+    load()
+  }, [])
+
+  useEffect(() => {
+    if (!activeFan) {
+      setMessages([])
+      return
+    }
+    async function load() {
+      const { data, error } = await supabase
+        .from('messages')
+        .select('*')
+        .eq('fan_id', activeFan.id)
+        .eq('creator_id', CREATOR_ID)
+        .order('sent_at', { ascending: true })
+        .limit(40)
+      if (error) return
+      setMessages((data ?? []).map((row) => rowToMessage(row)))
+    }
+    load()
+  }, [activeFan?.id])
+
+  useEffect(() => {
+    const channel = supabase
+      .channel('messages-realtime')
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'messages',
+          filter: `creator_id=eq.${CREATOR_ID}`,
+        },
+        (payload) => {
+          const row = payload.new as Record<string, unknown>
+          const msg = rowToMessage(row)
+          if (msg.fan_id === activeFan?.id) {
+            setMessages((prev) => [...prev, msg])
+          }
+          setConversations((prev) =>
+            prev.map((c) =>
+              c.fan.id === msg.fan_id
+                ? {
+                    ...c,
+                    last_message: msg.content,
+                    last_message_time: msg.sent_at,
+                  }
+                : c
+            )
+          )
+        }
+      )
+      .subscribe()
+    return () => {
+      supabase.removeChannel(channel)
+    }
+  }, [activeFan?.id])
+
+  function onReplySent(content: string) {
+    if (!activeFan) return
+    const newMsg: Message = {
+      id: `temp-${Date.now()}`,
+      fan_id: activeFan.id,
+      creator_id: CREATOR_ID,
+      role: 'creator',
+      content,
+      sent_at: new Date().toISOString(),
+      was_ai_suggested: false,
+      was_selected: false,
+    }
+    setMessages((prev) => [...prev, newMsg])
+  }
+
   return (
-    <div className="flex min-h-screen items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex min-h-screen w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
-        </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
-      </main>
+    <div
+      style={{
+        height: '100vh',
+        display: 'grid',
+        gridTemplateColumns: '280px 1fr 280px',
+        overflow: 'hidden',
+      }}
+    >
+      <Sidebar
+        conversations={conversations}
+        activeFanId={activeFan?.id ?? null}
+        onSelectFan={setActiveFan}
+      />
+      <ConversationView
+        fan={activeFan}
+        creatorId={CREATOR_ID}
+        messages={messages}
+        onReplySent={onReplySent}
+      />
+      <FanPanel fan={activeFan} />
     </div>
-  );
+  )
 }
