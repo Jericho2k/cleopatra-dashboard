@@ -142,26 +142,31 @@ export default function Page() {
   }
 
   return (
-    <div
-      style={{
-        height: '100vh',
-        display: 'grid',
-        gridTemplateColumns: '280px 1fr 280px',
-        overflow: 'hidden',
-      }}
-    >
-      <Sidebar
-        conversations={conversations}
-        activeFanId={activeFan?.id ?? null}
-        onSelectFan={setActiveFan}
-      />
-      <ConversationView
-        fan={activeFan}
-        creatorId={CREATOR_ID}
-        messages={messages}
-        onReplySent={onReplySent}
-      />
-      <FanPanel fan={activeFan} />
+    <div style={{
+      height: '100vh',
+      display: 'grid',
+      gridTemplateColumns: '280px 1fr 280px',
+      overflow: 'hidden',
+      background: 'var(--bg-base)',
+    }}>
+      <div style={{ height: '100vh', overflow: 'hidden' }}>
+        <Sidebar
+          conversations={conversations}
+          activeFanId={activeFan?.id ?? null}
+          onSelectFan={setActiveFan}
+        />
+      </div>
+      <div style={{ height: '100vh', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+        <ConversationView
+          fan={activeFan}
+          creatorId={CREATOR_ID}
+          messages={messages}
+          onReplySent={onReplySent}
+        />
+      </div>
+      <div style={{ height: '100vh', overflow: 'hidden' }}>
+        <FanPanel fan={activeFan} />
+      </div>
     </div>
   )
 }
