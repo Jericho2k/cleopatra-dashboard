@@ -106,6 +106,7 @@ export default function Page() {
         (payload) => {
           const row = payload.new as Record<string, unknown>
           const msg = rowToMessage(row)
+          if (msg.role === 'creator') return
           if (msg.fan_id === activeFanRef.current?.id) {
             setMessages((prev) => {
               if (prev.some((m) => m.id === msg.id)) return prev
