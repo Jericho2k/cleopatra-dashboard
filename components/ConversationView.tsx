@@ -30,7 +30,7 @@ export default function ConversationView({
   const [hoveredSuggestion, setHoveredSuggestion] = useState<number | null>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
-  const prevMessagesLengthRef = useRef(0)
+  const prevMessagesLengthRef = useRef(999)
 
   const lastMessage = messages[messages.length - 1]
   const stage = 'WARMING_UP'
