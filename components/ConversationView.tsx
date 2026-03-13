@@ -30,6 +30,7 @@ export default function ConversationView({
   const [hoveredSuggestion, setHoveredSuggestion] = useState<number | null>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const prevMessagesLengthRef = useRef(0)
 
   const lastMessage = messages[messages.length - 1]
   const stage = 'WARMING_UP'
@@ -68,13 +69,13 @@ export default function ConversationView({
   }, [messages])
 
   useEffect(() => {
-    if (!fan) return
-    const lastMsg = messages[messages.length - 1]
-    if (lastMsg?.role === 'fan') {
-      setLoading(true)
-    } else {
-      setLoading(false)
+    if (messages.length > prevMessagesLengthRef.current) {
+      const lastMsg = messages[messages.length - 1]
+      if (lastMsg?.role === 'fan') {
+        setLoading(true)
+      }
     }
+    prevMessagesLengthRef.current = messages.length
   }, [messages])
 
   const handleSuggestionClick = (suggestion: string) => {
