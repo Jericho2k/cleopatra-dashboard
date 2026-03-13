@@ -67,6 +67,16 @@ export default function ConversationView({
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
 
+  useEffect(() => {
+    if (!fan) return
+    const lastMsg = messages[messages.length - 1]
+    if (lastMsg?.role === 'fan') {
+      setLoading(true)
+    } else {
+      setLoading(false)
+    }
+  }, [messages])
+
   const handleSuggestionClick = (suggestion: string) => {
     if (!fan || !suggestion.trim()) return
     sendReply(fan.id, creatorId, suggestion, true)
