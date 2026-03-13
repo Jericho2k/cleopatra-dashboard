@@ -80,7 +80,7 @@ export default function Page() {
       const { data, error } = await supabase
         .from('messages')
         .select('*')
-        .eq('fan_id', activeFan.id)
+        .eq('fan_id', activeFan!.id)
         .eq('creator_id', CREATOR_ID)
         .order('sent_at', { ascending: true })
         .limit(40)
