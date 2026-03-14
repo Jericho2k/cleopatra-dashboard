@@ -38,7 +38,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             borderRight: '1px solid var(--border)',
             display: 'flex',
             flexDirection: 'column',
-            padding: '12px 8px',
+            padding: '12px 4px',
             gap: 2,
             flexShrink: 0,
             transition: 'width 0.2s ease',
@@ -59,9 +59,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               cursor: 'pointer',
               display: 'flex',
               alignItems: 'center',
-              justifyContent: expanded ? 'flex-start' : 'center',
+              justifyContent: 'flex-start',
               gap: 12,
-              padding: expanded ? '0 10px' : '0',
+              padding: '0 10px',
               marginBottom: 8,
               color: 'var(--text-secondary)',
             }}
@@ -151,20 +151,20 @@ function NavItem({
       href={href}
       className="nav-item"
       style={{
-        width: expanded ? '100%' : 40,
+        width: '100%',
         height: 40,
         borderRadius: 8,
         display: 'flex',
         alignItems: 'center',
-        justifyContent: expanded ? 'flex-start' : 'center',
+        justifyContent: 'flex-start',
         gap: 12,
-        padding: expanded ? '0 10px' : '0',
+        padding: '0 10px',
         textDecoration: 'none',
         color: isActive ? 'var(--silver)' : 'var(--text-muted)',
         background: isActive ? 'var(--bg-hover)' : 'transparent',
         whiteSpace: 'nowrap',
         flexShrink: 0,
-        margin: expanded ? '0' : '0 auto',
+        margin: '0',
       }}
     >
       {icon}
