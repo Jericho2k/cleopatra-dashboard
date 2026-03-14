@@ -37,49 +37,17 @@ export default function Sidebar({ conversations, activeFanId, onSelectFan }: Sid
           overflow: 'hidden',
         }}
       >
-        <header
+        <div
           style={{
-            padding: '20px 16px',
-            borderBottom: '1px solid var(--border-subtle)',
-            flexShrink: 0,
+            fontSize: 11,
+            textTransform: 'uppercase',
+            letterSpacing: '0.06em',
+            color: 'var(--text-muted)',
+            padding: '12px 16px 8px',
           }}
         >
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 8,
-              width: '100%',
-              fontFamily: 'var(--font-display)',
-              fontSize: 20,
-              fontWeight: 700,
-            }}
-          >
-            <span className="silver-text">CLEOPATRA</span>
-            <span style={{ color: 'var(--text-muted)', fontWeight: 500 }}>AI</span>
-            <span
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 6,
-                marginLeft: 'auto',
-                fontSize: 12,
-                color: 'var(--text-secondary)',
-              }}
-            >
-              <span
-                style={{
-                  width: 6,
-                  height: 6,
-                  borderRadius: '50%',
-                  background: 'var(--green)',
-                  animation: 'sidebar-pulse 1.5s ease-in-out infinite',
-                }}
-              />
-              {conversations.length}
-            </span>
-          </div>
-        </header>
+          CONVERSATIONS
+        </div>
 
         <div style={{ padding: '8px 8px 0', flexShrink: 0 }}>
           <div

@@ -1,17 +1,29 @@
 'use client'
 
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import './globals.css'
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   const [expanded, setExpanded] = useState(false)
+
+  useEffect(() => {
+    const saved = localStorage.getItem('nav-expanded')
+    if (saved === 'true') setExpanded(true)
+  }, [])
+
+  const toggle = () => {
+    setExpanded((v) => {
+      localStorage.setItem('nav-expanded', String(!v))
+      return !v
+    })
+  }
 
   return (
     <html lang="en">
       <body style={{ display: 'flex', height: '100vh', overflow: 'hidden', margin: 0 }}>
         <nav
           style={{
-            width: expanded ? 200 : 56,
+            width: expanded ? 160 : 56,
             background: 'var(--bg-surface)',
             borderRight: '1px solid var(--border)',
             display: 'flex',
@@ -26,7 +38,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           {/* Hamburger */}
           <button
             type="button"
-            onClick={() => setExpanded((v) => !v)}
+            onClick={toggle}
             style={{
               width: '100%',
               height: 40,
