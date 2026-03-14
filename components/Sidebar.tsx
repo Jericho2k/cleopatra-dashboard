@@ -78,20 +78,6 @@ export default function Sidebar({ conversations, activeFanId, onSelectFan }: Sid
               />
               {conversations.length}
             </span>
-            <a
-              href="/analytics"
-              style={{
-                fontSize: 11,
-                color: 'var(--text-muted)',
-                textDecoration: 'none',
-                padding: '2px 6px',
-                border: '1px solid var(--border)',
-                borderRadius: 4,
-                marginLeft: 8,
-              }}
-            >
-              Analytics
-            </a>
           </div>
         </header>
 
