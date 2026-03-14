@@ -39,14 +39,32 @@ export default function Sidebar({ conversations, activeFanId, onSelectFan }: Sid
       >
         <div
           style={{
-            fontSize: 11,
-            textTransform: 'uppercase',
-            letterSpacing: '0.06em',
-            color: 'var(--text-muted)',
-            padding: '12px 16px 8px',
+            padding: '16px 16px 12px',
+            borderBottom: '1px solid var(--border-subtle)',
+            marginBottom: 8,
+            flexShrink: 0,
           }}
         >
-          CONVERSATIONS
+          <div
+            style={{
+              fontFamily: 'var(--font-display)',
+              fontSize: 18,
+              fontWeight: 700,
+              letterSpacing: '0.02em',
+              color: 'var(--silver)',
+            }}
+          >
+            INBOX
+          </div>
+          <div
+            style={{
+              fontSize: 11,
+              color: 'var(--text-muted)',
+              marginTop: 2,
+            }}
+          >
+            {conversations.length} conversation{conversations.length !== 1 ? 's' : ''}
+          </div>
         </div>
 
         <div style={{ padding: '8px 8px 0', flexShrink: 0 }}>

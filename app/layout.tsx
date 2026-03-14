@@ -41,7 +41,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             onClick={toggle}
             style={{
               width: '100%',
-              height: 40,
+              height: 48,
               borderRadius: 8,
               border: 'none',
               background: 'transparent',
@@ -50,11 +50,11 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               alignItems: 'center',
               gap: 12,
               padding: '0 10px',
-              marginBottom: 8,
+              marginBottom: 16,
               color: 'var(--text-secondary)',
             }}
           >
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style={{ flexShrink: 0 }}>
               <rect y="2" width="16" height="1.5" rx="0.75" fill="currentColor" />
               <rect y="7.25" width="16" height="1.5" rx="0.75" fill="currentColor" />
               <rect y="12.5" width="16" height="1.5" rx="0.75" fill="currentColor" />
