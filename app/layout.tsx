@@ -1,10 +1,6 @@
-import type { Metadata } from 'next'
-import './globals.css'
+'use client'
 
-export const metadata: Metadata = {
-  title: 'Cleopatra AI',
-  description: 'Chatter dashboard',
-}
+import './globals.css'
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
@@ -65,8 +61,6 @@ function NavItem({ href, icon, label }: { href: string; icon: string; label: str
         color: 'var(--text-muted)',
         transition: 'background 0.15s',
       }}
-      onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--bg-hover)')}
-      onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
     >
       {icon}
     </a>
