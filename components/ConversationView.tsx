@@ -25,6 +25,7 @@ export default function ConversationView({
   onReplySent,
 }: ConversationViewProps) {
   const [suggestions, setSuggestions] = useState<string[]>(['', '', ''])
+  const [stage, setStage] = useState<string>('WARMING_UP')
   const [loading, setLoading] = useState(false)
   const [inputValue, setInputValue] = useState('')
   const [hoveredSuggestion, setHoveredSuggestion] = useState<number | null>(null)
@@ -32,12 +33,12 @@ export default function ConversationView({
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
   const lastMessage = messages[messages.length - 1]
-  const stage = 'WARMING_UP'
 
   useEffect(() => {
     if (!fan) return
-    getLatestSuggestions(fan.id, creatorId).then((s: string[]) => {
-      if (s.length > 0) setSuggestions(s)
+    getLatestSuggestions(fan.id, creatorId).then((res) => {
+      if (res.suggestions.length > 0) setSuggestions(res.suggestions)
+      setStage(res.stage)
     })
     const channel = supabase
       .channel(`suggestions-${fan.id}`)
@@ -50,10 +51,10 @@ export default function ConversationView({
           filter: `fan_id=eq.${fan.id}`,
         },
         (payload) => {
-          const s = (payload.new as { suggestions: string[] }).suggestions
-          if (s?.length > 0) {
-            setLoading(true)
-            setSuggestions(s)
+          const s = payload.new as { suggestions: string[]; stage: string }
+          if (s?.suggestions?.length > 0) {
+            setSuggestions(s.suggestions)
+            setStage(s.stage ?? 'WARMING_UP')
             setLoading(false)
           }
         }
@@ -78,8 +79,9 @@ export default function ConversationView({
   const refetchSuggestions = () => {
     if (!fan) return
     setLoading(true)
-    getLatestSuggestions(fan.id, creatorId).then((s: string[]) => {
-      if (s.length > 0) setSuggestions(s)
+    getLatestSuggestions(fan.id, creatorId).then((res) => {
+      if (res.suggestions.length > 0) setSuggestions(res.suggestions)
+      setStage(res.stage)
       setLoading(false)
     })
   }
