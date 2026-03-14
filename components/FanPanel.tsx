@@ -1,13 +1,35 @@
 'use client'
 
-import React from 'react'
+import React, { useState, useEffect, useCallback } from 'react'
 import type { Fan } from '../types'
+import { supabase } from '../lib/supabase'
 
 export interface FanPanelProps {
   fan: Fan | null
 }
 
 export default function FanPanel({ fan }: FanPanelProps) {
+  const [details, setDetails] = useState({
+    age: fan?.age ?? '',
+    payday: fan?.payday ?? '',
+    hobbies: fan?.hobbies ?? '',
+    relationship_status: fan?.relationship_status ?? '',
+  })
+
+  useEffect(() => {
+    setDetails({
+      age: fan?.age ?? '',
+      payday: fan?.payday ?? '',
+      hobbies: fan?.hobbies ?? '',
+      relationship_status: fan?.relationship_status ?? '',
+    })
+  }, [fan?.id])
+
+  const handleDetailBlur = async (field: string, value: string) => {
+    if (!fan) return
+    await supabase.from('fans').update({ [field]: value }).eq('id', fan.id)
+  }
+
   if (fan === null) {
     return (
       <aside
@@ -134,6 +156,57 @@ export default function FanPanel({ fan }: FanPanelProps) {
         }}
       >
         {fan.notes.trim() ? fan.notes : 'No notes yet.'}
+      </div>
+
+      <div
+        style={{
+          fontSize: 11,
+          textTransform: 'uppercase',
+          letterSpacing: '0.06em',
+          color: 'var(--text-muted)',
+          marginBottom: 12,
+          marginTop: 24,
+        }}
+      >
+        FAN DETAILS
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 24 }}>
+        {[
+          { label: 'Age', field: 'age' },
+          { label: 'Pay day', field: 'payday' },
+          { label: 'Hobbies', field: 'hobbies' },
+          { label: 'Relationship', field: 'relationship_status' },
+        ].map(({ label, field }) => (
+          <div key={field} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span
+              style={{
+                fontSize: 11,
+                color: 'var(--text-muted)',
+                width: 80,
+                flexShrink: 0,
+              }}
+            >
+              {label}
+            </span>
+            <input
+              type="text"
+              value={details[field as keyof typeof details]}
+              onChange={(e) => setDetails((prev) => ({ ...prev, [field]: e.target.value }))}
+              onBlur={(e) => handleDetailBlur(field, e.target.value)}
+              placeholder="—"
+              style={{
+                flex: 1,
+                background: 'var(--bg-elevated)',
+                border: '1px solid var(--border-subtle)',
+                borderRadius: 6,
+                padding: '5px 10px',
+                color: 'var(--text-primary)',
+                fontSize: 12,
+                outline: 'none',
+              }}
+            />
+          </div>
+        ))}
       </div>
 
       <div
