@@ -26,15 +26,18 @@ export async function sendReply(
 export async function getLatestSuggestions(
   fanId: string,
   creatorId: string
-): Promise<string[]> {
+): Promise<{ suggestions: string[]; stage: string }> {
   const { data, error } = await supabase
     .from('suggestions')
-    .select('suggestions')
+    .select('suggestions, stage')
     .eq('fan_id', fanId)
     .eq('creator_id', creatorId)
     .order('created_at', { ascending: false })
     .limit(1)
     .maybeSingle()
-  if (error || !data) return []
-  return data.suggestions as string[]
+  if (error || !data) return { suggestions: [], stage: 'WARMING_UP' }
+  return {
+    suggestions: data.suggestions as string[],
+    stage: (data.stage as string) ?? 'WARMING_UP',
+  }
 }
