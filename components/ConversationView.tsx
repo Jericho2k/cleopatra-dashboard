@@ -29,6 +29,8 @@ export default function ConversationView({
   const [loading, setLoading] = useState(false)
   const [inputValue, setInputValue] = useState('')
   const [hoveredSuggestion, setHoveredSuggestion] = useState<number | null>(null)
+  const [scripts, setScripts] = useState<{ id: string; title: string; content: string; category: string }[]>([])
+  const [showScripts, setShowScripts] = useState(false)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
@@ -68,6 +70,18 @@ export default function ConversationView({
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'instant' })
   }, [messages])
+
+  useEffect(() => {
+    if (!fan) return
+    supabase
+      .from('scripts')
+      .select('*')
+      .eq('creator_id', creatorId)
+      .order('category')
+      .then(({ data }) => {
+        if (data) setScripts(data)
+      })
+  }, [creatorId])
 
   const handleSuggestionClick = (suggestion: string) => {
     if (!fan || !suggestion.trim()) return
@@ -289,24 +303,101 @@ export default function ConversationView({
             </button>
           ))}
         </div>
-        <button
-          type="button"
-          onClick={refetchSuggestions}
-          disabled={loading}
-          style={{
-            background: 'var(--bg-elevated)',
-            border: '1px solid var(--border-strong)',
-            borderRadius: 6,
-            color: 'var(--text-secondary)',
-            fontSize: 12,
-            cursor: loading ? 'default' : 'pointer',
-            padding: '5px 12px',
-            marginBottom: 12,
-            opacity: loading ? 0.5 : 1,
-          }}
-        >
-          Regenerate
-        </button>
+        <div style={{ display: 'flex', marginBottom: 12 }}>
+          <button
+            type="button"
+            onClick={refetchSuggestions}
+            disabled={loading}
+            style={{
+              background: 'var(--bg-elevated)',
+              border: '1px solid var(--border-strong)',
+              borderRadius: 6,
+              color: 'var(--text-secondary)',
+              fontSize: 12,
+              cursor: loading ? 'default' : 'pointer',
+              padding: '5px 12px',
+              opacity: loading ? 0.5 : 1,
+            }}
+          >
+            Regenerate
+          </button>
+          <button
+            type="button"
+            onClick={() => setShowScripts((v) => !v)}
+            style={{
+              background: showScripts ? 'var(--bg-hover)' : 'var(--bg-elevated)',
+              border: '1px solid var(--border-strong)',
+              borderRadius: 6,
+              color: 'var(--text-secondary)',
+              fontSize: 12,
+              cursor: 'pointer',
+              padding: '5px 12px',
+              marginLeft: 8,
+            }}
+          >
+            Scripts
+          </button>
+        </div>
+
+        {showScripts && (
+          <div
+            style={{
+              background: 'var(--bg-elevated)',
+              border: '1px solid var(--border)',
+              borderRadius: 8,
+              marginBottom: 12,
+              overflow: 'hidden',
+            }}
+          >
+            {['greeting', 'upsell', 'reengagement', 'custom'].map((cat) => {
+              const catScripts = scripts.filter((s) => s.category === cat)
+              if (catScripts.length === 0) return null
+              return (
+                <div key={cat}>
+                  <div
+                    style={{
+                      fontSize: 10,
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.06em',
+                      color: 'var(--text-muted)',
+                      padding: '8px 12px 4px',
+                    }}
+                  >
+                    {cat}
+                  </div>
+                  {catScripts.map((script) => (
+                    <button
+                      key={script.id}
+                      type="button"
+                      onClick={() => {
+                        setInputValue(script.content)
+                        setShowScripts(false)
+                        textareaRef.current?.focus()
+                      }}
+                      style={{
+                        width: '100%',
+                        textAlign: 'left',
+                        padding: '8px 12px',
+                        background: 'transparent',
+                        border: 'none',
+                        borderTop: '1px solid var(--border-subtle)',
+                        color: 'var(--text-primary)',
+                        fontSize: 13,
+                        cursor: 'pointer',
+                      }}
+                      onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--bg-hover)')}
+                      onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+                    >
+                      <span style={{ color: 'var(--text-secondary)', marginRight: 8 }}>{script.title}</span>
+                      <span style={{ color: 'var(--text-muted)', fontSize: 12 }}>{script.content.slice(0, 40)}…</span>
+                    </button>
+                  ))}
+                </div>
+              )
+            })}
+          </div>
+        )}
+
         <div
           style={{
             height: 1,
