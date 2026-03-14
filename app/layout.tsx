@@ -21,9 +21,13 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en">
       <body style={{ display: 'flex', height: '100vh', overflow: 'hidden', margin: 0 }}>
+        <style>{`
+  .nav-item:hover { background: var(--bg-hover) !important; }
+  .nav-btn:hover { background: var(--bg-hover) !important; }
+`}</style>
         <nav
           style={{
-            width: expanded ? 160 : 56,
+            width: expanded ? 180 : 64,
             background: 'var(--bg-surface)',
             borderRight: '1px solid var(--border)',
             display: 'flex',
@@ -38,6 +42,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           {/* Hamburger */}
           <button
             type="button"
+            className="nav-btn"
             onClick={toggle}
             style={{
               width: '100%',
@@ -137,6 +142,7 @@ function NavItem({
   return (
     <a
       href={href}
+      className="nav-item"
       style={{
         width: '100%',
         height: 40,

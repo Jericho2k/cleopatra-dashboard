@@ -45,16 +45,38 @@ export default function Sidebar({ conversations, activeFanId, onSelectFan }: Sid
             flexShrink: 0,
           }}
         >
-          <div
-            style={{
-              fontFamily: 'var(--font-display)',
-              fontSize: 18,
-              fontWeight: 700,
-              letterSpacing: '0.02em',
-              color: 'var(--silver)',
-            }}
-          >
-            INBOX
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <div
+              style={{
+                fontFamily: 'var(--font-display)',
+                fontSize: 22,
+                fontWeight: 700,
+                letterSpacing: '0.02em',
+                color: 'var(--silver)',
+              }}
+            >
+              INBOX
+            </div>
+            <span
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 6,
+                fontSize: 12,
+                color: 'var(--text-secondary)',
+              }}
+            >
+              <span
+                style={{
+                  width: 6,
+                  height: 6,
+                  borderRadius: '50%',
+                  background: 'var(--green)',
+                  animation: 'sidebar-pulse 1.5s ease-in-out infinite',
+                }}
+              />
+              {conversations.length}
+            </span>
           </div>
           <div
             style={{
