@@ -23,11 +23,17 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body style={{ display: 'flex', height: '100vh', overflow: 'hidden', margin: 0 }}>
         <style>{`
   .nav-item:hover { background: var(--bg-hover) !important; }
-  .nav-btn:hover { background: var(--bg-hover) !important; }
+  .nav-btn:hover { 
+    text-shadow: 0 0 12px rgba(200, 200, 200, 0.8);
+    color: var(--silver) !important;
+  }
+  .nav-btn:hover svg rect {
+    filter: drop-shadow(0 0 4px rgba(200, 200, 200, 0.6));
+  }
 `}</style>
         <nav
           style={{
-            width: expanded ? 180 : 64,
+            width: expanded ? 180 : 48,
             background: 'var(--bg-surface)',
             borderRight: '1px solid var(--border)',
             display: 'flex',
@@ -46,16 +52,17 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             onClick={toggle}
             style={{
               width: '100%',
-              height: 48,
+              height: 40,
               borderRadius: 8,
               border: 'none',
               background: 'transparent',
               cursor: 'pointer',
               display: 'flex',
               alignItems: 'center',
+              justifyContent: expanded ? 'flex-start' : 'center',
               gap: 12,
-              padding: '0 10px',
-              marginBottom: 16,
+              padding: expanded ? '0 10px' : '0',
+              marginBottom: 8,
               color: 'var(--text-secondary)',
             }}
           >
@@ -144,18 +151,20 @@ function NavItem({
       href={href}
       className="nav-item"
       style={{
-        width: '100%',
+        width: expanded ? '100%' : 40,
         height: 40,
         borderRadius: 8,
         display: 'flex',
         alignItems: 'center',
+        justifyContent: expanded ? 'flex-start' : 'center',
         gap: 12,
-        padding: '0 10px',
+        padding: expanded ? '0 10px' : '0',
         textDecoration: 'none',
         color: isActive ? 'var(--silver)' : 'var(--text-muted)',
         background: isActive ? 'var(--bg-hover)' : 'transparent',
         whiteSpace: 'nowrap',
         flexShrink: 0,
+        margin: expanded ? '0' : '0 auto',
       }}
     >
       {icon}
