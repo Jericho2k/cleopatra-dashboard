@@ -109,6 +109,11 @@ export default function Page() {
           const row = payload.new as Record<string, unknown>
           const msg = rowToMessage(row)
           if (msg.role === 'creator') return
+          if (msg.role === 'fan' && msg.fan_id !== activeFanRef.current?.id) {
+            setConversations((prev) =>
+              prev.map((c) => (c.fan.id === msg.fan_id ? { ...c, unread: true } : c))
+            )
+          }
           if (msg.fan_id === activeFanRef.current?.id) {
             setMessages((prev) => {
               if (prev.some((m) => m.id === msg.id)) return prev
@@ -181,6 +186,13 @@ export default function Page() {
     return () => { supabase.removeChannel(channel) }
   }, [])
 
+  function handleSelectFan(fan: Fan) {
+    setActiveFan(fan)
+    setConversations((prev) =>
+      prev.map((c) => (c.fan.id === fan.id ? { ...c, unread: false } : c))
+    )
+  }
+
   function onReplySent(content: string) {
     if (!activeFan) return
     const newMsg: Message = {
@@ -208,7 +220,7 @@ export default function Page() {
         <Sidebar
           conversations={conversations}
           activeFanId={activeFan?.id ?? null}
-          onSelectFan={setActiveFan}
+          onSelectFan={handleSelectFan}
         />
       </div>
       <div style={{ height: '100vh', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>

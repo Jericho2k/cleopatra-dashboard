@@ -11,6 +11,7 @@ export interface SidebarProps {
 
 export default function Sidebar({ conversations, activeFanId, onSelectFan }: SidebarProps) {
   const [now, setNow] = useState(Date.now())
+  const [activeFilter, setActiveFilter] = useState<'all' | 'unread' | 'whale' | 'active' | 'casual' | 'cold'>('all')
 
   useEffect(() => {
     const interval = setInterval(() => setNow(Date.now()), 60 * 1000)
@@ -80,16 +81,37 @@ export default function Sidebar({ conversations, activeFanId, onSelectFan }: Sid
           </div>
         </header>
 
-        <div
-          style={{
-            padding: '12px 16px 8px',
-            fontSize: 11,
-            textTransform: 'uppercase',
-            letterSpacing: '0.06em',
-            color: 'var(--text-muted)',
-          }}
-        >
-          CONVERSATIONS
+        <div style={{ padding: '8px 8px 0', flexShrink: 0 }}>
+          <div
+            style={{
+              display: 'flex',
+              gap: 4,
+              overflowX: 'auto',
+              paddingBottom: 8,
+            }}
+          >
+            {(['all', 'unread', 'whale', 'active', 'casual', 'cold'] as const).map((f) => (
+              <button
+                key={f}
+                type="button"
+                onClick={() => setActiveFilter(f)}
+                style={{
+                  flexShrink: 0,
+                  fontSize: 10,
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.04em',
+                  padding: '3px 8px',
+                  borderRadius: 4,
+                  border: activeFilter === f ? '1px solid var(--silver)' : '1px solid var(--border)',
+                  background: activeFilter === f ? 'rgba(200,200,200,0.1)' : 'transparent',
+                  color: activeFilter === f ? 'var(--silver)' : 'var(--text-muted)',
+                  cursor: 'pointer',
+                }}
+              >
+                {f}
+              </button>
+            ))}
+          </div>
         </div>
 
         <ul
@@ -100,7 +122,13 @@ export default function Sidebar({ conversations, activeFanId, onSelectFan }: Sid
             padding: '0 8px 16px',
           }}
         >
-          {conversations.map((c) => {
+          {(() => {
+            const filtered = conversations.filter((c) => {
+              if (activeFilter === 'unread') return c.unread
+              if (activeFilter === 'all') return true
+              return c.fan.spend_tier === activeFilter
+            })
+            return filtered.map((c) => {
             const isActive = c.fan.id === activeFanId
             const preview = c.last_message.length > 40 ? c.last_message.slice(0, 40) + '…' : c.last_message
             const iso = c.last_message_time
@@ -148,12 +176,30 @@ export default function Sidebar({ conversations, activeFanId, onSelectFan }: Sid
                       marginBottom: 4,
                     }}
                   >
-                    <span style={{ fontWeight: 500, color: 'var(--text-primary)' }}>
-                      {c.fan.display_name}
-                    </span>
-                    <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
-                      {timeSince}
-                    </span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      {c.unread && (
+                        <span
+                          style={{
+                            width: 6,
+                            height: 6,
+                            borderRadius: '50%',
+                            background: 'var(--green)',
+                            flexShrink: 0,
+                          }}
+                        />
+                      )}
+                      <span style={{ fontWeight: 500, color: 'var(--text-primary)' }}>
+                        {c.fan.display_name}
+                      </span>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <span style={{ fontSize: 11, color: 'var(--green)', fontFamily: 'var(--font-display)' }}>
+                        ${c.fan.total_spent}
+                      </span>
+                      <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                        {timeSince}
+                      </span>
+                    </div>
                   </div>
                   <div
                     style={{
@@ -182,7 +228,8 @@ export default function Sidebar({ conversations, activeFanId, onSelectFan }: Sid
                 </button>
               </li>
             )
-          })}
+            })
+          })()}
         </ul>
       </aside>
     </>
