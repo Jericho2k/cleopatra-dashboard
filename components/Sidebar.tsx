@@ -85,8 +85,8 @@ export default function Sidebar({ conversations, activeFanId, onSelectFan }: Sid
           <div
             style={{
               display: 'flex',
+              flexWrap: 'wrap',
               gap: 4,
-              overflowX: 'auto',
               paddingBottom: 8,
             }}
           >
