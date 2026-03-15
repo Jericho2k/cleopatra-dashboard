@@ -212,7 +212,8 @@ export default function Sidebar({ conversations, activeFanId, onSelectFan }: Sid
                   <div
                     style={{
                       fontSize: 12,
-                      color: 'var(--text-secondary)',
+                      color: c.unread ? 'var(--text-primary)' : 'var(--text-secondary)',
+                      fontWeight: c.unread ? 600 : 400,
                       marginBottom: 6,
                       overflow: 'hidden',
                       textOverflow: 'ellipsis',
@@ -233,6 +234,21 @@ export default function Sidebar({ conversations, activeFanId, onSelectFan }: Sid
                   >
                     {c.fan.spend_tier}
                   </span>
+                  {c.unread && (c.unread_count ?? 0) > 0 && (
+                    <span style={{
+                      marginLeft: 4,
+                      fontSize: 10,
+                      padding: '1px 6px',
+                      borderRadius: 999,
+                      background: 'var(--green)',
+                      color: '#000',
+                      fontWeight: 700,
+                      minWidth: 18,
+                      textAlign: 'center',
+                    }}>
+                      {c.unread_count}
+                    </span>
+                  )}
                 </button>
               </li>
             )

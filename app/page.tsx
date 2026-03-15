@@ -69,6 +69,7 @@ export default function Page() {
             last_message: last?.content ?? '',
             last_message_time: last?.sent_at ?? new Date(0).toISOString(),
             unread: false,
+            unread_count: 0,
           }
         })
       )
@@ -119,11 +120,6 @@ export default function Page() {
           const row = payload.new as Record<string, unknown>
           const msg = rowToMessage(row)
           if (msg.role === 'creator') return
-          if (msg.role === 'fan' && msg.fan_id !== activeFanRef.current?.id) {
-            setConversations((prev) =>
-              prev.map((c) => (c.fan.id === msg.fan_id ? { ...c, unread: true } : c))
-            )
-          }
           if (msg.fan_id === activeFanRef.current?.id) {
             setMessages((prev) => {
               if (prev.some((m) => m.id === msg.id)) return prev
@@ -134,7 +130,15 @@ export default function Page() {
             [...prev]
               .map((c) =>
                 c.fan.id === msg.fan_id
-                  ? { ...c, last_message: msg.content, last_message_time: msg.sent_at }
+                  ? {
+                      ...c,
+                      last_message: msg.content,
+                      last_message_time: msg.sent_at,
+                      unread: msg.role === 'fan' && msg.fan_id !== activeFanRef.current?.id ? true : c.unread,
+                      unread_count: msg.role === 'fan' && msg.fan_id !== activeFanRef.current?.id
+                        ? (c.unread_count ?? 0) + 1
+                        : c.unread_count,
+                    }
                   : c
               )
               .sort((a, b) =>
@@ -170,6 +174,7 @@ export default function Page() {
                 last_message: '',
                 last_message_time: new Date(0).toISOString(),
                 unread: false,
+                unread_count: 0,
               },
             ]
           })
@@ -199,7 +204,7 @@ export default function Page() {
   function handleSelectFan(fan: Fan) {
     setActiveFan(fan)
     setConversations((prev) =>
-      prev.map((c) => (c.fan.id === fan.id ? { ...c, unread: false } : c))
+      prev.map((c) => (c.fan.id === fan.id ? { ...c, unread: false, unread_count: 0 } : c))
     )
   }
 
