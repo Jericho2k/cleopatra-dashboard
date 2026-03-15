@@ -125,6 +125,17 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               </svg>
             }
           />
+          <NavItem
+            href="/settings"
+            expanded={expanded}
+            label="Settings"
+            icon={
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                <circle cx="8" cy="8" r="2.5" stroke="currentColor" strokeWidth="1.5" />
+                <path d="M8 1v1.5M8 13.5V15M15 8h-1.5M2.5 8H1M12.95 3.05l-1.06 1.06M4.11 11.89l-1.06 1.06M12.95 12.95l-1.06-1.06M4.11 4.11L3.05 3.05" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+              </svg>
+            }
+          />
         </nav>
         <div style={{ flex: 1, overflow: 'hidden' }}>
           {children}

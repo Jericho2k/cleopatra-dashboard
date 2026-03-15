@@ -31,6 +31,7 @@ export default function ConversationView({
   const [hoveredSuggestion, setHoveredSuggestion] = useState<number | null>(null)
   const [scripts, setScripts] = useState<{ id: string; title: string; content: string; category: string }[]>([])
   const [showScripts, setShowScripts] = useState(false)
+  const [blockedWords, setBlockedWords] = useState<string[]>([])
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
@@ -83,8 +84,28 @@ export default function ConversationView({
       })
   }, [creatorId])
 
+  useEffect(() => {
+    supabase
+      .from('blocked_words')
+      .select('word')
+      .eq('creator_id', creatorId)
+      .then(({ data }) => {
+        if (data) setBlockedWords(data.map((w) => w.word))
+      })
+  }, [creatorId])
+
+  const getBlockedMatches = (text: string): string[] => {
+    const lower = text.toLowerCase()
+    return blockedWords.filter((w) => lower.includes(w))
+  }
+
   const handleSuggestionClick = (suggestion: string) => {
     if (!fan || !suggestion.trim()) return
+    const blocked = getBlockedMatches(suggestion)
+    if (blocked.length > 0) {
+      const confirmed = window.confirm(`⚠️ Suggestion contains blocked word(s): ${blocked.join(', ')}\n\nSend anyway?`)
+      if (!confirmed) return
+    }
     sendReply(fan.id, creatorId, suggestion, true)
     onReplySent(suggestion)
     setSuggestions(['', '', ''])
@@ -105,6 +126,11 @@ export default function ConversationView({
     e.preventDefault()
     const value = inputValue.trim()
     if (!value || !fan) return
+    const blocked = getBlockedMatches(value)
+    if (blocked.length > 0) {
+      const confirmed = window.confirm(`⚠️ Message contains blocked word(s): ${blocked.join(', ')}\n\nSend anyway?`)
+      if (!confirmed) return
+    }
     sendReply(fan.id, creatorId, value, false)
     onReplySent(value)
     setInputValue('')
@@ -136,6 +162,8 @@ export default function ConversationView({
       </div>
     )
   }
+
+  const hasBlockedWords = getBlockedMatches(inputValue).length > 0
 
   return (
     <div
@@ -416,7 +444,7 @@ export default function ConversationView({
             width: '100%',
             padding: '10px 14px',
             background: 'var(--bg-elevated)',
-            border: '1px solid var(--border-subtle)',
+            border: hasBlockedWords ? '1px solid rgba(255, 80, 80, 0.6)' : '1px solid var(--border-subtle)',
             borderRadius: 8,
             color: 'var(--text-primary)',
             fontSize: 14,
