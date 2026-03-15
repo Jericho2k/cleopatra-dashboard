@@ -42,6 +42,7 @@ export default function Page() {
   const [conversations, setConversations] = useState<ConversationSummary[]>([])
   const [activeFan, setActiveFan] = useState<Fan | null>(null)
   const [messages, setMessages] = useState<Message[]>([])
+  const [messagesLoading, setMessagesLoading] = useState(false)
   const activeFanRef = useRef<Fan | null>(null)
   useEffect(() => { activeFanRef.current = activeFan }, [activeFan])
 
@@ -91,18 +92,18 @@ export default function Page() {
       setMessages([])
       return
     }
-    async function load() {
-      const { data, error } = await supabase
-        .from('messages')
-        .select('*')
-        .eq('fan_id', activeFan!.id)
-        .eq('creator_id', CREATOR_ID)
-        .order('sent_at', { ascending: true })
-        .limit(40)
-      if (error) return
-      setMessages((data ?? []).map((row) => rowToMessage(row)))
-    }
-    load()
+    setMessagesLoading(true)
+    supabase
+      .from('messages')
+      .select('*')
+      .eq('fan_id', activeFan.id)
+      .eq('creator_id', CREATOR_ID)
+      .order('sent_at', { ascending: true })
+      .limit(40)
+      .then(({ data, error }) => {
+        if (!error) setMessages((data ?? []).map((row) => rowToMessage(row)))
+        setMessagesLoading(false)
+      })
   }, [activeFan?.id])
 
   useEffect(() => {
@@ -244,6 +245,7 @@ export default function Page() {
           creatorId={CREATOR_ID}
           messages={messages}
           onReplySent={onReplySent}
+          messagesLoading={messagesLoading}
         />
       </div>
       <div style={{ height: '100vh', overflow: 'hidden' }}>

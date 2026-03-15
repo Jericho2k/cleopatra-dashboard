@@ -10,6 +10,7 @@ export interface ConversationViewProps {
   creatorId: string
   messages: Message[]
   onReplySent: (content: string) => void
+  messagesLoading?: boolean
 }
 
 function getInitials(displayName: string): string {
@@ -23,6 +24,7 @@ export default function ConversationView({
   creatorId,
   messages,
   onReplySent,
+  messagesLoading,
 }: ConversationViewProps) {
   const [suggestions, setSuggestions] = useState<string[]>(['', '', ''])
   const [stage, setStage] = useState<string>('WARMING_UP')
@@ -224,6 +226,7 @@ export default function ConversationView({
       {/* Messages */}
       <div
         style={{
+          position: 'relative',
           flex: 1,
           overflow: 'auto',
           padding: 24,
@@ -232,6 +235,16 @@ export default function ConversationView({
           gap: 12,
         }}
       >
+        {messagesLoading && (
+          <div style={{
+            position: 'absolute',
+            inset: 0,
+            background: 'var(--bg-base)',
+            opacity: 0.5,
+            pointerEvents: 'none',
+            transition: 'opacity 0.15s ease',
+          }} />
+        )}
         {messages.map((msg) => (
           <div
             key={msg.id}
