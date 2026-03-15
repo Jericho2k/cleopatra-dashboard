@@ -51,4 +51,5 @@ export interface ConversationSummary {
   last_message: string
   last_message_time: string
   unread: boolean
+  unread_count?: number
 }
