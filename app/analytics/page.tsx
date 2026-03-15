@@ -159,14 +159,7 @@ export default function AnalyticsPage() {
 
   return (
     <div
-      style={{
-        minHeight: '100vh',
-        background: 'var(--bg-base)',
-        padding: 32,
-        color: 'var(--text-primary)',
-        fontFamily: 'var(--font-body)',
-        overflowY: 'auto',
-      }}
+      style={{ height: '100vh', overflowY: 'auto', background: 'var(--bg-base)', padding: 32, color: 'var(--text-primary)', fontFamily: 'var(--font-body)' }}
     >
       <div style={{ maxWidth: 1000, margin: '0 auto' }}>
         {/* Header */}
@@ -228,7 +221,7 @@ export default function AnalyticsPage() {
             </div>
           ) : (
             <ResponsiveContainer width="100%" height={160}>
-              <BarChart data={dailyMessages} barGap={2}>
+              <BarChart data={dailyMessages} barGap={2} style={{ outline: 'none' }}>
                 <XAxis dataKey="date" tick={{ fontSize: 11, fill: 'var(--text-muted)' }} axisLine={false} tickLine={false} />
                 <YAxis tick={{ fontSize: 11, fill: 'var(--text-muted)' }} axisLine={false} tickLine={false} width={24} />
                 <Tooltip contentStyle={tooltipStyle} cursor={{ fill: 'rgba(200,200,200,0.05)' }} />
@@ -248,7 +241,7 @@ export default function AnalyticsPage() {
             </div>
           ) : (
             <ResponsiveContainer width="100%" height={120}>
-              <LineChart data={dailyMessages}>
+              <LineChart data={dailyMessages} style={{ outline: 'none' }}>
                 <XAxis dataKey="date" tick={{ fontSize: 11, fill: 'var(--text-muted)' }} axisLine={false} tickLine={false} />
                 <YAxis tick={{ fontSize: 11, fill: 'var(--text-muted)' }} axisLine={false} tickLine={false} width={24} />
                 <Tooltip contentStyle={tooltipStyle} />
