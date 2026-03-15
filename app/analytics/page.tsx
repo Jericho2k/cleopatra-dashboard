@@ -251,8 +251,8 @@ export default function AnalyticsPage() {
           )}
         </div>
 
-        {/* Bottom row */}
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 16, marginBottom: 24 }}>
+        {/* 3 column row */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 16, marginBottom: 16 }}>
           {/* Fan tier breakdown */}
           <div style={CARD}>
             <div style={LABEL}>Fan Breakdown</div>
@@ -266,14 +266,7 @@ export default function AnalyticsPage() {
                 <span style={{ fontSize: 13, color }}>{label}</span>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                   <div style={{ width: 80, height: 4, background: 'var(--bg-elevated)', borderRadius: 2, overflow: 'hidden' }}>
-                    <div
-                      style={{
-                        width: `${stats.totalFans > 0 ? (count / stats.totalFans) * 100 : 0}%`,
-                        height: '100%',
-                        background: color,
-                        borderRadius: 2,
-                      }}
-                    />
+                    <div style={{ width: `${stats.totalFans > 0 ? (count / stats.totalFans) * 100 : 0}%`, height: '100%', background: color, borderRadius: 2 }} />
                   </div>
                   <span style={{ fontSize: 13, color: 'var(--text-secondary)', width: 16, textAlign: 'right' }}>{count}</span>
                 </div>
@@ -286,131 +279,101 @@ export default function AnalyticsPage() {
             <div style={LABEL}>Top Fans by Spend</div>
             {topFans.length === 0 ? (
               <div style={{ color: 'var(--text-muted)', fontSize: 13 }}>No data yet.</div>
-            ) : (
-              topFans.map((fan, i) => (
-                <a
-                  key={fan.display_name}
-                  href="/"
-                  onClick={() => localStorage.setItem('open-fan', fan.display_name)}
-                  style={{
-                    textDecoration: 'none',
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    alignItems: 'center',
-                    marginBottom: 10,
-                    cursor: 'pointer',
-                  }}
-                >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <span style={{ fontSize: 11, color: 'var(--text-faint)', width: 16 }}>#{i + 1}</span>
-                    <span style={{ fontSize: 13, color: 'var(--text-primary)' }}>{fan.display_name}</span>
-                  </div>
-                  <span style={{ fontSize: 13, color: 'var(--green)', fontFamily: 'var(--font-display)' }}>${fan.total_spent}</span>
-                </a>
-              ))
-            )}
+            ) : topFans.map((fan, i) => (
+              <a key={fan.display_name} href="/" onClick={() => localStorage.setItem('open-fan', fan.display_name)}
+                style={{ textDecoration: 'none', display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10, cursor: 'pointer' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span style={{ fontSize: 11, color: 'var(--text-faint)', width: 16 }}>#{i + 1}</span>
+                  <span style={{ fontSize: 13, color: 'var(--text-primary)' }}>{fan.display_name}</span>
+                </div>
+                <span style={{ fontSize: 13, color: 'var(--green)', fontFamily: 'var(--font-display)' }}>${fan.total_spent}</span>
+              </a>
+            ))}
           </div>
 
-          {/* Most active fans by message count */}
+          {/* Most active fans */}
           <div style={CARD}>
             <div style={LABEL}>Most Active Fans</div>
             {activeFansList.length === 0 ? (
               <div style={{ color: 'var(--text-muted)', fontSize: 13 }}>No data yet.</div>
-            ) : (
-              activeFansList.map((fan, i) => (
-                <a
-                  key={fan.display_name}
-                  href="/"
-                  onClick={() => localStorage.setItem('open-fan', fan.display_name)}
-                  style={{
-                    textDecoration: 'none',
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    alignItems: 'center',
-                    marginBottom: 10,
-                    cursor: 'pointer',
-                  }}
-                >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <span style={{ fontSize: 11, color: 'var(--text-faint)', width: 16 }}>#{i + 1}</span>
-                    <span style={{ fontSize: 13, color: 'var(--text-primary)' }}>{fan.display_name}</span>
-                  </div>
-                  <span style={{ fontSize: 13, color: 'var(--purple)' }}>{fan.count} msgs</span>
-                </a>
-              ))
-            )}
+            ) : activeFansList.map((fan, i) => (
+              <a key={fan.display_name} href="/" onClick={() => localStorage.setItem('open-fan', fan.display_name)}
+                style={{ textDecoration: 'none', display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10, cursor: 'pointer' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span style={{ fontSize: 11, color: 'var(--text-faint)', width: 16 }}>#{i + 1}</span>
+                  <span style={{ fontSize: 13, color: 'var(--text-primary)' }}>{fan.display_name}</span>
+                </div>
+                <span style={{ fontSize: 13, color: 'var(--purple)' }}>{fan.count} msgs</span>
+              </a>
+            ))}
           </div>
         </div>
 
-        {/* Stage breakdown */}
-        {stageBreakdown.length > 0 && (
-          <div style={{ ...CARD, marginBottom: 24 }}>
-            <div style={LABEL}>Conversation Stage Distribution</div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 32 }}>
-              <PieChart width={160} height={160}>
-                <Pie data={stageBreakdown} cx={75} cy={75} innerRadius={45} outerRadius={70} dataKey="value" paddingAngle={3}>
-                  {stageBreakdown.map((entry, i) => (
-                    <Cell key={i} fill={entry.color} />
+        {/* Bottom row - stage + reply breakdown + response */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 24 }}>
+          {/* Stage distribution */}
+          {stageBreakdown.length > 0 && (
+            <div style={CARD}>
+              <div style={LABEL}>Conversation Stage Distribution</div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 24 }}>
+                <PieChart width={140} height={140}>
+                  <Pie data={stageBreakdown} cx={65} cy={65} innerRadius={40} outerRadius={62} dataKey="value" paddingAngle={3}>
+                    {stageBreakdown.map((entry, i) => (
+                      <Cell key={i} fill={entry.color} />
+                    ))}
+                  </Pie>
+                  <Tooltip contentStyle={tooltipStyle} />
+                </PieChart>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  {stageBreakdown.map((s) => (
+                    <div key={s.name} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <div style={{ width: 8, height: 8, borderRadius: '50%', background: s.color, flexShrink: 0 }} />
+                      <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{s.name}</span>
+                      <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>({s.value})</span>
+                    </div>
                   ))}
-                </Pie>
-                <Tooltip contentStyle={tooltipStyle} />
-              </PieChart>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
-                {stageBreakdown.map((s) => (
-                  <div key={s.name} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                    <div style={{ width: 8, height: 8, borderRadius: '50%', background: s.color, flexShrink: 0 }} />
-                    <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{s.name}</span>
-                    <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>({s.value})</span>
-                  </div>
-                ))}
+                </div>
               </div>
             </div>
-          </div>
-        )}
+          )}
 
-        {/* AI breakdown */}
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
-          <div style={CARD}>
-            <div style={LABEL}>Reply Method Breakdown</div>
-            <div style={{ display: 'flex', gap: 24 }}>
-              <div>
-                <div style={{ fontSize: 28, fontWeight: 700, fontFamily: 'var(--font-display)', color: 'var(--green)' }}>
-                  {stats.aiSuggested}
+          {/* Reply method + response performance stacked */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+            <div style={CARD}>
+              <div style={LABEL}>Reply Method</div>
+              <div style={{ display: 'flex', gap: 24 }}>
+                <div>
+                  <div style={{ fontSize: 26, fontWeight: 700, fontFamily: 'var(--font-display)', color: 'var(--green)' }}>{stats.aiSuggested}</div>
+                  <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 2 }}>AI SUGGESTED</div>
                 </div>
-                <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>AI SUGGESTED</div>
-              </div>
-              <div>
-                <div style={{ fontSize: 28, fontWeight: 700, fontFamily: 'var(--font-display)', color: 'var(--purple)' }}>
-                  {stats.manualReplies}
+                <div>
+                  <div style={{ fontSize: 26, fontWeight: 700, fontFamily: 'var(--font-display)', color: 'var(--purple)' }}>{stats.manualReplies}</div>
+                  <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 2 }}>MANUAL</div>
                 </div>
-                <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>MANUAL</div>
-              </div>
-              <div>
-                <div style={{ fontSize: 28, fontWeight: 700, fontFamily: 'var(--font-display)', color: 'var(--silver)' }}>
-                  {aiRate}%
+                <div>
+                  <div style={{ fontSize: 26, fontWeight: 700, fontFamily: 'var(--font-display)', color: 'var(--silver)' }}>{aiRate}%</div>
+                  <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 2 }}>AI RATE</div>
                 </div>
-                <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>AI RATE</div>
               </div>
             </div>
-          </div>
-          <div style={CARD}>
-            <div style={LABEL}>Response Performance</div>
-            <div style={{ display: 'flex', gap: 24 }}>
-              <div>
-                <div style={{ fontSize: 28, fontWeight: 700, fontFamily: 'var(--font-display)', color: 'var(--silver)' }}>
-                  {loading ? '—' : formatTime(stats.avgResponseTime)}
+            <div style={CARD}>
+              <div style={LABEL}>Response Performance</div>
+              <div style={{ display: 'flex', gap: 24 }}>
+                <div>
+                  <div style={{ fontSize: 26, fontWeight: 700, fontFamily: 'var(--font-display)', color: 'var(--silver)' }}>
+                    {loading ? '—' : formatTime(stats.avgResponseTime)}
+                  </div>
+                  <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 2 }}>AVG RESPONSE TIME</div>
                 </div>
-                <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>AVG RESPONSE TIME</div>
-              </div>
-              <div>
-                <div style={{ fontSize: 28, fontWeight: 700, fontFamily: 'var(--font-display)', color: 'var(--green)' }}>
-                  {stats.totalFans}
+                <div>
+                  <div style={{ fontSize: 26, fontWeight: 700, fontFamily: 'var(--font-display)', color: 'var(--green)' }}>{stats.totalFans}</div>
+                  <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 2 }}>TOTAL FANS</div>
                 </div>
-                <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>TOTAL FANS</div>
               </div>
             </div>
           </div>
         </div>
+
       </div>
     </div>
   )
