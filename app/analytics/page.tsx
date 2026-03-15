@@ -103,20 +103,6 @@ export default function AnalyticsPage() {
                 {p}
               </button>
             ))}
-            <a
-              href="/"
-              style={{
-                marginLeft: 16,
-                padding: '5px 12px',
-                borderRadius: 6,
-                border: '1px solid var(--border)',
-                color: 'var(--text-muted)',
-                fontSize: 12,
-                textDecoration: 'none',
-              }}
-            >
-              ← Back
-            </a>
           </div>
         </div>
 
@@ -194,13 +180,18 @@ export default function AnalyticsPage() {
               <div style={{ color: 'var(--text-muted)', fontSize: 13 }}>No data yet.</div>
             ) : (
               topFans.map((fan, i) => (
-                <div key={fan.display_name} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                <a
+                  key={fan.display_name}
+                  href="/"
+                  onClick={() => localStorage.setItem('open-fan', fan.display_name)}
+                  style={{ textDecoration: 'none', display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, cursor: 'pointer' }}
+                >
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                     <span style={{ fontSize: 11, color: 'var(--text-faint)', width: 16 }}>#{i + 1}</span>
                     <span style={{ fontSize: 13, color: 'var(--text-primary)' }}>{fan.display_name}</span>
                   </div>
                   <span style={{ fontSize: 13, color: 'var(--green)', fontFamily: 'var(--font-display)' }}>${fan.total_spent}</span>
-                </div>
+                </a>
               ))
             )}
           </div>
