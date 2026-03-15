@@ -316,8 +316,8 @@ export default function AnalyticsPage() {
             <div style={CARD}>
               <div style={LABEL}>Conversation Stage Distribution</div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 24 }}>
-                <PieChart width={140} height={140}>
-                  <Pie data={stageBreakdown} cx={65} cy={65} innerRadius={40} outerRadius={62} dataKey="value" paddingAngle={3}>
+                <PieChart width={200} height={200}>
+                  <Pie data={stageBreakdown} cx={95} cy={95} innerRadius={55} outerRadius={85} dataKey="value" paddingAngle={3}>
                     {stageBreakdown.map((entry, i) => (
                       <Cell key={i} fill={entry.color} />
                     ))}
@@ -341,33 +341,33 @@ export default function AnalyticsPage() {
           <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
             <div style={CARD}>
               <div style={LABEL}>Reply Method</div>
-              <div style={{ display: 'flex', gap: 24 }}>
-                <div>
-                  <div style={{ fontSize: 26, fontWeight: 700, fontFamily: 'var(--font-display)', color: 'var(--green)' }}>{stats.aiSuggested}</div>
-                  <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 2 }}>AI SUGGESTED</div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, marginTop: 8 }}>
+                <div style={{ background: 'var(--bg-elevated)', borderRadius: 8, padding: '12px 16px' }}>
+                  <div style={{ fontSize: 28, fontWeight: 700, fontFamily: 'var(--font-display)', color: 'var(--green)' }}>{stats.aiSuggested}</div>
+                  <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 6, letterSpacing: '0.04em' }}>AI SUGGESTED</div>
                 </div>
-                <div>
-                  <div style={{ fontSize: 26, fontWeight: 700, fontFamily: 'var(--font-display)', color: 'var(--purple)' }}>{stats.manualReplies}</div>
-                  <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 2 }}>MANUAL</div>
+                <div style={{ background: 'var(--bg-elevated)', borderRadius: 8, padding: '12px 16px' }}>
+                  <div style={{ fontSize: 28, fontWeight: 700, fontFamily: 'var(--font-display)', color: 'var(--purple)' }}>{stats.manualReplies}</div>
+                  <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 6, letterSpacing: '0.04em' }}>MANUAL</div>
                 </div>
-                <div>
-                  <div style={{ fontSize: 26, fontWeight: 700, fontFamily: 'var(--font-display)', color: 'var(--silver)' }}>{aiRate}%</div>
-                  <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 2 }}>AI RATE</div>
+                <div style={{ background: 'var(--bg-elevated)', borderRadius: 8, padding: '12px 16px' }}>
+                  <div style={{ fontSize: 28, fontWeight: 700, fontFamily: 'var(--font-display)', color: 'var(--silver)' }}>{aiRate}%</div>
+                  <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 6, letterSpacing: '0.04em' }}>AI RATE</div>
                 </div>
               </div>
             </div>
             <div style={CARD}>
               <div style={LABEL}>Response Performance</div>
-              <div style={{ display: 'flex', gap: 24 }}>
-                <div>
-                  <div style={{ fontSize: 26, fontWeight: 700, fontFamily: 'var(--font-display)', color: 'var(--silver)' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginTop: 8 }}>
+                <div style={{ background: 'var(--bg-elevated)', borderRadius: 8, padding: '12px 16px' }}>
+                  <div style={{ fontSize: 28, fontWeight: 700, fontFamily: 'var(--font-display)', color: 'var(--silver)' }}>
                     {loading ? '—' : formatTime(stats.avgResponseTime)}
                   </div>
-                  <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 2 }}>AVG RESPONSE TIME</div>
+                  <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 6, letterSpacing: '0.04em' }}>AVG RESPONSE TIME</div>
                 </div>
-                <div>
-                  <div style={{ fontSize: 26, fontWeight: 700, fontFamily: 'var(--font-display)', color: 'var(--green)' }}>{stats.totalFans}</div>
-                  <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 2 }}>TOTAL FANS</div>
+                <div style={{ background: 'var(--bg-elevated)', borderRadius: 8, padding: '12px 16px' }}>
+                  <div style={{ fontSize: 28, fontWeight: 700, fontFamily: 'var(--font-display)', color: 'var(--green)' }}>{stats.totalFans}</div>
+                  <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 6, letterSpacing: '0.04em' }}>TOTAL FANS</div>
                 </div>
               </div>
             </div>
