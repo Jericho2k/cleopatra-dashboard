@@ -75,6 +75,12 @@ export default function Page() {
       setConversations(summaries.sort((a, b) =>
         new Date(b.last_message_time).getTime() - new Date(a.last_message_time).getTime()
       ))
+      const openFan = localStorage.getItem('open-fan')
+      if (openFan) {
+        localStorage.removeItem('open-fan')
+        const match = summaries.find((c) => c.fan.display_name === openFan)
+        if (match) setActiveFan(match.fan)
+      }
     }
     load()
   }, [])
