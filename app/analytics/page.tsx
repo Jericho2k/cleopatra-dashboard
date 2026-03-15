@@ -316,8 +316,8 @@ export default function AnalyticsPage() {
             <div style={CARD}>
               <div style={LABEL}>Conversation Stage Distribution</div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 24 }}>
-                <PieChart width={200} height={200}>
-                  <Pie data={stageBreakdown} cx={95} cy={95} innerRadius={55} outerRadius={85} dataKey="value" paddingAngle={3}>
+                <PieChart width={260} height={260}>
+                  <Pie data={stageBreakdown} cx={125} cy={125} innerRadius={70} outerRadius={110} dataKey="value" paddingAngle={3}>
                     {stageBreakdown.map((entry, i) => (
                       <Cell key={i} fill={entry.color} />
                     ))}
