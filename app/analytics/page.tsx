@@ -4,8 +4,6 @@ import React, { useState, useEffect } from 'react'
 import { supabase } from '../../lib/supabase'
 import { LineChart, Line, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts'
 
-const CREATOR_ID = 'cc36c60d-21aa-44fc-b0c4-67cdc7376b2c'
-
 const LABEL = { fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase' as const, letterSpacing: '0.06em', marginBottom: 16 }
 const CARD = { background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: 12, padding: 20 }
 
@@ -31,7 +29,25 @@ export default function AnalyticsPage() {
   const [stageBreakdown, setStageBreakdown] = useState<{ name: string; value: number; color: string }[]>([])
   const [activeFansList, setActiveFansList] = useState<{ display_name: string; count: number }[]>([])
 
+  const [creatorId, setCreatorId] = useState<string>('')
+
   useEffect(() => {
+    supabase.auth.getUser().then(({ data: { user } }) => {
+      if (!user) return
+      supabase
+        .from('chatter_creators')
+        .select('creator_id')
+        .eq('chatter_id', user.id)
+        .limit(1)
+        .single()
+        .then(({ data }) => {
+          if (data) setCreatorId((data as any).creator_id as string)
+        })
+    })
+  }, [])
+
+  useEffect(() => {
+    if (!creatorId) return
     async function load() {
       setLoading(true)
       const now = new Date()
@@ -41,9 +57,9 @@ export default function AnalyticsPage() {
       else if (period === 'month') since = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
 
       const [messagesRes, fansRes, suggestionsRes] = await Promise.all([
-        supabase.from('messages').select('role, was_ai_suggested, sent_at, fan_id').eq('creator_id', CREATOR_ID).gte('sent_at', since.toISOString()).order('sent_at', { ascending: true }),
-        supabase.from('fans').select('id, display_name, total_spent, spend_tier').eq('creator_id', CREATOR_ID),
-        supabase.from('suggestions').select('stage, created_at').eq('creator_id', CREATOR_ID).gte('created_at', since.toISOString()),
+        supabase.from('messages').select('role, was_ai_suggested, sent_at, fan_id').eq('creator_id', creatorId).gte('sent_at', since.toISOString()).order('sent_at', { ascending: true }),
+        supabase.from('fans').select('id, display_name, total_spent, spend_tier').eq('creator_id', creatorId),
+        supabase.from('suggestions').select('stage, created_at').eq('creator_id', creatorId).gte('created_at', since.toISOString()),
       ])
 
       const messages = messagesRes.data ?? []
