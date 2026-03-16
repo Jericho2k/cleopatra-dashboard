@@ -140,8 +140,11 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             <button
               type="button"
               onClick={async () => {
-                const { createClientComponentClient } = await import('@supabase/auth-helpers-nextjs')
-                const supabase = createClientComponentClient()
+                const { createBrowserClient } = await import('@supabase/ssr')
+                const supabase = createBrowserClient(
+                  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+                  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+                )
                 await supabase.auth.signOut()
                 window.location.href = '/login'
               }}
