@@ -1,10 +1,13 @@
 'use client'
 
 import React, { useState, useEffect } from 'react'
+import { usePathname } from 'next/navigation'
 import './globals.css'
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   const [expanded, setExpanded] = useState(false)
+  const pathname = usePathname()
+  const isLoginPage = pathname === '/login'
 
   useEffect(() => {
     const saved = localStorage.getItem('nav-expanded')
@@ -16,6 +19,16 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       localStorage.setItem('nav-expanded', String(!v))
       return !v
     })
+  }
+
+  if (isLoginPage) {
+    return (
+      <html lang="en">
+        <body style={{ margin: 0 }}>
+          {children}
+        </body>
+      </html>
+    )
   }
 
   return (
