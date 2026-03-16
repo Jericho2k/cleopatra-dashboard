@@ -1,13 +1,11 @@
 'use client'
 
-import React, { useState, useEffect, useRef } from 'react'
+import React, { useEffect, useState, useRef } from 'react'
 import { supabase } from '../lib/supabase'
 import type { Fan, Message, ConversationSummary } from '../types'
 import Sidebar from '../components/Sidebar'
 import ConversationView from '../components/ConversationView'
 import FanPanel from '../components/FanPanel'
-
-const CREATOR_ID = 'cc36c60d-21aa-44fc-b0c4-67cdc7376b2c'
 
 function rowToFan(row: Record<string, unknown>): Fan {
   return {
@@ -43,15 +41,35 @@ export default function Page() {
   const [activeFan, setActiveFan] = useState<Fan | null>(null)
   const [messages, setMessages] = useState<Message[]>([])
   const [messagesLoading, setMessagesLoading] = useState(false)
+  const [creatorIds, setCreatorIds] = useState<string[]>([])
+  const [authLoading, setAuthLoading] = useState(true)
   const activeFanRef = useRef<Fan | null>(null)
   useEffect(() => { activeFanRef.current = activeFan }, [activeFan])
 
   useEffect(() => {
+    async function loadCreators() {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser()
+      if (!user) return
+      const { data } = await supabase
+        .from('chatter_creators')
+        .select('creator_id')
+        .eq('chatter_id', user.id)
+      const ids = (data ?? []).map((r) => r.creator_id as string)
+      setCreatorIds(ids)
+      setAuthLoading(false)
+    }
+    loadCreators()
+  }, [])
+
+  useEffect(() => {
+    if (creatorIds.length === 0) return
     async function load() {
       const { data: fansData, error: fansError } = await supabase
         .from('fans')
         .select('*')
-        .eq('creator_id', CREATOR_ID)
+        .eq('creator_id', creatorIds[0])
       if (fansError) return
       const fans = (fansData ?? []).map((row) => rowToFan(row))
       const summaries: ConversationSummary[] = await Promise.all(
@@ -60,7 +78,7 @@ export default function Page() {
             .from('messages')
             .select('*')
             .eq('fan_id', fan.id)
-            .eq('creator_id', CREATOR_ID)
+            .eq('creator_id', creatorIds[0])
             .order('sent_at', { ascending: false })
             .limit(1)
             .maybeSingle()
@@ -85,7 +103,7 @@ export default function Page() {
       }
     }
     load()
-  }, [])
+  }, [creatorIds])
 
   useEffect(() => {
     if (!activeFan) {
@@ -97,7 +115,7 @@ export default function Page() {
       .from('messages')
       .select('*')
       .eq('fan_id', activeFan.id)
-      .eq('creator_id', CREATOR_ID)
+      .eq('creator_id', creatorIds[0])
       .order('sent_at', { ascending: true })
       .limit(40)
       .then(({ data, error }) => {
@@ -115,7 +133,7 @@ export default function Page() {
           event: 'INSERT',
           schema: 'public',
           table: 'messages',
-          filter: `creator_id=eq.${CREATOR_ID}`,
+          filter: `creator_id=eq.${creatorIds[0]}`,
         },
         (payload) => {
           const row = payload.new as Record<string, unknown>
@@ -161,7 +179,7 @@ export default function Page() {
           event: 'INSERT',
           schema: 'public',
           table: 'fans',
-          filter: `creator_id=eq.${CREATOR_ID}`,
+          filter: `creator_id=eq.${creatorIds[0]}`,
         },
         (payload) => {
           const row = payload.new as Record<string, unknown>
@@ -187,7 +205,7 @@ export default function Page() {
           event: 'UPDATE',
           schema: 'public',
           table: 'fans',
-          filter: `creator_id=eq.${CREATOR_ID}`,
+          filter: `creator_id=eq.${creatorIds[0]}`,
         },
         (payload) => {
           const row = payload.new as Record<string, unknown>
@@ -214,7 +232,7 @@ export default function Page() {
     const newMsg: Message = {
       id: `temp-${Date.now()}`,
       fan_id: activeFan.id,
-      creator_id: CREATOR_ID,
+      creator_id: creatorIds[0],
       role: 'creator',
       content,
       sent_at: new Date().toISOString(),
@@ -223,6 +241,12 @@ export default function Page() {
     }
     setMessages((prev) => [...prev, newMsg])
   }
+
+  if (authLoading) return (
+    <div style={{ height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--bg-base)', color: 'var(--text-muted)', fontFamily: 'var(--font-body)' }}>
+      Loading...
+    </div>
+  )
 
   return (
     <div style={{
@@ -242,7 +266,7 @@ export default function Page() {
       <div style={{ height: '100vh', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
         <ConversationView
           fan={activeFan}
-          creatorId={CREATOR_ID}
+          creatorId={creatorIds[0]}
           messages={messages}
           onReplySent={onReplySent}
           messagesLoading={messagesLoading}

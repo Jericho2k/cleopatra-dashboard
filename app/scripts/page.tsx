@@ -3,8 +3,6 @@
 import React, { useState, useEffect } from 'react'
 import { supabase } from '../../lib/supabase'
 
-const CREATOR_ID = 'cc36c60d-21aa-44fc-b0c4-67cdc7376b2c'
-
 export default function ScriptsPage() {
   const [scripts, setScripts] = useState<
     { id: string; title: string; content: string; category: string }[]
@@ -13,23 +11,41 @@ export default function ScriptsPage() {
   const [newContent, setNewContent] = useState('')
   const [newCategory, setNewCategory] = useState('custom')
 
+  const [creatorId, setCreatorId] = useState<string>('')
+
   useEffect(() => {
+    supabase.auth.getUser().then(({ data: { user } }) => {
+      if (!user) return
+      supabase
+        .from('chatter_creators')
+        .select('creator_id')
+        .eq('chatter_id', user.id)
+        .limit(1)
+        .single()
+        .then(({ data }) => {
+          if (data) setCreatorId((data as any).creator_id as string)
+        })
+    })
+  }, [])
+
+  useEffect(() => {
+    if (!creatorId) return
     supabase
       .from('scripts')
       .select('*')
-      .eq('creator_id', CREATOR_ID)
+      .eq('creator_id', creatorId)
       .order('category')
       .then(({ data }) => {
         if (data) setScripts(data)
       })
-  }, [])
+  }, [creatorId])
 
   const addScript = async () => {
     if (!newTitle.trim() || !newContent.trim()) return
     const { data } = await supabase
       .from('scripts')
       .insert({
-        creator_id: CREATOR_ID,
+        creator_id: creatorId,
         title: newTitle.trim(),
         content: newContent.trim(),
         category: newCategory,

@@ -3,31 +3,47 @@
 import React, { useState, useEffect } from 'react'
 import { supabase } from '../../lib/supabase'
 
-const CREATOR_ID = 'cc36c60d-21aa-44fc-b0c4-67cdc7376b2c'
-
 export default function SettingsPage() {
   const [words, setWords] = useState<{ id: string; word: string }[]>([])
   const [newWord, setNewWord] = useState('')
   const [loading, setLoading] = useState(true)
 
+   const [creatorId, setCreatorId] = useState<string>('') 
+
   useEffect(() => {
+    supabase.auth.getUser().then(({ data: { user } }) => {
+      if (!user) return
+      supabase
+        .from('chatter_creators')
+        .select('creator_id')
+        .eq('chatter_id', user.id)
+        .limit(1)
+        .single()
+        .then(({ data }) => {
+          if (data) setCreatorId((data as any).creator_id as string)
+        })
+    })
+  }, [])
+
+  useEffect(() => {
+    if (!creatorId) return
     supabase
       .from('blocked_words')
       .select('id, word')
-      .eq('creator_id', CREATOR_ID)
+      .eq('creator_id', creatorId)
       .order('word')
       .then(({ data }) => {
         if (data) setWords(data)
         setLoading(false)
       })
-  }, [])
+  }, [creatorId])
 
   const addWord = async () => {
     const w = newWord.trim().toLowerCase()
     if (!w || words.some((x) => x.word === w)) return
     const { data } = await supabase
       .from('blocked_words')
-      .insert({ creator_id: CREATOR_ID, word: w })
+      .insert({ creator_id: creatorId, word: w })
       .select('id, word')
       .single()
     if (data) {
