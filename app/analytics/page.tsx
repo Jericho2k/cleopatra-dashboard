@@ -156,7 +156,7 @@ export default function AnalyticsPage() {
       setLoading(false)
     }
     load()
-  }, [period])
+  }, [period, creatorId])
 
   const aiRate =
     stats.aiSuggested + stats.manualReplies > 0
