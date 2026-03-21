@@ -455,7 +455,7 @@ export default function Page() {
           />
         </div>
         <div style={{ height: '100%', overflow: 'hidden' }}>
-          <FanPanel fan={activeTab?.activeFan ?? null} />
+          <FanPanel fan={activeTab?.activeFan ?? null} creatorId={activeTab?.creatorId ?? ''} />
         </div>
       </div>
     </div>
