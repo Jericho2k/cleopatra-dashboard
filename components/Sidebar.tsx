@@ -7,9 +7,12 @@ export interface SidebarProps {
   conversations: ConversationSummary[]
   activeFanId: string | null
   onSelectFan: (fan: Fan) => void
+  creators: {id: string, name: string}[]
+  activeCreatorId: string
+  onCreatorChange: (id: string) => void
 }
 
-export default function Sidebar({ conversations, activeFanId, onSelectFan }: SidebarProps) {
+export default function Sidebar({ conversations, activeFanId, onSelectFan, creators, activeCreatorId, onCreatorChange }: SidebarProps) {
   const [now, setNow] = useState(Date.now())
   const [activeFilter, setActiveFilter] = useState<'all' | 'unread' | 'whale' | 'active' | 'casual' | 'cold'>('all')
 
@@ -37,6 +40,44 @@ export default function Sidebar({ conversations, activeFanId, onSelectFan }: Sid
           overflow: 'hidden',
         }}
       >
+        {creators.length > 1 && (
+          <div style={{
+            padding: '12px 16px',
+            borderBottom: '1px solid var(--border-subtle)',
+            flexShrink: 0,
+          }}>
+            <div style={{
+              fontSize: 10,
+              textTransform: 'uppercase',
+              letterSpacing: '0.06em',
+              color: 'var(--text-muted)',
+              marginBottom: 6,
+            }}>
+              Creator
+            </div>
+            <select
+              value={activeCreatorId}
+              onChange={(e) => onCreatorChange(e.target.value)}
+              style={{
+                width: '100%',
+                background: 'var(--bg-elevated)',
+                border: '1px solid var(--border-subtle)',
+                borderRadius: 6,
+                padding: '6px 10px',
+                color: 'var(--text-primary)',
+                fontSize: 13,
+                cursor: 'pointer',
+                outline: 'none',
+              }}
+            >
+              {creators.map((c) => (
+                <option key={c.id} value={c.id} style={{ background: 'var(--bg-elevated)' }}>
+                  {c.name}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
         <div
           style={{
             padding: '16px 16px 12px',
