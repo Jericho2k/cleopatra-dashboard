@@ -52,6 +52,8 @@ export default function Page() {
   const [activeTabId, setActiveTabId] = useState<string>('')
   const [creators, setCreators] = useState<{id: string, name: string}[]>([])
   const [authLoading, setAuthLoading] = useState(true)
+  const [showNewTabDropdown, setShowNewTabDropdown] = useState(false)
+  const [draggedTabId, setDraggedTabId] = useState<string | null>(null)
 
   const activeTab = tabs.find(t => t.id === activeTabId) ?? null
 
@@ -202,6 +204,12 @@ export default function Page() {
 
   return (
     <div style={{ height: '100vh', display: 'flex', flexDirection: 'column', overflow: 'hidden', background: 'var(--bg-base)' }}>
+      <style>{`
+        @keyframes fadeIn {
+          from { opacity: 0; transform: translateY(-4px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+      `}</style>
       {/* Tabs bar */}
       <div style={{
         display: 'flex',
@@ -212,56 +220,186 @@ export default function Page() {
         height: 40,
         flexShrink: 0,
         gap: 2,
+        position: 'relative',
       }}>
-        {tabs.map(tab => (
-          <div
-            key={tab.id}
-            onClick={() => setActiveTabId(tab.id)}
+        {tabs.map((tab, index) => {
+          const totalUnread = Object.values(tab.unreadCounts).reduce((a, b) => a + b, 0)
+          return (
+            <div
+              key={tab.id}
+              draggable
+              onDragStart={(e) => {
+                setDraggedTabId(tab.id)
+                e.dataTransfer.effectAllowed = 'move'
+              }}
+              onDragOver={(e) => {
+                e.preventDefault()
+                e.dataTransfer.dropEffect = 'move'
+              }}
+              onDrop={(e) => {
+                e.preventDefault()
+                if (!draggedTabId || draggedTabId === tab.id) return
+                setTabs(prev => {
+                  const from = prev.findIndex(t => t.id === draggedTabId)
+                  const to = prev.findIndex(t => t.id === tab.id)
+                  const reordered = [...prev]
+                  const [moved] = reordered.splice(from, 1)
+                  reordered.splice(to, 0, moved)
+                  return reordered
+                })
+                setDraggedTabId(null)
+              }}
+              onDragEnd={() => setDraggedTabId(null)}
+              onClick={() => setActiveTabId(tab.id)}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 6,
+                padding: '0 10px',
+                height: 32,
+                borderRadius: 6,
+                cursor: 'grab',
+                background: tab.id === activeTabId ? 'var(--bg-elevated)' : 'transparent',
+                border: tab.id === activeTabId ? '1px solid var(--border)' : '1px solid transparent',
+                fontSize: 12,
+                color: tab.id === activeTabId ? 'var(--text-primary)' : 'var(--text-muted)',
+                flexShrink: 0,
+                opacity: draggedTabId === tab.id ? 0.4 : 1,
+                transition: 'opacity 0.15s ease, background 0.15s ease',
+                userSelect: 'none',
+              }}
+            >
+              <span>{tab.creatorName}</span>
+              {tab.activeFan && (
+                <span style={{ color: 'var(--text-muted)', fontSize: 11 }}>· {tab.activeFan.display_name}</span>
+              )}
+              {tab.id !== activeTabId && totalUnread > 0 && (
+                <span style={{
+                  background: 'var(--green)',
+                  color: '#000',
+                  borderRadius: 999,
+                  fontSize: 10,
+                  fontWeight: 700,
+                  padding: '1px 5px',
+                  minWidth: 16,
+                  textAlign: 'center',
+                }}>
+                  {totalUnread}
+                </span>
+              )}
+              {tabs.length > 1 && (
+                <span
+                  onClick={(e) => { e.stopPropagation(); closeTab(tab.id) }}
+                  style={{
+                    marginLeft: 2,
+                    color: 'var(--text-faint)',
+                    fontSize: 15,
+                    lineHeight: 1,
+                    cursor: 'pointer',
+                    padding: '0 2px',
+                  }}
+                >
+                  ×
+                </span>
+              )}
+            </div>
+          )
+        })}
+
+        {/* + button with dropdown */}
+        <div style={{ position: 'relative' }}>
+          <button
+            type="button"
+            onClick={() => setShowNewTabDropdown(v => !v)}
             style={{
+              width: 28,
+              height: 28,
+              borderRadius: 6,
+              border: '1px solid var(--border)',
+              background: showNewTabDropdown ? 'var(--bg-elevated)' : 'transparent',
+              color: 'var(--text-muted)',
+              cursor: 'pointer',
+              fontSize: 18,
               display: 'flex',
               alignItems: 'center',
-              gap: 8,
-              padding: '0 12px',
-              height: 32,
-              borderRadius: 6,
-              cursor: 'pointer',
-              background: tab.id === activeTabId ? 'var(--bg-elevated)' : 'transparent',
-              border: tab.id === activeTabId ? '1px solid var(--border)' : '1px solid transparent',
-              fontSize: 12,
-              color: tab.id === activeTabId ? 'var(--text-primary)' : 'var(--text-muted)',
-              flexShrink: 0,
+              justifyContent: 'center',
+              marginLeft: 4,
             }}
           >
-            <span>{tab.creatorName}</span>
-            {tab.activeFan && (
-              <span style={{ color: 'var(--text-muted)', fontSize: 11 }}>· {tab.activeFan.display_name}</span>
-            )}
-            {tabs.length > 1 && (
-              <span
-                onClick={(e) => { e.stopPropagation(); closeTab(tab.id) }}
-                style={{ marginLeft: 4, color: 'var(--text-faint)', fontSize: 14, lineHeight: 1, cursor: 'pointer' }}
-              >
-                ×
-              </span>
-            )}
-          </div>
-        ))}
-        {/* New tab button */}
-        <button
-          type="button"
-          onClick={() => {
-            const unused = creators.find(c => !tabs.some(t => t.creatorId === c.id))
-            if (unused) openTab(unused.id, unused.name)
-          }}
-          style={{
-            width: 28, height: 28, borderRadius: 6, border: '1px solid var(--border)',
-            background: 'transparent', color: 'var(--text-muted)', cursor: 'pointer',
-            fontSize: 18, display: 'flex', alignItems: 'center', justifyContent: 'center',
-            marginLeft: 4,
-          }}
-        >
-          +
-        </button>
+            +
+          </button>
+          {showNewTabDropdown && (
+            <div style={{
+              position: 'absolute',
+              top: 36,
+              left: 0,
+              background: 'var(--bg-elevated)',
+              border: '1px solid var(--border)',
+              borderRadius: 8,
+              padding: 4,
+              zIndex: 100,
+              minWidth: 160,
+              boxShadow: '0 8px 24px rgba(0,0,0,0.4)',
+              animation: 'fadeIn 0.1s ease',
+            }}>
+              {creators.filter(c => !tabs.some(t => t.creatorId === c.id)).length === 0 ? (
+                <div style={{ padding: '8px 12px', fontSize: 12, color: 'var(--text-muted)' }}>
+                  All creators are open
+                </div>
+              ) : creators.filter(c => !tabs.some(t => t.creatorId === c.id)).map(c => (
+                <button
+                  key={c.id}
+                  type="button"
+                  onClick={() => {
+                    openTab(c.id, c.name)
+                    setShowNewTabDropdown(false)
+                  }}
+                  style={{
+                    width: '100%',
+                    textAlign: 'left',
+                    padding: '8px 12px',
+                    background: 'transparent',
+                    border: 'none',
+                    borderRadius: 6,
+                    color: 'var(--text-primary)',
+                    fontSize: 13,
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 8,
+                  }}
+                  onMouseEnter={e => (e.currentTarget.style.background = 'var(--bg-hover)')}
+                  onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+                >
+                  <span style={{
+                    width: 24,
+                    height: 24,
+                    borderRadius: '50%',
+                    background: 'var(--bg-hover)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontSize: 11,
+                    fontWeight: 600,
+                    color: 'var(--silver)',
+                    flexShrink: 0,
+                  }}>
+                    {c.name.slice(0, 1).toUpperCase()}
+                  </span>
+                  {c.name}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Close dropdown on outside click */}
+        {showNewTabDropdown && (
+          <div
+            style={{ position: 'fixed', inset: 0, zIndex: 99 }}
+            onClick={() => setShowNewTabDropdown(false)}
+          />
+        )}
       </div>
 
       {/* Main content */}
