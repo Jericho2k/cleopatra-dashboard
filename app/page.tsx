@@ -16,6 +16,7 @@ type Tab = {
   conversations: ConversationSummary[]
   messagesLoading: boolean
   unreadCounts: Record<string, number>
+  pendingMessage: string
 }
 
 function rowToFan(row: Record<string, unknown>): Fan {
@@ -73,9 +74,15 @@ export default function Page() {
       conversations: [],
       messagesLoading: false,
       unreadCounts: {},
+      pendingMessage: '',
     }
     setTabs(prev => [...prev, newTab])
     setActiveTabId(newTab.id)
+  }
+
+  const insertMessage = (text: string) => {
+    if (!activeTab) return
+    updateTab(activeTab.id, { pendingMessage: text })
   }
 
   const closeTab = (tabId: string) => {
@@ -452,10 +459,16 @@ export default function Page() {
               updateTab(activeTab.id, { messages: [...activeTab.messages, newMsg] })
             }}
             messagesLoading={activeTab?.messagesLoading ?? false}
+            pendingMessage={activeTab?.pendingMessage ?? ''}
+            onClearPending={() => activeTab && updateTab(activeTab.id, { pendingMessage: '' })}
           />
         </div>
         <div style={{ height: '100%', overflow: 'hidden' }}>
-          <FanPanel fan={activeTab?.activeFan ?? null} creatorId={activeTab?.creatorId ?? ''} />
+          <FanPanel
+          fan={activeTab?.activeFan ?? null}
+          creatorId={activeTab?.creatorId ?? ''}
+          onInsertMessage={insertMessage}
+        />
         </div>
       </div>
     </div>
