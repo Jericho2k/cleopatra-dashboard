@@ -11,6 +11,8 @@ export interface ConversationViewProps {
   messages: Message[]
   onReplySent: (content: string) => void
   messagesLoading?: boolean
+  pendingMessage?: string
+  onClearPending?: () => void
 }
 
 function getInitials(displayName: string): string {
@@ -25,6 +27,8 @@ export default function ConversationView({
   messages,
   onReplySent,
   messagesLoading,
+  pendingMessage,
+  onClearPending,
 }: ConversationViewProps) {
   const [suggestions, setSuggestions] = useState<string[]>(['', '', ''])
   const [stage, setStage] = useState<string>('WARMING_UP')
@@ -73,6 +77,13 @@ export default function ConversationView({
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'instant' })
   }, [messages])
+
+  useEffect(() => {
+    if (!pendingMessage) return
+    setInputValue(pendingMessage)
+    textareaRef.current?.focus()
+    onClearPending?.()
+  }, [pendingMessage])
 
   useEffect(() => {
     if (!fan) return

@@ -7,6 +7,7 @@ import { supabase } from '../lib/supabase'
 export interface FanPanelProps {
   fan: Fan | null
   creatorId: string
+  onInsertMessage?: (text: string) => void
 }
 
 type Tab = 'profile' | 'scripts' | 'ppv'
@@ -37,13 +38,14 @@ interface PPVOffer {
   sendId: string | null
 }
 
-export default function FanPanel({ fan, creatorId }: FanPanelProps) {
+export default function FanPanel({ fan, creatorId, onInsertMessage }: FanPanelProps) {
   const [activeTab, setActiveTab] = useState<Tab>('profile')
   const [storylines, setStorylines] = useState<Storyline[]>([])
   const [ppvOffers, setPPVOffers] = useState<PPVOffer[]>([])
   const [details, setDetails] = useState({
     age: '', payday: '', hobbies: '', relationship_status: '',
   })
+  const [expandedStoryline, setExpandedStoryline] = useState<string | null>(null)
 
   useEffect(() => {
     if (fan) {
@@ -336,6 +338,19 @@ export default function FanPanel({ fan, creatorId }: FanPanelProps) {
                     <div>
                       <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-primary)' }}>{sl.name}</div>
                       <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 2, textTransform: 'uppercase' }}>{sl.category}</div>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          setExpandedStoryline(expandedStoryline === sl.id ? null : sl.id)
+                        }}
+                        style={{
+                          background: 'none', border: 'none', color: 'var(--text-muted)',
+                          cursor: 'pointer', fontSize: 11, padding: '2px 6px',
+                        }}
+                      >
+                        {expandedStoryline === sl.id ? '▲ hide' : '▼ all steps'}
+                      </button>
                     </div>
                     <span style={{
                       fontSize: 10, padding: '2px 8px', borderRadius: 999,
@@ -352,6 +367,37 @@ export default function FanPanel({ fan, creatorId }: FanPanelProps) {
                     <div style={{ width: `${progress}%`, height: '100%', background: sl.completed ? 'var(--green)' : 'var(--silver)', borderRadius: 2, transition: 'width 0.3s ease' }} />
                   </div>
 
+                  {/* All steps expanded */}
+                  {expandedStoryline === sl.id && (
+                    <div style={{ marginBottom: 10 }}>
+                      {sl.steps.map((step, i) => (
+                        <div key={step.id} style={{
+                          display: 'flex', gap: 8, marginBottom: 6, alignItems: 'flex-start',
+                          opacity: i < sl.currentStep ? 0.4 : 1,
+                        }}>
+                          <div style={{
+                            width: 20, height: 20, borderRadius: '50%', flexShrink: 0,
+                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                            fontSize: 9, fontWeight: 700,
+                            background: i < sl.currentStep ? 'var(--green)'
+                              : i === sl.currentStep ? 'var(--silver)'
+                              : 'var(--bg-hover)',
+                            color: i <= sl.currentStep ? '#000' : 'var(--text-muted)',
+                          }}>
+                            {i < sl.currentStep ? '✓' : i + 1}
+                          </div>
+                          <div style={{
+                            fontSize: 11, color: i === sl.currentStep ? 'var(--text-primary)' : 'var(--text-secondary)',
+                            lineHeight: 1.4, flex: 1,
+                            fontWeight: i === sl.currentStep ? 600 : 400,
+                          }}>
+                            {step.content}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
                   {/* Current step */}
                   {!sl.completed && currentStepData && (
                     <div style={{ marginBottom: 10 }}>
@@ -366,14 +412,17 @@ export default function FanPanel({ fan, creatorId }: FanPanelProps) {
                     {!sl.completed && (
                       <button
                         type="button"
-                        onClick={() => markStepSent(sl)}
+                        onClick={() => {
+                          if (currentStepData) onInsertMessage?.(currentStepData.content)
+                          markStepSent(sl)
+                        }}
                         style={{
                           flex: 1, padding: '6px 10px', borderRadius: 6,
                           background: 'rgba(200,200,200,0.1)', border: '1px solid var(--silver)',
                           color: 'var(--silver)', fontSize: 11, cursor: 'pointer',
                         }}
                       >
-                        Mark sent →
+                        Send →
                       </button>
                     )}
                     {sl.currentStep > 0 && (
@@ -416,14 +465,17 @@ export default function FanPanel({ fan, creatorId }: FanPanelProps) {
                   {!offer.sent ? (
                     <button
                       type="button"
-                      onClick={() => markPPVSent(offer)}
+                      onClick={() => {
+                        onInsertMessage?.(`${offer.title} — $${offer.price}\n${offer.description}`)
+                        markPPVSent(offer)
+                      }}
                       style={{
                         flex: 1, padding: '5px 10px', borderRadius: 6,
                         background: 'rgba(200,200,200,0.1)', border: '1px solid var(--silver)',
                         color: 'var(--silver)', fontSize: 11, cursor: 'pointer',
                       }}
                     >
-                      Mark sent
+                      Send →
                     </button>
                   ) : (
                     <>
