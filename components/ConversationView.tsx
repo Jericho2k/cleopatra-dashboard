@@ -327,17 +327,36 @@ export default function ConversationView({
               style={{
                 width: '100%',
                 textAlign: 'left',
-                padding: '10px 14px',
-                background: 'var(--bg-elevated)',
+                padding: '6px 10px',
+                background: 'transparent',
                 border: '1px solid var(--border-subtle)',
                 borderRadius: 8,
                 color: loading ? 'var(--text-faint)' : 'var(--text-primary)',
                 fontSize: 14,
                 cursor: loading || !s.trim() ? 'default' : 'pointer',
                 position: 'relative',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 4,
               }}
             >
-              {loading ? '…' : s || '\u00A0'}
+              {loading ? (
+                <span style={{ padding: '4px 4px' }}>…</span>
+              ) : s ? (
+                s.split(' | ').map((part, pi) => (
+                  <span key={pi} style={{
+                    display: 'block',
+                    padding: '5px 10px',
+                    background: 'var(--bg-elevated)',
+                    borderRadius: 6,
+                    lineHeight: 1.4,
+                  }}>
+                    {part}
+                  </span>
+                ))
+              ) : (
+                <span style={{ padding: '5px 10px' }}>{'\u00A0'}</span>
+              )}
               {!loading && s.trim() && (
                 <span
                   style={{
