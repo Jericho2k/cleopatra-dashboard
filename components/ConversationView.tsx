@@ -38,6 +38,7 @@ export default function ConversationView({
   const [scripts, setScripts] = useState<{ id: string; title: string; content: string; category: string }[]>([])
   const [showScripts, setShowScripts] = useState(false)
   const [blockedWords, setBlockedWords] = useState<string[]>([])
+  const [queuedMessages, setQueuedMessages] = useState<string[]>([])
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
@@ -112,16 +113,23 @@ export default function ConversationView({
     return blockedWords.filter((w) => lower.includes(w))
   }
 
-  const handleSuggestionClick = (suggestion: string) => {
-    if (!fan || !suggestion.trim()) return
-    const blocked = getBlockedMatches(suggestion)
-    if (blocked.length > 0) {
-      const confirmed = window.confirm(`⚠️ Suggestion contains blocked word(s): ${blocked.join(', ')}\n\nSend anyway?`)
-      if (!confirmed) return
+  const handleAfterSend = () => {
+    if (queuedMessages.length > 0) {
+      const [next, ...rest] = queuedMessages
+      setInputValue(next)
+      setQueuedMessages(rest)
+      textareaRef.current?.focus()
     }
-    sendReply(fan.id, creatorId, suggestion, true)
-    onReplySent(suggestion)
-    setSuggestions(['', '', ''])
+  }
+
+  const handleSuggestionClick = (suggestion: string) => {
+    if (!suggestion.trim()) return
+    const parts = suggestion.split(' | ').map(p => p.trim()).filter(Boolean)
+    setInputValue(parts[0])
+    if (parts.length > 1) {
+      setQueuedMessages(parts.slice(1))
+    }
+    textareaRef.current?.focus()
   }
 
   const refetchSuggestions = () => {
@@ -147,6 +155,7 @@ export default function ConversationView({
     sendReply(fan.id, creatorId, value, false)
     onReplySent(value)
     setInputValue('')
+    handleAfterSend()
   }
 
   const handleTextareaInput = (e: React.FormEvent<HTMLTextAreaElement>) => {
@@ -476,6 +485,14 @@ export default function ConversationView({
             marginBottom: 12,
           }}
         />
+        {queuedMessages.length > 0 && (
+          <div style={{
+            fontSize: 11, color: 'var(--green)',
+            padding: '2px 8px',
+          }}>
+            + {queuedMessages.length} message{queuedMessages.length > 1 ? 's' : ''} queued
+          </div>
+        )}
         <textarea
           ref={textareaRef}
           value={inputValue}
