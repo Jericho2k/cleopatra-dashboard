@@ -19,6 +19,7 @@ type Tab = {
   pendingMessage: string
 }
 
+//Latest adjustment
 function rowToFan(row: Record<string, unknown>): Fan {
   return {
     id: row.id as string,
