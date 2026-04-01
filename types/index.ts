@@ -22,6 +22,7 @@ export interface Fan {
   payday: string
   hobbies: string
   relationship_status: string
+  ai_summary?: any
 }
 
 export interface Message {
