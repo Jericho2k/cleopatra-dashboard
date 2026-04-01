@@ -46,15 +46,18 @@ export default function FanPanel({ fan, creatorId, onInsertMessage }: FanPanelPr
     age: '', payday: '', hobbies: '', relationship_status: '',
   })
   const [expandedStoryline, setExpandedStoryline] = useState<string | null>(null)
+  const [aiSummary, setAiSummary] = useState<any>(null)
 
   useEffect(() => {
     if (fan) {
+      const summary = (fan as any).ai_summary
       setDetails({
         age: (fan as any).age ?? '',
-        payday: (fan as any).payday ?? '',
-        hobbies: (fan as any).hobbies ?? '',
-        relationship_status: (fan as any).relationship_status ?? '',
+        payday: (fan as any).payday ?? summary?.payday ?? '',
+        hobbies: (fan as any).hobbies ?? summary?.reengagement_triggers ?? '',
+        relationship_status: (fan as any).relationship_status ?? summary?.relationship_status ?? '',
       })
+      setAiSummary(summary ?? null)
     }
   }, [fan?.id])
 
@@ -284,21 +287,21 @@ export default function FanPanel({ fan, creatorId, onInsertMessage }: FanPanelPr
               {fan.notes?.trim() ? fan.notes : 'No notes yet.'}
             </div>
 
-            {(fan as any).ai_summary && (
+            {aiSummary && (
               <div style={{ marginBottom: 20 }}>
                 <div style={LABEL_STYLE}>AI PROFILE</div>
                 <div style={{ ...CARD_STYLE, marginBottom: 10 }}>
                   <div style={{ fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.6, marginBottom: 12 }}>
-                    {(fan as any).ai_summary.summary}
+                    {aiSummary.summary}
                   </div>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
                     {[
-                      { label: 'Emotional type', value: (fan as any).ai_summary.emotional_type },
-                      { label: 'Spending', value: (fan as any).ai_summary.spending_behavior },
-                      { label: 'Location', value: (fan as any).ai_summary.location },
-                      { label: 'Occupation', value: (fan as any).ai_summary.occupation },
-                      { label: 'Payday', value: (fan as any).ai_summary.payday },
-                      { label: 'Relationship', value: (fan as any).ai_summary.relationship_status },
+                      { label: 'Emotional type', value: aiSummary.emotional_type },
+                      { label: 'Spending', value: aiSummary.spending_behavior },
+                      { label: 'Location', value: aiSummary.location },
+                      { label: 'Occupation', value: aiSummary.occupation },
+                      { label: 'Payday', value: aiSummary.payday },
+                      { label: 'Relationship', value: aiSummary.relationship_status },
                     ].filter(item => item.value && item.value !== 'null' && item.value !== 'unknown').map(item => (
                       <div key={item.label} style={{ background: 'var(--bg-hover)', borderRadius: 6, padding: '8px 10px' }}>
                         <div style={{ fontSize: 10, color: 'var(--text-muted)', marginBottom: 2 }}>{item.label.toUpperCase()}</div>
@@ -306,11 +309,11 @@ export default function FanPanel({ fan, creatorId, onInsertMessage }: FanPanelPr
                       </div>
                     ))}
                   </div>
-                  {(fan as any).ai_summary.kinks?.length > 0 && (
+                  {aiSummary.kinks?.length > 0 && (
                     <div style={{ marginTop: 10 }}>
                       <div style={{ fontSize: 10, color: 'var(--text-muted)', marginBottom: 6 }}>KINKS & PREFERENCES</div>
                       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
-                        {(fan as any).ai_summary.kinks.map((kink: string) => (
+                        {aiSummary.kinks.map((kink: string) => (
                           <span key={kink} style={{
                             fontSize: 10, padding: '3px 8px', borderRadius: 999,
                             background: 'rgba(155, 143, 212, 0.15)',
@@ -321,16 +324,16 @@ export default function FanPanel({ fan, creatorId, onInsertMessage }: FanPanelPr
                       </div>
                     </div>
                   )}
-                  {(fan as any).ai_summary.reengagement_triggers && (
+                  {aiSummary.reengagement_triggers && (
                     <div style={{ marginTop: 10, padding: '8px 10px', background: 'rgba(76,175,130,0.08)', borderRadius: 6, border: '1px solid rgba(76,175,130,0.2)' }}>
                       <div style={{ fontSize: 10, color: 'var(--green)', marginBottom: 2 }}>RE-ENGAGEMENT</div>
-                      <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>{(fan as any).ai_summary.reengagement_triggers}</div>
+                      <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>{aiSummary.reengagement_triggers}</div>
                     </div>
                   )}
-                  {(fan as any).ai_summary.risk_signals && (fan as any).ai_summary.risk_signals !== 'null' && (
+                  {aiSummary.risk_signals && aiSummary.risk_signals !== 'null' && (
                     <div style={{ marginTop: 8, padding: '8px 10px', background: 'rgba(255,80,80,0.08)', borderRadius: 6, border: '1px solid rgba(255,80,80,0.2)' }}>
                       <div style={{ fontSize: 10, color: '#ff6b6b', marginBottom: 2 }}>⚠ RISK SIGNALS</div>
-                      <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>{(fan as any).ai_summary.risk_signals}</div>
+                      <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>{aiSummary.risk_signals}</div>
                     </div>
                   )}
                 </div>
