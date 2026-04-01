@@ -32,6 +32,7 @@ function rowToFan(row: Record<string, unknown>): Fan {
     payday: (row.payday as string) ?? '',
     hobbies: (row.hobbies as string) ?? '',
     relationship_status: (row.relationship_status as string) ?? '',
+    ai_summary: row.ai_summary ?? null,
   }
 }
 
