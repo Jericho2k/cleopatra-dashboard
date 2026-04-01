@@ -47,6 +47,7 @@ export default function FanPanel({ fan, creatorId, onInsertMessage }: FanPanelPr
   })
   const [expandedStoryline, setExpandedStoryline] = useState<string | null>(null)
   const [aiSummary, setAiSummary] = useState<any>(null)
+  const [showAiProfile, setShowAiProfile] = useState(false)
 
   useEffect(() => {
     if (fan) {
@@ -289,54 +290,72 @@ export default function FanPanel({ fan, creatorId, onInsertMessage }: FanPanelPr
 
             {aiSummary && (
               <div style={{ marginBottom: 20 }}>
-                <div style={LABEL_STYLE}>AI PROFILE</div>
-                <div style={{ ...CARD_STYLE, marginBottom: 10 }}>
-                  <div style={{ fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.6, marginBottom: 12 }}>
-                    {aiSummary.summary}
-                  </div>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-                    {[
-                      { label: 'Emotional type', value: aiSummary.emotional_type },
-                      { label: 'Spending', value: aiSummary.spending_behavior },
-                      { label: 'Location', value: aiSummary.location },
-                      { label: 'Occupation', value: aiSummary.occupation },
-                      { label: 'Payday', value: aiSummary.payday },
-                      { label: 'Relationship', value: aiSummary.relationship_status },
-                    ].filter(item => item.value && item.value !== 'null' && item.value !== 'unknown').map(item => (
-                      <div key={item.label} style={{ background: 'var(--bg-hover)', borderRadius: 6, padding: '8px 10px' }}>
-                        <div style={{ fontSize: 10, color: 'var(--text-muted)', marginBottom: 2 }}>{item.label.toUpperCase()}</div>
-                        <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>{item.value}</div>
+                <button
+                  type="button"
+                  onClick={() => setShowAiProfile(v => !v)}
+                  style={{
+                    width: '100%', display: 'flex', justifyContent: 'space-between',
+                    alignItems: 'center', background: 'rgba(155,143,212,0.08)',
+                    border: '1px solid rgba(155,143,212,0.25)', borderRadius: 8,
+                    padding: '8px 12px', cursor: 'pointer', marginBottom: showAiProfile ? 8 : 0,
+                  }}
+                >
+                  <span style={{ fontSize: 11, color: 'var(--purple)', fontWeight: 600, letterSpacing: '0.06em' }}>
+                    ✦ AI FAN ANALYSIS
+                  </span>
+                  <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                    {showAiProfile ? '▲ hide' : '▼ show'}
+                  </span>
+                </button>
+                {showAiProfile && (
+                  <div style={{ ...CARD_STYLE, borderColor: 'rgba(155,143,212,0.2)' }}>
+                    <div style={{ fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.6, marginBottom: 12 }}>
+                      {aiSummary.summary}
+                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                      {[
+                        { label: 'Emotional type', value: aiSummary.emotional_type },
+                        { label: 'Spending', value: aiSummary.spending_behavior },
+                        { label: 'Location', value: aiSummary.location },
+                        { label: 'Occupation', value: aiSummary.occupation },
+                        { label: 'Payday', value: aiSummary.payday },
+                        { label: 'Relationship', value: aiSummary.relationship_status },
+                      ].filter(item => item.value && item.value !== 'null' && item.value !== 'unknown').map(item => (
+                        <div key={item.label} style={{ background: 'var(--bg-hover)', borderRadius: 6, padding: '8px 10px' }}>
+                          <div style={{ fontSize: 10, color: 'var(--text-muted)', marginBottom: 2 }}>{item.label.toUpperCase()}</div>
+                          <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>{item.value}</div>
+                        </div>
+                      ))}
+                    </div>
+                    {aiSummary.kinks?.length > 0 && (
+                      <div style={{ marginTop: 10 }}>
+                        <div style={{ fontSize: 10, color: 'var(--text-muted)', marginBottom: 6 }}>KINKS & PREFERENCES</div>
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                          {aiSummary.kinks.map((kink: string) => (
+                            <span key={kink} style={{
+                              fontSize: 10, padding: '3px 8px', borderRadius: 999,
+                              background: 'rgba(155, 143, 212, 0.15)',
+                              color: 'var(--purple)',
+                              border: '1px solid rgba(155, 143, 212, 0.3)',
+                            }}>{kink}</span>
+                          ))}
+                        </div>
                       </div>
-                    ))}
-                  </div>
-                  {aiSummary.kinks?.length > 0 && (
-                    <div style={{ marginTop: 10 }}>
-                      <div style={{ fontSize: 10, color: 'var(--text-muted)', marginBottom: 6 }}>KINKS & PREFERENCES</div>
-                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
-                        {aiSummary.kinks.map((kink: string) => (
-                          <span key={kink} style={{
-                            fontSize: 10, padding: '3px 8px', borderRadius: 999,
-                            background: 'rgba(155, 143, 212, 0.15)',
-                            color: 'var(--purple)',
-                            border: '1px solid rgba(155, 143, 212, 0.3)',
-                          }}>{kink}</span>
-                        ))}
+                    )}
+                    {aiSummary.reengagement_triggers && (
+                      <div style={{ marginTop: 10, padding: '8px 10px', background: 'rgba(76,175,130,0.08)', borderRadius: 6, border: '1px solid rgba(76,175,130,0.2)' }}>
+                        <div style={{ fontSize: 10, color: 'var(--green)', marginBottom: 2 }}>RE-ENGAGEMENT</div>
+                        <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>{aiSummary.reengagement_triggers}</div>
                       </div>
-                    </div>
-                  )}
-                  {aiSummary.reengagement_triggers && (
-                    <div style={{ marginTop: 10, padding: '8px 10px', background: 'rgba(76,175,130,0.08)', borderRadius: 6, border: '1px solid rgba(76,175,130,0.2)' }}>
-                      <div style={{ fontSize: 10, color: 'var(--green)', marginBottom: 2 }}>RE-ENGAGEMENT</div>
-                      <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>{aiSummary.reengagement_triggers}</div>
-                    </div>
-                  )}
-                  {aiSummary.risk_signals && aiSummary.risk_signals !== 'null' && (
-                    <div style={{ marginTop: 8, padding: '8px 10px', background: 'rgba(255,80,80,0.08)', borderRadius: 6, border: '1px solid rgba(255,80,80,0.2)' }}>
-                      <div style={{ fontSize: 10, color: '#ff6b6b', marginBottom: 2 }}>⚠ RISK SIGNALS</div>
-                      <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>{aiSummary.risk_signals}</div>
-                    </div>
-                  )}
-                </div>
+                    )}
+                    {aiSummary.risk_signals && aiSummary.risk_signals !== 'null' && (
+                      <div style={{ marginTop: 8, padding: '8px 10px', background: 'rgba(255,80,80,0.08)', borderRadius: 6, border: '1px solid rgba(255,80,80,0.2)' }}>
+                        <div style={{ fontSize: 10, color: '#ff6b6b', marginBottom: 2 }}>⚠ RISK SIGNALS</div>
+                        <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>{aiSummary.risk_signals}</div>
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             )}
 
