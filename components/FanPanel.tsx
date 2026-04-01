@@ -50,14 +50,14 @@ export default function FanPanel({ fan, creatorId, onInsertMessage }: FanPanelPr
 
   useEffect(() => {
     if (fan) {
-      const summary = (fan as any).ai_summary
+      const summary = fan.ai_summary
+      setAiSummary(summary ?? null)
       setDetails({
         age: (fan as any).age ?? '',
-        payday: (fan as any).payday ?? summary?.payday ?? '',
-        hobbies: (fan as any).hobbies ?? summary?.reengagement_triggers ?? '',
-        relationship_status: (fan as any).relationship_status ?? summary?.relationship_status ?? '',
+        payday: (fan as any).payday || summary?.payday || '',
+        hobbies: (fan as any).hobbies || '',
+        relationship_status: (fan as any).relationship_status || summary?.relationship_status || '',
       })
-      setAiSummary(summary ?? null)
     }
   }, [fan?.id])
 
