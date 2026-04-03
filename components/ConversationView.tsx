@@ -334,7 +334,7 @@ export default function ConversationView({
           background: 'var(--bg-surface)',
         }}
       >
-        <div
+        {!autoMode && <><div
           style={{
             fontSize: 11,
             textTransform: 'uppercase',
@@ -498,6 +498,7 @@ export default function ConversationView({
             })}
           </div>
         )}
+        </>}
 
         <div
           style={{
