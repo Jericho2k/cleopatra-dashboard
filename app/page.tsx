@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
-import type { Fan, Message, ConversationSummary } from '../types'
+import type { Fan, Message, ConversationSummary, FanList } from '../types'
 import Sidebar from '../components/Sidebar'
 import ConversationView from '../components/ConversationView'
 import FanPanel from '../components/FanPanel'
@@ -58,6 +58,8 @@ export default function Page() {
   const [authLoading, setAuthLoading] = useState(true)
   const [showNewTabDropdown, setShowNewTabDropdown] = useState(false)
   const [draggedTabId, setDraggedTabId] = useState<string | null>(null)
+  const [fanLists, setFanLists] = useState<FanList[]>([])
+  const [activeListId, setActiveListId] = useState<string | null>(null)
 
   const activeTab = tabs.find(t => t.id === activeTabId) ?? null
 
@@ -137,11 +139,43 @@ export default function Page() {
         }
         setTabs([newTab])
         setActiveTabId(newTab.id)
+        loadFanLists(first.id)
       }
       setAuthLoading(false)
     }
     loadCreators()
   }, [])
+
+  async function loadFanLists(creatorId: string) {
+    const { data: lists } = await supabase
+      .from('fan_lists')
+      .select('*, fan_list_members(fan_id)')
+      .eq('creator_id', creatorId)
+    setFanLists((lists ?? []).map((l: any) => ({
+      ...l,
+      member_fan_ids: (l.fan_list_members ?? []).map((m: any) => m.fan_id),
+    })))
+  }
+
+  async function createList(name: string, color: string) {
+    if (!activeTab) return
+    const { data } = await supabase.from('fan_lists').insert({
+      creator_id: activeTab.creatorId,
+      name,
+      color,
+      exclude_from_auto: false,
+    }).select().single()
+    if (data) setFanLists(prev => [...prev, { ...data, member_fan_ids: [] }])
+  }
+
+  async function addFanToList(fanId: string, listId: string) {
+    await supabase.from('fan_list_members').upsert({ list_id: listId, fan_id: fanId })
+    setFanLists(prev => prev.map(l =>
+      l.id === listId && !l.member_fan_ids.includes(fanId)
+        ? { ...l, member_fan_ids: [...l.member_fan_ids, fanId] }
+        : l
+    ))
+  }
 
   useEffect(() => {
     if (!activeTab || activeTab.conversations.length > 0) return
@@ -479,7 +513,13 @@ export default function Page() {
                 messages: [],
                 conversations: [],
               })
+              loadFanLists(id)
             }}
+            fanLists={fanLists}
+            activeListId={activeListId}
+            onSelectList={setActiveListId}
+            onCreateList={createList}
+            onAddFanToList={addFanToList}
           />
         </div>
         <div style={{ height: '100%', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>

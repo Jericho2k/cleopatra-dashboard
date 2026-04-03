@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useState, useEffect } from 'react'
-import type { Fan, ConversationSummary } from '../types'
+import type { Fan, ConversationSummary, FanList } from '../types'
 
 export interface SidebarProps {
   conversations: ConversationSummary[]
@@ -10,9 +10,14 @@ export interface SidebarProps {
   creators: {id: string, name: string}[]
   activeCreatorId: string
   onCreatorChange: (id: string) => void
+  fanLists: FanList[]
+  activeListId: string | null
+  onSelectList: (id: string | null) => void
+  onCreateList: (name: string, color: string) => void
+  onAddFanToList: (fanId: string, listId: string) => void
 }
 
-export default function Sidebar({ conversations, activeFanId, onSelectFan, creators, activeCreatorId, onCreatorChange }: SidebarProps) {
+export default function Sidebar({ conversations, activeFanId, onSelectFan, creators, activeCreatorId, onCreatorChange, fanLists, activeListId, onSelectList, onCreateList, onAddFanToList }: SidebarProps) {
   const [now, setNow] = useState(Date.now())
   const [activeFilter, setActiveFilter] = useState<'all' | 'unread' | 'whale' | 'active' | 'casual' | 'cold'>('all')
 
@@ -130,6 +135,51 @@ export default function Sidebar({ conversations, activeFanId, onSelectFan, creat
           </div>
         </div>
 
+        <div style={{ padding: '8px 12px 0', display: 'flex', gap: 6, flexWrap: 'wrap', flexShrink: 0 }}>
+          <button
+            type="button"
+            onClick={() => onSelectList(null)}
+            style={{
+              fontSize: 10, padding: '3px 10px', borderRadius: 999, cursor: 'pointer',
+              background: activeListId === null ? 'var(--silver)' : 'transparent',
+              color: activeListId === null ? '#000' : 'var(--text-muted)',
+              border: '1px solid var(--border)',
+            }}
+          >
+            All
+          </button>
+          {fanLists.map(list => (
+            <button
+              key={list.id}
+              type="button"
+              onClick={() => onSelectList(activeListId === list.id ? null : list.id)}
+              style={{
+                fontSize: 10, padding: '3px 10px', borderRadius: 999, cursor: 'pointer',
+                background: activeListId === list.id ? list.color : 'transparent',
+                color: activeListId === list.id ? '#000' : 'var(--text-muted)',
+                border: `1px solid ${list.color}`,
+              }}
+            >
+              {list.name}
+            </button>
+          ))}
+          <button
+            type="button"
+            onClick={() => {
+              const name = prompt('List name:')
+              if (!name) return
+              onCreateList(name, '#' + Math.floor(Math.random() * 16777215).toString(16).padStart(6, '0'))
+            }}
+            style={{
+              fontSize: 10, padding: '3px 8px', borderRadius: 999, cursor: 'pointer',
+              background: 'transparent', border: '1px dashed var(--border)',
+              color: 'var(--text-muted)',
+            }}
+          >
+            + New list
+          </button>
+        </div>
+
         <div style={{ padding: '8px 8px 0', flexShrink: 0 }}>
           <div
             style={{
@@ -173,6 +223,7 @@ export default function Sidebar({ conversations, activeFanId, onSelectFan, creat
         >
           {(() => {
             const filtered = conversations.filter((c) => {
+              if (activeListId && !fanLists.find(l => l.id === activeListId)?.member_fan_ids.includes(c.fan.id)) return false
               if (activeFilter === 'unread') return c.unread
               if (activeFilter === 'all') return true
               return c.fan.spend_tier === activeFilter
@@ -204,6 +255,15 @@ export default function Sidebar({ conversations, activeFanId, onSelectFan, creat
                 <button
                   type="button"
                   onClick={() => onSelectFan(c.fan)}
+                  onContextMenu={(e) => {
+                    e.preventDefault()
+                    if (fanLists.length === 0) return
+                    const input = prompt(`Add to list:\n${fanLists.map((l, i) => `${i + 1}. ${l.name}`).join('\n')}\nEnter number:`)
+                    const idx = parseInt(input ?? '') - 1
+                    if (idx >= 0 && fanLists[idx]) {
+                      onAddFanToList(c.fan.id, fanLists[idx].id)
+                    }
+                  }}
                   style={{
                     width: '100%',
                     textAlign: 'left',
