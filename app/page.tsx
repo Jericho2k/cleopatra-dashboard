@@ -157,15 +157,26 @@ export default function Page() {
     })))
   }
 
-  async function createList(name: string, color: string) {
+  async function createList(name: string, color: string, excludeFromAuto: boolean) {
     if (!activeTab) return
     const { data } = await supabase.from('fan_lists').insert({
       creator_id: activeTab.creatorId,
       name,
       color,
-      exclude_from_auto: false,
+      exclude_from_auto: excludeFromAuto,
     }).select().single()
     if (data) setFanLists(prev => [...prev, { ...data, member_fan_ids: [] }])
+  }
+
+  async function updateList(listId: string, name: string, color: string, excludeFromAuto: boolean) {
+    await supabase.from('fan_lists').update({ name, color, exclude_from_auto: excludeFromAuto }).eq('id', listId)
+    setFanLists(prev => prev.map(l => l.id === listId ? { ...l, name, color, exclude_from_auto: excludeFromAuto } : l))
+  }
+
+  async function deleteList(listId: string) {
+    await supabase.from('fan_lists').delete().eq('id', listId)
+    setFanLists(prev => prev.filter(l => l.id !== listId))
+    if (activeListId === listId) setActiveListId(null)
   }
 
   async function addFanToList(fanId: string, listId: string) {
@@ -174,6 +185,13 @@ export default function Page() {
       l.id === listId && !l.member_fan_ids.includes(fanId)
         ? { ...l, member_fan_ids: [...l.member_fan_ids, fanId] }
         : l
+    ))
+  }
+
+  async function removeFanFromList(fanId: string, listId: string) {
+    await supabase.from('fan_list_members').delete().eq('fan_id', fanId).eq('list_id', listId)
+    setFanLists(prev => prev.map(l =>
+      l.id === listId ? { ...l, member_fan_ids: l.member_fan_ids.filter(id => id !== fanId) } : l
     ))
   }
 
@@ -519,7 +537,10 @@ export default function Page() {
             activeListId={activeListId}
             onSelectList={setActiveListId}
             onCreateList={createList}
+            onUpdateList={updateList}
+            onDeleteList={deleteList}
             onAddFanToList={addFanToList}
+            onRemoveFanFromList={removeFanFromList}
           />
         </div>
         <div style={{ height: '100%', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
