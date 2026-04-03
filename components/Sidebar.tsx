@@ -146,6 +146,45 @@ export default function Sidebar({
               </div>
             </div>
 
+            {listModal.mode === 'edit' && (
+              <div style={{ marginBottom: 16 }}>
+                <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 8 }}>FANS IN THIS LIST</div>
+                <div style={{ maxHeight: 200, overflow: 'auto', border: '1px solid var(--border)', borderRadius: 8 }}>
+                  {conversations.map(conv => {
+                    const list = fanLists.find(l => l.id === listModal?.listId)
+                    const isMember = list?.member_fan_ids.includes(conv.fan.id) ?? false
+                    return (
+                      <div
+                        key={conv.fan.id}
+                        onClick={() => isMember
+                          ? onRemoveFanFromList(conv.fan.id, listModal!.listId!)
+                          : onAddFanToList(conv.fan.id, listModal!.listId!)
+                        }
+                        style={{
+                          display: 'flex', alignItems: 'center', gap: 10,
+                          padding: '8px 12px', cursor: 'pointer',
+                          borderBottom: '1px solid var(--border-subtle)',
+                        }}
+                        onMouseEnter={e => (e.currentTarget.style.background = 'var(--bg-hover)')}
+                        onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+                      >
+                        <div style={{
+                          width: 16, height: 16, borderRadius: 4, flexShrink: 0,
+                          border: `2px solid ${isMember ? (list?.color ?? 'var(--border)') : 'var(--border)'}`,
+                          background: isMember ? (list?.color ?? 'transparent') : 'transparent',
+                          display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        }}>
+                          {isMember && <span style={{ fontSize: 9, color: '#000', fontWeight: 700 }}>✓</span>}
+                        </div>
+                        <span style={{ fontSize: 12, flex: 1, color: 'var(--text-primary)' }}>{conv.fan.display_name}</span>
+                        <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>${conv.fan.total_spent}</span>
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
+
             <div style={{ display: 'flex', gap: 8 }}>
               {listModal.mode === 'edit' && (
                 <button
@@ -334,7 +373,7 @@ export default function Sidebar({
               color: 'var(--text-muted)',
             }}
           >
-            ⚙ lists
+            Edit Lists
           </button>
         </div>
 
@@ -358,17 +397,32 @@ export default function Sidebar({
             >
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
                 <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-primary)' }}>Manage Lists</div>
-                <button
-                  type="button"
-                  onClick={() => setListModal({ mode: 'create', name: '', color: LIST_COLORS[0], excludeFromAuto: false })}
-                  style={{
-                    fontSize: 11, padding: '5px 12px', borderRadius: 6, cursor: 'pointer',
-                    background: 'var(--bg-hover)', border: '1px solid var(--border)',
-                    color: 'var(--text-primary)',
-                  }}
-                >
-                  + New List
-                </button>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowListsPanel(false)
+                      setListModal({ mode: 'create', name: '', color: '#9b8fd4', excludeFromAuto: false })
+                    }}
+                    style={{
+                      fontSize: 11, padding: '5px 12px', borderRadius: 6, cursor: 'pointer',
+                      background: 'var(--bg-hover)', border: '1px solid var(--border)',
+                      color: 'var(--text-primary)',
+                    }}
+                  >
+                    + New List
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setShowListsPanel(false)}
+                    style={{
+                      background: 'none', border: 'none', cursor: 'pointer',
+                      color: 'var(--text-muted)', fontSize: 18, lineHeight: 1, padding: '0 4px',
+                    }}
+                  >
+                    ×
+                  </button>
+                </div>
               </div>
 
               {fanLists.length === 0 ? (
@@ -376,74 +430,36 @@ export default function Sidebar({
                   No lists yet. Create one above.
                 </div>
               ) : fanLists.map(list => (
-                <div key={list.id} style={{
-                  border: '1px solid var(--border)', borderRadius: 10,
-                  marginBottom: 12, overflow: 'hidden',
-                }}>
-                  <div style={{
+                <div
+                  key={list.id}
+                  onClick={() => {
+                    setShowListsPanel(false)
+                    setListModal({
+                      mode: 'edit', listId: list.id,
+                      name: list.name, color: list.color,
+                      excludeFromAuto: list.exclude_from_auto,
+                    })
+                  }}
+                  style={{
                     display: 'flex', alignItems: 'center', gap: 10,
-                    padding: '10px 14px', background: 'var(--bg-surface)',
-                    borderBottom: '1px solid var(--border)',
-                  }}>
-                    <div style={{ width: 10, height: 10, borderRadius: '50%', background: list.color, flexShrink: 0 }} />
-                    <div style={{ flex: 1, fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>{list.name}</div>
-                    {list.exclude_from_auto && (
-                      <span style={{
-                        fontSize: 9, padding: '2px 6px', borderRadius: 999,
-                        background: 'rgba(255,80,80,0.1)', color: '#ff6b6b',
-                        border: '1px solid rgba(255,80,80,0.2)',
-                      }}>AUTO EXCLUDED</span>
-                    )}
-                    <button
-                      type="button"
-                      onClick={() => setListModal({
-                        mode: 'edit', listId: list.id,
-                        name: list.name, color: list.color,
-                        excludeFromAuto: list.exclude_from_auto,
-                      })}
-                      style={{
-                        background: 'none', border: 'none', cursor: 'pointer',
-                        color: 'var(--text-muted)', fontSize: 11, padding: '2px 6px',
-                      }}
-                    >
-                      Edit
-                    </button>
-                  </div>
-
-                  <div style={{ padding: '8px 14px', maxHeight: 200, overflow: 'auto' }}>
-                    {conversations.length === 0 ? (
-                      <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>No fans available</div>
-                    ) : conversations.map(conv => {
-                      const isMember = list.member_fan_ids.includes(conv.fan.id)
-                      return (
-                        <div
-                          key={conv.fan.id}
-                          onClick={() => isMember
-                            ? onRemoveFanFromList(conv.fan.id, list.id)
-                            : onAddFanToList(conv.fan.id, list.id)
-                          }
-                          style={{
-                            display: 'flex', alignItems: 'center', gap: 10,
-                            padding: '6px 0', cursor: 'pointer',
-                            borderBottom: '1px solid var(--border-subtle)',
-                          }}
-                        >
-                          <div style={{
-                            width: 16, height: 16, borderRadius: 4, flexShrink: 0,
-                            border: `2px solid ${isMember ? list.color : 'var(--border)'}`,
-                            background: isMember ? list.color : 'transparent',
-                            display: 'flex', alignItems: 'center', justifyContent: 'center',
-                          }}>
-                            {isMember && <span style={{ fontSize: 9, color: '#000', fontWeight: 700 }}>✓</span>}
-                          </div>
-                          <span style={{ fontSize: 12, color: 'var(--text-primary)' }}>{conv.fan.display_name}</span>
-                          <span style={{ fontSize: 10, color: 'var(--text-muted)', marginLeft: 'auto' }}>
-                            ${conv.fan.total_spent}
-                          </span>
-                        </div>
-                      )
-                    })}
-                  </div>
+                    padding: '12px 14px', background: 'var(--bg-surface)',
+                    border: '1px solid var(--border)', borderRadius: 10,
+                    marginBottom: 8, cursor: 'pointer',
+                  }}
+                >
+                  <div style={{ width: 10, height: 10, borderRadius: '50%', background: list.color, flexShrink: 0 }} />
+                  <div style={{ flex: 1, fontSize: 13, color: 'var(--text-primary)' }}>{list.name}</div>
+                  <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                    {list.member_fan_ids.length} fans
+                  </span>
+                  {list.exclude_from_auto && (
+                    <span style={{
+                      fontSize: 9, padding: '2px 6px', borderRadius: 999,
+                      background: 'rgba(255,80,80,0.1)', color: '#ff6b6b',
+                      border: '1px solid rgba(255,80,80,0.2)',
+                    }}>AUTO EXCLUDED</span>
+                  )}
+                  <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>→</span>
                 </div>
               ))}
             </div>
