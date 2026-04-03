@@ -113,14 +113,31 @@ export default function Page() {
       if (!user) return
       const { data } = await supabase
         .from('chatter_creators')
-        .select('creator_id, creators(id, platform_username)')
+        .select('creator_id, creators(id, platform_username, auto_mode)')
         .eq('chatter_id', user.id)
       const list = (data ?? []).map((r: any) => ({
         id: r.creator_id,
         name: r.creators?.platform_username ?? r.creator_id,
+        autoMode: r.creators?.auto_mode ?? false,
       }))
-      setCreators(list)
-      if (list.length > 0) openTab(list[0].id, list[0].name)
+      setCreators(list.map(({ id, name }) => ({ id, name })))
+      if (list.length > 0) {
+        const first = list[0]
+        const newTab: Tab = {
+          id: `tab-${Date.now()}`,
+          creatorId: first.id,
+          creatorName: first.name,
+          activeFan: null,
+          messages: [],
+          conversations: [],
+          messagesLoading: false,
+          unreadCounts: {},
+          pendingMessage: '',
+          autoMode: first.autoMode,
+        }
+        setTabs([newTab])
+        setActiveTabId(newTab.id)
+      }
       setAuthLoading(false)
     }
     loadCreators()
