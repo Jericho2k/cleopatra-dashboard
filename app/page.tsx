@@ -17,6 +17,7 @@ type Tab = {
   messagesLoading: boolean
   unreadCounts: Record<string, number>
   pendingMessage: string
+  autoMode: boolean
 }
 
 //Latest adjustment
@@ -77,6 +78,7 @@ export default function Page() {
       messagesLoading: false,
       unreadCounts: {},
       pendingMessage: '',
+      autoMode: false,
     }
     setTabs(prev => [...prev, newTab])
     setActiveTabId(newTab.id)
@@ -85,6 +87,14 @@ export default function Page() {
   const insertMessage = (text: string) => {
     if (!activeTab) return
     updateTab(activeTab.id, { pendingMessage: text })
+  }
+
+  const toggleAutoMode = async (tabId: string) => {
+    const tab = tabs.find(t => t.id === tabId)
+    if (!tab) return
+    const next = !tab.autoMode
+    updateTab(tabId, { autoMode: next })
+    await supabase.from('creators').update({ auto_mode: next }).eq('id', tab.creatorId)
   }
 
   const closeTab = (tabId: string) => {
@@ -218,6 +228,10 @@ export default function Page() {
           from { opacity: 0; transform: translateY(-4px); }
           to { opacity: 1; transform: translateY(0); }
         }
+        @keyframes pulse {
+          0%, 100% { opacity: 1; }
+          50% { opacity: 0.4; }
+        }
       `}</style>
       {/* Tabs bar */}
       <div style={{
@@ -279,6 +293,17 @@ export default function Page() {
               }}
             >
               <span>{tab.creatorName}</span>
+              {tab.autoMode && (
+                <span style={{
+                  fontSize: 9, padding: '2px 6px', borderRadius: 999,
+                  background: 'rgba(76,175,130,0.2)', color: 'var(--green)',
+                  border: '1px solid rgba(76,175,130,0.4)',
+                  animation: 'pulse 2s infinite',
+                  letterSpacing: '0.05em',
+                }}>
+                  ● AUTO
+                </span>
+              )}
               {tab.activeFan && (
                 <span style={{ color: 'var(--text-muted)', fontSize: 11 }}>· {tab.activeFan.display_name}</span>
               )}
@@ -463,6 +488,8 @@ export default function Page() {
             messagesLoading={activeTab?.messagesLoading ?? false}
             pendingMessage={activeTab?.pendingMessage ?? ''}
             onClearPending={() => activeTab && updateTab(activeTab.id, { pendingMessage: '' })}
+            autoMode={activeTab?.autoMode ?? false}
+            onToggleAutoMode={() => activeTab && toggleAutoMode(activeTab.id)}
           />
         </div>
         <div style={{ height: '100%', overflow: 'hidden' }}>
