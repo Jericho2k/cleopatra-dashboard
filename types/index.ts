@@ -47,6 +47,15 @@ export interface SuggestionResponse {
   suggestions: string[]
 }
 
+export interface FanList {
+  id: string
+  creator_id: string
+  name: string
+  color: string
+  exclude_from_auto: boolean
+  member_fan_ids: string[]
+}
+
 export interface ConversationSummary {
   fan: Fan
   last_message: string
