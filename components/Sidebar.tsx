@@ -40,6 +40,7 @@ export default function Sidebar({
   const [now, setNow] = useState(Date.now())
   const [activeFilter, setActiveFilter] = useState<'all' | 'unread' | 'whale' | 'active' | 'casual' | 'cold'>('all')
   const [listModal, setListModal] = useState<ListModal | null>(null)
+  const [showListsPanel, setShowListsPanel] = useState(false)
   const [hoveredFanId, setHoveredFanId] = useState<string | null>(null)
   const [listDropdownFanId, setListDropdownFanId] = useState<string | null>(null)
 
@@ -296,7 +297,7 @@ export default function Sidebar({
         </div>
 
         {/* Lists bar */}
-        <div style={{ padding: '8px 12px 0', display: 'flex', gap: 6, flexWrap: 'wrap', flexShrink: 0 }}>
+        <div style={{ padding: '8px 12px 0', display: 'flex', gap: 6, flexWrap: 'wrap', flexShrink: 0, alignItems: 'center' }}>
           <button
             type="button"
             onClick={() => onSelectList(null)}
@@ -310,53 +311,144 @@ export default function Sidebar({
             All
           </button>
           {fanLists.map(list => (
-            <div key={list.id} style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-              <button
-                type="button"
-                onClick={() => onSelectList(activeListId === list.id ? null : list.id)}
-                style={{
-                  fontSize: 10, padding: '3px 10px', borderRadius: 999, cursor: 'pointer',
-                  background: activeListId === list.id ? list.color : 'transparent',
-                  color: activeListId === list.id ? '#000' : 'var(--text-muted)',
-                  border: `1px solid ${list.color}`,
-                }}
-              >
-                {list.name}
-              </button>
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation()
-                  setListModal({
-                    mode: 'edit',
-                    listId: list.id,
-                    name: list.name,
-                    color: list.color,
-                    excludeFromAuto: list.exclude_from_auto,
-                  })
-                }}
-                style={{
-                  background: 'none', border: 'none', cursor: 'pointer',
-                  color: 'var(--text-muted)', fontSize: 12, padding: '0 2px',
-                  lineHeight: 1,
-                }}
-              >
-                ⋯
-              </button>
-            </div>
+            <button
+              key={list.id}
+              type="button"
+              onClick={() => onSelectList(activeListId === list.id ? null : list.id)}
+              style={{
+                fontSize: 10, padding: '3px 10px', borderRadius: 999, cursor: 'pointer',
+                background: activeListId === list.id ? list.color : 'transparent',
+                color: activeListId === list.id ? '#000' : 'var(--text-muted)',
+                border: `1px solid ${list.color}`,
+              }}
+            >
+              {list.name}
+            </button>
           ))}
           <button
             type="button"
-            onClick={() => setListModal({ mode: 'create', name: '', color: LIST_COLORS[0], excludeFromAuto: false })}
+            onClick={() => setShowListsPanel(true)}
             style={{
               fontSize: 10, padding: '3px 8px', borderRadius: 999, cursor: 'pointer',
-              background: 'transparent', border: '1px dashed var(--border)',
+              background: 'transparent', border: '1px solid var(--border)',
               color: 'var(--text-muted)',
             }}
           >
-            + New list
+            ⚙ lists
           </button>
         </div>
+
+        {/* Manage Lists panel */}
+        {showListsPanel && (
+          <div
+            style={{
+              position: 'fixed', inset: 0, zIndex: 200,
+              background: 'rgba(0,0,0,0.6)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+            }}
+            onClick={() => setShowListsPanel(false)}
+          >
+            <div
+              onClick={e => e.stopPropagation()}
+              style={{
+                background: 'var(--bg-elevated)', border: '1px solid var(--border)',
+                borderRadius: 12, padding: 24, width: 420, maxHeight: '80vh',
+                overflow: 'auto',
+              }}
+            >
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+                <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-primary)' }}>Manage Lists</div>
+                <button
+                  type="button"
+                  onClick={() => setListModal({ mode: 'create', name: '', color: LIST_COLORS[0], excludeFromAuto: false })}
+                  style={{
+                    fontSize: 11, padding: '5px 12px', borderRadius: 6, cursor: 'pointer',
+                    background: 'var(--bg-hover)', border: '1px solid var(--border)',
+                    color: 'var(--text-primary)',
+                  }}
+                >
+                  + New List
+                </button>
+              </div>
+
+              {fanLists.length === 0 ? (
+                <div style={{ color: 'var(--text-muted)', fontSize: 13, textAlign: 'center', padding: 20 }}>
+                  No lists yet. Create one above.
+                </div>
+              ) : fanLists.map(list => (
+                <div key={list.id} style={{
+                  border: '1px solid var(--border)', borderRadius: 10,
+                  marginBottom: 12, overflow: 'hidden',
+                }}>
+                  <div style={{
+                    display: 'flex', alignItems: 'center', gap: 10,
+                    padding: '10px 14px', background: 'var(--bg-surface)',
+                    borderBottom: '1px solid var(--border)',
+                  }}>
+                    <div style={{ width: 10, height: 10, borderRadius: '50%', background: list.color, flexShrink: 0 }} />
+                    <div style={{ flex: 1, fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>{list.name}</div>
+                    {list.exclude_from_auto && (
+                      <span style={{
+                        fontSize: 9, padding: '2px 6px', borderRadius: 999,
+                        background: 'rgba(255,80,80,0.1)', color: '#ff6b6b',
+                        border: '1px solid rgba(255,80,80,0.2)',
+                      }}>AUTO EXCLUDED</span>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => setListModal({
+                        mode: 'edit', listId: list.id,
+                        name: list.name, color: list.color,
+                        excludeFromAuto: list.exclude_from_auto,
+                      })}
+                      style={{
+                        background: 'none', border: 'none', cursor: 'pointer',
+                        color: 'var(--text-muted)', fontSize: 11, padding: '2px 6px',
+                      }}
+                    >
+                      Edit
+                    </button>
+                  </div>
+
+                  <div style={{ padding: '8px 14px', maxHeight: 200, overflow: 'auto' }}>
+                    {conversations.length === 0 ? (
+                      <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>No fans available</div>
+                    ) : conversations.map(conv => {
+                      const isMember = list.member_fan_ids.includes(conv.fan.id)
+                      return (
+                        <div
+                          key={conv.fan.id}
+                          onClick={() => isMember
+                            ? onRemoveFanFromList(conv.fan.id, list.id)
+                            : onAddFanToList(conv.fan.id, list.id)
+                          }
+                          style={{
+                            display: 'flex', alignItems: 'center', gap: 10,
+                            padding: '6px 0', cursor: 'pointer',
+                            borderBottom: '1px solid var(--border-subtle)',
+                          }}
+                        >
+                          <div style={{
+                            width: 16, height: 16, borderRadius: 4, flexShrink: 0,
+                            border: `2px solid ${isMember ? list.color : 'var(--border)'}`,
+                            background: isMember ? list.color : 'transparent',
+                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          }}>
+                            {isMember && <span style={{ fontSize: 9, color: '#000', fontWeight: 700 }}>✓</span>}
+                          </div>
+                          <span style={{ fontSize: 12, color: 'var(--text-primary)' }}>{conv.fan.display_name}</span>
+                          <span style={{ fontSize: 10, color: 'var(--text-muted)', marginLeft: 'auto' }}>
+                            ${conv.fan.total_spent}
+                          </span>
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         <div style={{ padding: '8px 8px 0', flexShrink: 0 }}>
           <div
