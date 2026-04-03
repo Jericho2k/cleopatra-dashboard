@@ -189,7 +189,6 @@ export default function Page() {
       }, (payload) => {
         const row = payload.new as Record<string, unknown>
         const msg = rowToMessage(row)
-        if (msg.role === 'creator') return
         setTabs(prev => prev.map(tab => {
           if (tab.creatorId !== msg.creator_id) return tab
           const isActiveTab = tab.id === activeTabId
