@@ -265,9 +265,14 @@ export default function Page() {
           return {
             ...tab,
             messages: isActiveTab && isActiveFan
-              ? tab.messages.some(m => m.id === msg.id)
-                ? tab.messages
-                : [...tab.messages, msg]
+              ? (() => {
+                  const alreadyExists = tab.messages.some(m => m.id === msg.id ||
+                    (m.content === msg.content && m.role === msg.role &&
+                     Math.abs(new Date(m.sent_at).getTime() - new Date(msg.sent_at).getTime()) < 5000)
+                  )
+                  if (alreadyExists) return tab.messages
+                  return [...tab.messages, msg]
+                })()
               : tab.messages,
             conversations: tab.conversations
               .map(c => c.fan.id === msg.fan_id
@@ -551,7 +556,7 @@ export default function Page() {
             onReplySent={(content) => {
               if (!activeTab?.activeFan) return
               const newMsg: Message = {
-                id: `temp-${Date.now()}`,
+                id: `temp-${Date.now()}-${content.slice(0, 10)}`,
                 fan_id: activeTab.activeFan.id,
                 creator_id: activeTab.creatorId,
                 role: 'creator',
