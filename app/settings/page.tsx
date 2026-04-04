@@ -7,8 +7,17 @@ export default function SettingsPage() {
   const [words, setWords] = useState<{ id: string; word: string }[]>([])
   const [newWord, setNewWord] = useState('')
   const [loading, setLoading] = useState(true)
-
-   const [creatorId, setCreatorId] = useState<string>('') 
+  const [creatorId, setCreatorId] = useState<string>('')
+  const [persona, setPersona] = useState({
+    character: '',
+    communication_style: '',
+    example_phrases: '',
+    upsell_style: '',
+    hard_limits: '',
+    emoji_style: '',
+  })
+  const [personaSaving, setPersonaSaving] = useState(false)
+  const [personaSaved, setPersonaSaved] = useState(false)
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data: { user } }) => {
@@ -36,7 +45,26 @@ export default function SettingsPage() {
         if (data) setWords(data)
         setLoading(false)
       })
+    supabase
+      .from('creators')
+      .select('persona')
+      .eq('id', creatorId)
+      .single()
+      .then(({ data }) => {
+        if (data?.persona) {
+          setPersona(prev => ({ ...prev, ...data.persona }))
+        }
+      })
   }, [creatorId])
+
+  const savePersona = async () => {
+    if (!creatorId) return
+    setPersonaSaving(true)
+    await supabase.from('creators').update({ persona }).eq('id', creatorId)
+    setPersonaSaving(false)
+    setPersonaSaved(true)
+    setTimeout(() => setPersonaSaved(false), 2000)
+  }
 
   const addWord = async () => {
     const w = newWord.trim().toLowerCase()
@@ -86,6 +114,69 @@ export default function SettingsPage() {
           <div style={{ fontSize: 13, color: 'var(--text-muted)' }}>
             Manage your workspace preferences
           </div>
+        </div>
+
+        {/* Creator Persona section */}
+        <div
+          style={{
+            background: 'var(--bg-surface)',
+            border: '1px solid var(--border)',
+            borderRadius: 12,
+            padding: 24,
+            marginBottom: 24,
+          }}
+        >
+          <div style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--text-muted)', marginBottom: 4 }}>
+            Creator Persona
+          </div>
+          <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 20 }}>
+            Define how this creator communicates. Used by the AI to generate on-brand replies.
+          </div>
+
+          {([
+            { key: 'character', label: 'Character', placeholder: 'Who is this creator in 2-3 sentences' },
+            { key: 'communication_style', label: 'Communication Style', placeholder: 'How do they text' },
+            { key: 'example_phrases', label: 'Example Phrases', placeholder: '5 things they actually say' },
+            { key: 'upsell_style', label: 'Upsell Style', placeholder: 'How do they push paid content' },
+            { key: 'hard_limits', label: 'Hard Limits', placeholder: 'What they never say/do' },
+            { key: 'emoji_style', label: 'Emoji Style', placeholder: 'How they use emojis' },
+          ] as const).map(({ key, label, placeholder }) => (
+            <div key={key} style={{ marginBottom: 16 }}>
+              <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                {label}
+              </div>
+              <textarea
+                value={persona[key]}
+                onChange={e => setPersona(prev => ({ ...prev, [key]: e.target.value }))}
+                placeholder={placeholder}
+                rows={2}
+                style={{
+                  width: '100%', background: 'var(--bg-elevated)',
+                  border: '1px solid var(--border-subtle)', borderRadius: 6,
+                  padding: '8px 12px', color: 'var(--text-primary)',
+                  fontSize: 13, outline: 'none', resize: 'vertical',
+                  boxSizing: 'border-box',
+                }}
+              />
+            </div>
+          ))}
+
+          <button
+            type="button"
+            onClick={savePersona}
+            disabled={personaSaving}
+            style={{
+              padding: '8px 20px',
+              background: personaSaved ? 'rgba(76,175,130,0.15)' : 'rgba(200,200,200,0.1)',
+              border: personaSaved ? '1px solid var(--green)' : '1px solid var(--silver)',
+              borderRadius: 6,
+              color: personaSaved ? 'var(--green)' : 'var(--silver)',
+              fontSize: 13, cursor: personaSaving ? 'default' : 'pointer',
+              opacity: personaSaving ? 0.6 : 1,
+            }}
+          >
+            {personaSaved ? '✓ Saved' : personaSaving ? 'Saving...' : 'Save Persona'}
+          </button>
         </div>
 
         {/* Blocked words section */}
