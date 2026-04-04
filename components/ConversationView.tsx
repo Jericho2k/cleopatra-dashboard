@@ -2,7 +2,7 @@
 
 import React, { useState, useRef, useEffect } from 'react'
 import type { Fan, Message } from '../types'
-import { sendReply, getLatestSuggestions } from '../lib/api'
+import { sendReply, getLatestSuggestions, generateSuggestions } from '../lib/api'
 import { supabase } from '../lib/supabase'
 
 export interface ConversationViewProps {
@@ -138,7 +138,11 @@ export default function ConversationView({
 
   const refetchSuggestions = () => {
     if (!fan) return
+    const lastFanMessage = [...messages].reverse().find(m => m.role === 'fan')
+    if (!lastFanMessage) return
     setLoading(true)
+    generateSuggestions(fan.id, creatorId, lastFanMessage.content)
+    // Result arrives via the existing Supabase realtime subscription
     getLatestSuggestions(fan.id, creatorId).then((res) => {
       if (res.suggestions.length > 0) setSuggestions(res.suggestions)
       setStage(res.stage)

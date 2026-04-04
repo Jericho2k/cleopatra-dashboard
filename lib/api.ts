@@ -23,6 +23,23 @@ export async function sendReply(
   }
 }
 
+export async function generateSuggestions(
+  fanId: string,
+  creatorId: string,
+  fanMessage: string,
+): Promise<void> {
+  await fetch(`${process.env.NEXT_PUBLIC_API_URL}/suggestions`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      fan_id: fanId,
+      creator_id: creatorId,
+      message: fanMessage,
+    }),
+  })
+  // Response comes via Supabase realtime subscription
+}
+
 export async function getLatestSuggestions(
   fanId: string,
   creatorId: string
