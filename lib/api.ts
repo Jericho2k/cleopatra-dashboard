@@ -28,7 +28,7 @@ export async function generateSuggestions(
   creatorId: string,
   fanMessage: string,
 ): Promise<void> {
-  await fetch(`${process.env.NEXT_PUBLIC_API_URL}/suggestions`, {
+  await fetch(`${process.env.NEXT_PUBLIC_API_URL}/regenerate-suggestions`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
