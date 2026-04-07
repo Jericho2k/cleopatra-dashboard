@@ -20,6 +20,7 @@ export default function SettingsPage() {
     upsell_style: '',
     hard_limits: '',
     emoji_style: '',
+    welcome_message: '',
   })
   const [personaSaving, setPersonaSaving] = useState(false)
   const [personaSaved, setPersonaSaved] = useState(false)
@@ -201,6 +202,27 @@ export default function SettingsPage() {
                   />
                 </div>
               ))}
+
+              <div style={{ marginBottom: 16 }}>
+                <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                  Welcome Message
+                </div>
+                <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 8, fontStyle: 'italic' }}>
+                  Sent automatically to new subscribers. Also helps the AI understand the creator's opening style.
+                </div>
+                <textarea
+                  value={persona.welcome_message ?? ''}
+                  onChange={e => setPersona(prev => ({ ...prev, welcome_message: e.target.value }))}
+                  placeholder="Welcome! I'm Lina, tell me your name and where you're from 😉"
+                  rows={4}
+                  style={{
+                    width: '100%', background: 'var(--bg-surface)',
+                    border: '1px solid var(--border)', borderRadius: 8,
+                    padding: '8px 12px', color: 'var(--text-primary)',
+                    fontSize: 13, resize: 'vertical', boxSizing: 'border-box', outline: 'none',
+                  }}
+                />
+              </div>
 
               <button
                 type="button"
