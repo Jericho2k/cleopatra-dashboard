@@ -261,14 +261,7 @@ export default function Page() {
           const isActiveTab = tab.id === activeTabId
           const isActiveFan = tab.activeFan?.id === msg.fan_id
 
-          const isDuplicate = tab.messages.some(m =>
-            m.id === msg.id ||
-            (m.content === msg.content &&
-             m.role === msg.role &&
-             Math.abs(new Date(m.sent_at).getTime() - new Date(msg.sent_at).getTime()) < 10000)
-          )
-
-          if (isDuplicate) return tab
+          if (tab.messages.some(m => m.id === msg.id)) return tab
 
           return {
             ...tab,
