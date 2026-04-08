@@ -239,7 +239,6 @@ export default function Page() {
       .eq('fan_id', activeTab.activeFan.id)
       .eq('creator_id', activeTab.creatorId)
       .order('sent_at', { ascending: true })
-      .limit(40)
       .then(({ data }) => {
         updateTab(activeTab.id, {
           messages: (data ?? []).map(rowToMessage),
