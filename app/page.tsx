@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import type { Fan, Message, ConversationSummary, FanList } from '../types'
 import Sidebar from '../components/Sidebar'
@@ -62,6 +62,11 @@ export default function Page() {
   const [activeListId, setActiveListId] = useState<string | null>(null)
 
   const activeTab = tabs.find(t => t.id === activeTabId) ?? null
+
+  const activeTabIdRef = useRef(activeTabId)
+  useEffect(() => {
+    activeTabIdRef.current = activeTabId
+  }, [activeTabId])
 
   const updateTab = (tabId: string, updates: Partial<Tab>) => {
     setTabs(prev => prev.map(t => t.id === tabId ? { ...t, ...updates } : t))
@@ -258,7 +263,7 @@ export default function Page() {
         const msg = rowToMessage(payload.new as Record<string, unknown>)
         setTabs(prev => prev.map(tab => {
           if (tab.creatorId !== msg.creator_id) return tab
-          const isActiveTab = tab.id === activeTabId
+          const isActiveTab = tab.id === activeTabIdRef.current
           const isActiveFan = tab.activeFan?.id === msg.fan_id
 
           if (tab.messages.some(m => m.id === msg.id)) return tab
@@ -280,7 +285,7 @@ export default function Page() {
       })
       .subscribe()
     return () => { supabase.removeChannel(channel) }
-  }, [activeTabId])
+  }, [])
 
   if (authLoading) return (
     <div style={{ height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--bg-base)', color: 'var(--text-muted)', fontFamily: 'var(--font-body)' }}>
