@@ -255,23 +255,25 @@ export default function Page() {
         schema: 'public',
         table: 'messages',
       }, (payload) => {
-        const row = payload.new as Record<string, unknown>
-        const msg = rowToMessage(row)
+        const msg = rowToMessage(payload.new as Record<string, unknown>)
         setTabs(prev => prev.map(tab => {
           if (tab.creatorId !== msg.creator_id) return tab
           const isActiveTab = tab.id === activeTabId
           const isActiveFan = tab.activeFan?.id === msg.fan_id
+
+          const isDuplicate = tab.messages.some(m =>
+            m.id === msg.id ||
+            (m.content === msg.content &&
+             m.role === msg.role &&
+             Math.abs(new Date(m.sent_at).getTime() - new Date(msg.sent_at).getTime()) < 10000)
+          )
+
+          if (isDuplicate) return tab
+
           return {
             ...tab,
             messages: isActiveTab && isActiveFan
-              ? (() => {
-                  const alreadyExists = tab.messages.some(m => m.id === msg.id ||
-                    (m.content === msg.content && m.role === msg.role &&
-                     Math.abs(new Date(m.sent_at).getTime() - new Date(msg.sent_at).getTime()) < 5000)
-                  )
-                  if (alreadyExists) return tab.messages
-                  return [...tab.messages, msg]
-                })()
+              ? [...tab.messages, msg]
               : tab.messages,
             conversations: tab.conversations
               .map(c => c.fan.id === msg.fan_id
