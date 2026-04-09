@@ -301,7 +301,7 @@ export default function FanPanel({ fan, creatorId, onInsertMessage }: FanPanelPr
       </div>
 
       {/* Tab content */}
-      <div style={{ flex: 1, overflow: 'auto', padding: 16 }}>
+      <div style={{ flex: 1, overflow: 'auto', padding: 16, paddingBottom: 20 }}>
 
         {/* PROFILE TAB */}
         {activeTab === 'profile' && (
