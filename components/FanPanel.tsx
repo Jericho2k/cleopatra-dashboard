@@ -63,6 +63,29 @@ export default function FanPanel({ fan, creatorId, onInsertMessage }: FanPanelPr
   }, [fan?.id])
 
   useEffect(() => {
+    if (!fan) return
+    const channel = supabase
+      .channel(`fan-${fan.id}`)
+      .on('postgres_changes', {
+        event: 'UPDATE',
+        schema: 'public',
+        table: 'fans',
+        filter: `id=eq.${fan.id}`,
+      }, (payload) => {
+        const updated = payload.new as any
+        setAiSummary(updated.ai_summary ?? null)
+        setDetails({
+          age: updated.age ?? '',
+          payday: updated.payday || updated.ai_summary?.payday || '',
+          hobbies: updated.hobbies || '',
+          relationship_status: updated.relationship_status || updated.ai_summary?.relationship_status || '',
+        })
+      })
+      .subscribe()
+    return () => { supabase.removeChannel(channel) }
+  }, [fan?.id])
+
+  useEffect(() => {
     if (!fan || !creatorId) return
     loadScripts()
     loadPPV()
