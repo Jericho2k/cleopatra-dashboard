@@ -392,7 +392,7 @@ export default function Sidebar({
               style={{
                 background: 'var(--bg-elevated)', border: '1px solid var(--border)',
                 borderRadius: 12, padding: 24, width: 420, maxHeight: '80vh',
-                overflow: 'auto',
+                overflow: 'auto', paddingBottom: 20,
               }}
             >
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
