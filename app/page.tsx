@@ -283,6 +283,28 @@ export default function Page() {
           }
         }))
       })
+      .on('postgres_changes', {
+        event: 'INSERT',
+        schema: 'public',
+        table: 'fans',
+      }, (payload) => {
+        const newFan = rowToFan(payload.new as Record<string, unknown>)
+        setTabs(prev => prev.map(tab => {
+          if (tab.creatorId !== (payload.new as any).creator_id) return tab
+          const exists = tab.conversations.some(c => c.fan.id === newFan.id)
+          if (exists) return tab
+          return {
+            ...tab,
+            conversations: [{
+              fan: newFan,
+              last_message: '',
+              last_message_time: new Date().toISOString(),
+              unread: true,
+              unread_count: 1,
+            }, ...tab.conversations],
+          }
+        }))
+      })
       .subscribe()
     return () => { supabase.removeChannel(channel) }
   }, [])
