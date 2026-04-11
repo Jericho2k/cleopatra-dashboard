@@ -2,7 +2,7 @@
 
 import React, { useState, useRef, useEffect } from 'react'
 import type { Fan, Message } from '../types'
-import { sendReply, getLatestSuggestions, generateSuggestions } from '../lib/api'
+import { sendReply, getLatestSuggestions } from '../lib/api'
 import { supabase } from '../lib/supabase'
 
 export interface ConversationViewProps {
@@ -11,10 +11,6 @@ export interface ConversationViewProps {
   messages: Message[]
   onReplySent: (content: string) => void
   messagesLoading?: boolean
-  pendingMessage?: string
-  onClearPending?: () => void
-  autoMode?: boolean
-  onToggleAutoMode?: () => void
 }
 
 function getInitials(displayName: string): string {
@@ -29,10 +25,6 @@ export default function ConversationView({
   messages,
   onReplySent,
   messagesLoading,
-  pendingMessage,
-  onClearPending,
-  autoMode,
-  onToggleAutoMode,
 }: ConversationViewProps) {
   const [suggestions, setSuggestions] = useState<string[]>(['', '', ''])
   const [stage, setStage] = useState<string>('WARMING_UP')
@@ -42,7 +34,6 @@ export default function ConversationView({
   const [scripts, setScripts] = useState<{ id: string; title: string; content: string; category: string }[]>([])
   const [showScripts, setShowScripts] = useState(false)
   const [blockedWords, setBlockedWords] = useState<string[]>([])
-  const [queuedMessages, setQueuedMessages] = useState<string[]>([])
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
@@ -84,13 +75,6 @@ export default function ConversationView({
   }, [messages])
 
   useEffect(() => {
-    if (!pendingMessage) return
-    setInputValue(pendingMessage)
-    textareaRef.current?.focus()
-    onClearPending?.()
-  }, [pendingMessage])
-
-  useEffect(() => {
     if (!fan) return
     supabase
       .from('scripts')
@@ -117,32 +101,21 @@ export default function ConversationView({
     return blockedWords.filter((w) => lower.includes(w))
   }
 
-  const handleAfterSend = () => {
-    if (queuedMessages.length > 0) {
-      const [next, ...rest] = queuedMessages
-      setInputValue(next)
-      setQueuedMessages(rest)
-      textareaRef.current?.focus()
-    }
-  }
-
   const handleSuggestionClick = (suggestion: string) => {
-    if (!suggestion.trim()) return
-    const parts = suggestion.split(' | ').map(p => p.trim()).filter(Boolean)
-    setInputValue(parts[0])
-    if (parts.length > 1) {
-      setQueuedMessages(parts.slice(1))
+    if (!fan || !suggestion.trim()) return
+    const blocked = getBlockedMatches(suggestion)
+    if (blocked.length > 0) {
+      const confirmed = window.confirm(`⚠️ Suggestion contains blocked word(s): ${blocked.join(', ')}\n\nSend anyway?`)
+      if (!confirmed) return
     }
-    textareaRef.current?.focus()
+    sendReply(fan.id, creatorId, suggestion, true)
+    onReplySent(suggestion)
+    setSuggestions(['', '', ''])
   }
 
   const refetchSuggestions = () => {
     if (!fan) return
-    const lastFanMessage = [...messages].reverse().find(m => m.role === 'fan')
-    if (!lastFanMessage) return
     setLoading(true)
-    generateSuggestions(fan.id, creatorId, lastFanMessage.content)
-    // Result arrives via the existing Supabase realtime subscription
     getLatestSuggestions(fan.id, creatorId).then((res) => {
       if (res.suggestions.length > 0) setSuggestions(res.suggestions)
       setStage(res.stage)
@@ -163,7 +136,6 @@ export default function ConversationView({
     sendReply(fan.id, creatorId, value, false)
     onReplySent(value)
     setInputValue('')
-    handleAfterSend()
   }
 
   const handleTextareaInput = (e: React.FormEvent<HTMLTextAreaElement>) => {
@@ -234,26 +206,9 @@ export default function ConversationView({
           {getInitials(fan.display_name)}
         </div>
         <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{fan.display_name}</span>
-        <button
-          type="button"
-          onClick={onToggleAutoMode}
-          style={{
-            marginLeft: 'auto',
-            fontSize: 11,
-            padding: '4px 10px',
-            borderRadius: 4,
-            cursor: 'pointer',
-            background: autoMode ? 'rgba(76,175,130,0.15)' : 'transparent',
-            color: autoMode ? 'var(--green)' : 'var(--text-muted)',
-            border: autoMode ? '1px solid rgba(76,175,130,0.4)' : '1px solid var(--border)',
-            letterSpacing: '0.04em',
-            textTransform: 'uppercase',
-          }}
-        >
-          {autoMode ? '● Auto' : 'Auto'}
-        </button>
         <span
           style={{
+            marginLeft: 'auto',
             fontSize: 11,
             textTransform: 'uppercase',
             letterSpacing: '0.04em',
@@ -267,6 +222,29 @@ export default function ConversationView({
           {stage.replace(/_/g, ' ')}
         </span>
       </div>
+
+      <a
+        href="https://fansly.com"
+        target="_blank"
+        rel="noopener noreferrer"
+        style={{
+          marginTop: 8,
+          padding: '10px 12px',
+          background: 'var(--bg-elevated)',
+          border: '1px solid var(--border)',
+          borderRadius: 8,
+          fontSize: 12,
+          color: 'var(--text-muted)',
+          display: 'flex',
+          alignItems: 'center',
+          gap: 8,
+          textDecoration: 'none',
+          cursor: 'pointer',
+        }}
+      >
+        <span style={{ fontSize: 16 }}>🖼</span>
+        <span>Image — view on Fansly ↗</span>
+      </a>
 
       {/* Messages */}
       <div
@@ -322,62 +300,7 @@ export default function ConversationView({
                 lineHeight: 1.45,
               }}
             >
-              {msg.content && <div>{msg.content}</div>}
-              {msg.media_context?.attachments?.map((_: any, i: number) => (
-                <div key={i} style={{
-                  marginTop: 8,
-                  padding: '10px 12px',
-                  background: 'var(--bg-elevated)',
-                  border: '1px solid var(--border)',
-                  borderRadius: 8,
-                  fontSize: 12,
-                  color: 'var(--text-muted)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 8,
-                }}>
-                  <span style={{ fontSize: 16 }}>🖼</span>
-                  <span>Image — view on Fansly</span>
-                </div>
-              ))}
-              {msg.media_context?.ppv && (
-                <div style={{
-                  marginTop: 8, padding: '10px 12px',
-                  background: 'rgba(155,143,212,0.1)',
-                  border: '1px solid rgba(155,143,212,0.3)',
-                  borderRadius: 8,
-                }}>
-                  <div style={{ fontSize: 12, color: 'var(--purple)', fontWeight: 600 }}>
-                    💎 PPV Sent — ${msg.media_context.ppv.price}
-                  </div>
-                  {msg.media_context.ppv.title && (
-                    <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
-                      {msg.media_context.ppv.title}
-                    </div>
-                  )}
-                </div>
-              )}
-              {(msg as any).attachments?.map((att: any, i: number) => (
-                att.type === 'ppv' ? (
-                  <div key={i} style={{
-                    marginTop: 8, padding: '10px 12px',
-                    background: 'rgba(155,143,212,0.15)',
-                    border: '1px solid rgba(155,143,212,0.3)',
-                    borderRadius: 8, fontSize: 12,
-                  }}>
-                    <div style={{ color: 'var(--purple)', fontWeight: 600, marginBottom: 4 }}>
-                      💎 PPV Sent — ${att.price}
-                    </div>
-                    <div style={{ color: 'var(--text-muted)' }}>{att.title}</div>
-                  </div>
-                ) : att.thumbnail_url ? (
-                  <img key={i} src={att.thumbnail_url} alt="" style={{
-                    marginTop: 8, maxWidth: 200, borderRadius: 8,
-                    border: '1px solid var(--border)',
-                    display: 'block',
-                  }} />
-                ) : null
-              ))}
+              {msg.content}
             </div>
           </div>
         ))}
@@ -393,7 +316,7 @@ export default function ConversationView({
           background: 'var(--bg-surface)',
         }}
       >
-        {!autoMode && <><div
+        <div
           style={{
             fontSize: 11,
             textTransform: 'uppercase',
@@ -416,36 +339,17 @@ export default function ConversationView({
               style={{
                 width: '100%',
                 textAlign: 'left',
-                padding: '6px 10px',
-                background: 'transparent',
+                padding: '10px 14px',
+                background: 'var(--bg-elevated)',
                 border: '1px solid var(--border-subtle)',
                 borderRadius: 8,
                 color: loading ? 'var(--text-faint)' : 'var(--text-primary)',
                 fontSize: 14,
                 cursor: loading || !s.trim() ? 'default' : 'pointer',
                 position: 'relative',
-                display: 'flex',
-                flexDirection: 'column',
-                gap: 4,
               }}
             >
-              {loading ? (
-                <span style={{ padding: '4px 4px' }}>…</span>
-              ) : s ? (
-                s.split(' | ').map((part, pi) => (
-                  <span key={pi} style={{
-                    display: 'block',
-                    padding: '5px 10px',
-                    background: 'var(--bg-elevated)',
-                    borderRadius: 6,
-                    lineHeight: 1.4,
-                  }}>
-                    {part}
-                  </span>
-                ))
-              ) : (
-                <span style={{ padding: '5px 10px' }}>{'\u00A0'}</span>
-              )}
+              {loading ? '…' : s || '\u00A0'}
               {!loading && s.trim() && (
                 <span
                   style={{
@@ -557,7 +461,6 @@ export default function ConversationView({
             })}
           </div>
         )}
-        </>}
 
         <div
           style={{
@@ -566,14 +469,6 @@ export default function ConversationView({
             marginBottom: 12,
           }}
         />
-        {queuedMessages.length > 0 && (
-          <div style={{
-            fontSize: 11, color: 'var(--green)',
-            padding: '2px 8px',
-          }}>
-            + {queuedMessages.length} message{queuedMessages.length > 1 ? 's' : ''} queued
-          </div>
-        )}
         <textarea
           ref={textareaRef}
           value={inputValue}
