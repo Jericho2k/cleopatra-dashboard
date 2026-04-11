@@ -323,35 +323,38 @@ export default function ConversationView({
               }}
             >
               {msg.content && <div>{msg.content}</div>}
-              {msg.media_context?.attachments?.map((att: any, i: number) => (
-                att.url ? (
-                  <img key={i} src={att.url}
-                    alt=""
-                    style={{ marginTop: 8, maxWidth: 220, borderRadius: 8, border: '1px solid var(--border)', display: 'block' }}
-                    onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }}
-                  />
-                ) : (
-                  <div key={i} style={{
-                    marginTop: 6, padding: '6px 10px',
-                    background: 'var(--bg-elevated)',
-                    border: '1px solid var(--border)',
-                    borderRadius: 8, fontSize: 11,
-                    color: 'var(--text-muted)',
-                  }}>
-                    📎 Image attachment
-                  </div>
-                )
+              {msg.media_context?.attachments?.map((_: any, i: number) => (
+                <div key={i} style={{
+                  marginTop: 8,
+                  padding: '10px 12px',
+                  background: 'var(--bg-elevated)',
+                  border: '1px solid var(--border)',
+                  borderRadius: 8,
+                  fontSize: 12,
+                  color: 'var(--text-muted)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 8,
+                }}>
+                  <span style={{ fontSize: 16 }}>🖼</span>
+                  <span>Image — view on Fansly</span>
+                </div>
               ))}
               {msg.media_context?.ppv && (
                 <div style={{
-                  marginTop: 8, padding: '8px 12px',
+                  marginTop: 8, padding: '10px 12px',
                   background: 'rgba(155,143,212,0.1)',
                   border: '1px solid rgba(155,143,212,0.3)',
                   borderRadius: 8,
                 }}>
-                  <div style={{ fontSize: 11, color: 'var(--purple)', fontWeight: 600 }}>
+                  <div style={{ fontSize: 12, color: 'var(--purple)', fontWeight: 600 }}>
                     💎 PPV Sent — ${msg.media_context.ppv.price}
                   </div>
+                  {msg.media_context.ppv.title && (
+                    <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
+                      {msg.media_context.ppv.title}
+                    </div>
+                  )}
                 </div>
               )}
               {(msg as any).attachments?.map((att: any, i: number) => (
