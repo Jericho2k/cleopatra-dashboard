@@ -323,6 +323,27 @@ export default function ConversationView({
               }}
             >
               {msg.content && <div>{msg.content}</div>}
+              {msg.media_context?.attachments?.length > 0 && (
+                <div style={{ marginTop: 6 }}>
+                  {msg.media_context.attachments.map((_: any, i: number) => (
+                    <div key={i} style={{ fontSize: 11, color: 'var(--text-muted)', fontStyle: 'italic' }}>
+                      📎 Attachment
+                    </div>
+                  ))}
+                </div>
+              )}
+              {msg.media_context?.ppv && (
+                <div style={{
+                  marginTop: 8, padding: '8px 12px',
+                  background: 'rgba(155,143,212,0.1)',
+                  border: '1px solid rgba(155,143,212,0.3)',
+                  borderRadius: 8,
+                }}>
+                  <div style={{ fontSize: 11, color: 'var(--purple)', fontWeight: 600 }}>
+                    💎 PPV — ${msg.media_context.ppv.price}
+                  </div>
+                </div>
+              )}
               {(msg as any).attachments?.map((att: any, i: number) => (
                 att.type === 'ppv' ? (
                   <div key={i} style={{
