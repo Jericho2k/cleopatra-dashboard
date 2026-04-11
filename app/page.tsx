@@ -48,6 +48,7 @@ function rowToMessage(row: Record<string, unknown>): Message {
     sent_at: row.sent_at as string,
     was_ai_suggested: Boolean(row.was_ai_suggested),
     was_selected: Boolean(row.was_selected),
+    media_context: (row.media_context as any) ?? null,
   }
 }
 

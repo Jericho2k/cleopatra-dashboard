@@ -34,6 +34,7 @@ export interface Message {
   sent_at: string
   was_ai_suggested: boolean
   was_selected: boolean
+  media_context?: any
 }
 
 export interface Creator {
