@@ -322,7 +322,28 @@ export default function ConversationView({
                 lineHeight: 1.45,
               }}
             >
-              {msg.content}
+              {msg.content && <div>{msg.content}</div>}
+              {(msg as any).attachments?.map((att: any, i: number) => (
+                att.type === 'ppv' ? (
+                  <div key={i} style={{
+                    marginTop: 8, padding: '10px 12px',
+                    background: 'rgba(155,143,212,0.15)',
+                    border: '1px solid rgba(155,143,212,0.3)',
+                    borderRadius: 8, fontSize: 12,
+                  }}>
+                    <div style={{ color: 'var(--purple)', fontWeight: 600, marginBottom: 4 }}>
+                      💎 PPV Sent — ${att.price}
+                    </div>
+                    <div style={{ color: 'var(--text-muted)' }}>{att.title}</div>
+                  </div>
+                ) : att.thumbnail_url ? (
+                  <img key={i} src={att.thumbnail_url} alt="" style={{
+                    marginTop: 8, maxWidth: 200, borderRadius: 8,
+                    border: '1px solid var(--border)',
+                    display: 'block',
+                  }} />
+                ) : null
+              ))}
             </div>
           </div>
         ))}
