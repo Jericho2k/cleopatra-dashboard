@@ -14,7 +14,7 @@ export interface ConversationViewProps {
   pendingMessage?: string
   onClearPending?: (() => void) | null
   autoMode?: boolean
-  onToggleAutoMode?: (() => Promise<void>) | null
+  onToggleAutoMode?: (() => Promise<void>) | (() => void) | null
 }
 
 function getInitials(displayName: string): string {
