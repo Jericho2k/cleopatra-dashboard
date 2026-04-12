@@ -286,14 +286,19 @@ export default function Page() {
           }
         }))
       })
-      .on('postgres_changes', {
+
+    if (activeTab?.creatorId) {
+      channel.on('postgres_changes', {
         event: 'INSERT',
         schema: 'public',
         table: 'fans',
-      }, (payload) => {
-        const newFan = rowToFan(payload.new as Record<string, unknown>)
+        filter: `creator_id=eq.${activeTab.creatorId}`,
+      }, async (payload) => {
+        const row = payload.new as Record<string, unknown>
+        const newFan = rowToFan(row)
+        const fanCreatorId = row.creator_id as string
         setTabs(prev => prev.map(tab => {
-          if (tab.creatorId !== (payload.new as any).creator_id) return tab
+          if (tab.creatorId !== fanCreatorId) return tab
           const exists = tab.conversations.some(c => c.fan.id === newFan.id)
           if (exists) return tab
           return {
@@ -308,9 +313,11 @@ export default function Page() {
           }
         }))
       })
-      .subscribe()
+    }
+
+    channel.subscribe()
     return () => { supabase.removeChannel(channel) }
-  }, [])
+  }, [activeTab?.creatorId])
 
   if (authLoading) return (
     <div style={{ height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--bg-base)', color: 'var(--text-muted)', fontFamily: 'var(--font-body)' }}>
