@@ -142,12 +142,8 @@ export default function ConversationView({
     if (!lastFanMessage) return
     setLoading(true)
     generateSuggestions(fan.id, creatorId, lastFanMessage.content)
-    // Result arrives via the existing Supabase realtime subscription
-    getLatestSuggestions(fan.id, creatorId).then((res) => {
-      if (res.suggestions.length > 0) setSuggestions(res.suggestions)
-      setStage(res.stage)
-      setLoading(false)
-    })
+    // New suggestions will arrive via Supabase realtime subscription
+    // which already sets setSuggestions and setLoading(false)
   }
 
   const handleTextareaKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
