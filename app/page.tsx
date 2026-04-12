@@ -1,5 +1,7 @@
 'use client'
 
+//after the revert
+
 import React, { useEffect, useRef, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import type { Fan, Message, ConversationSummary, FanList } from '../types'
