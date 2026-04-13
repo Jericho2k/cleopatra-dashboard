@@ -31,7 +31,6 @@ export default function SettingsPage() {
   const [newCreator, setNewCreator] = useState({
     platform_username: '',
     fansly_account_id: '',
-    apifansly_account_id: '',
   })
 
   useEffect(() => {
@@ -50,7 +49,6 @@ export default function SettingsPage() {
     const { data } = await supabase.from('creators').insert({
       platform_username: newCreator.platform_username,
       fansly_account_id: newCreator.fansly_account_id,
-      apifansly_account_id: newCreator.apifansly_account_id,
       auto_mode: false,
     }).select().single()
 
@@ -58,7 +56,7 @@ export default function SettingsPage() {
       setCreators(prev => [...prev, data])
       setSelectedCreatorId(data.id)
       setShowAddCreator(false)
-      setNewCreator({ platform_username: '', fansly_account_id: '', apifansly_account_id: '' })
+      setNewCreator({ platform_username: '', fansly_account_id: '' })
     }
   }
 
@@ -69,46 +67,59 @@ export default function SettingsPage() {
     setSelectedCreatorId(creators[0]?.id ?? null)
   }
 
-  useEffect(() => {
-    if (!selectedCreatorId) return
+  const loadBlockedWords = (creatorId: string) => {
     setLoading(true)
-    supabase
+    return supabase
       .from('blocked_words')
       .select('id, word')
-      .eq('creator_id', selectedCreatorId)
+      .eq('creator_id', creatorId)
       .order('word')
       .then(({ data }) => {
         if (data) setWords(data)
         setLoading(false)
       })
-    supabase
+  }
+
+  const loadPersona = (creatorId: string) => {
+    return supabase
       .from('creators')
       .select('persona')
-      .eq('id', selectedCreatorId)
+      .eq('id', creatorId)
       .single()
       .then(({ data }) => {
         if (data?.persona) {
           setPersona(prev => ({ ...prev, ...data.persona }))
         }
       })
-    loadVaultMedia()
-  }, [selectedCreatorId])
+  }
 
-  const loadVaultMedia = async () => {
-    if (!selectedCreatorId) return
+  const loadScripts = (_creatorId: string) => {
+    // Placeholder for scripts/storylines settings loading.
+  }
+
+  const loadVaultMedia = async (creatorId: string) => {
     const { data } = await supabase
       .from('creator_vault_media')
       .select('*')
-      .eq('creator_id', selectedCreatorId)
+      .eq('creator_id', creatorId)
       .order('created_at', { ascending: false })
     setVaultMedia(data ?? [])
   }
+
+  useEffect(() => {
+    if (!selectedCreatorId) return
+    // reload persona, blocked words, scripts, vault for new creator
+    loadPersona(selectedCreatorId)
+    loadBlockedWords(selectedCreatorId)
+    loadScripts(selectedCreatorId)
+    loadVaultMedia(selectedCreatorId)
+  }, [selectedCreatorId])
 
   const syncVault = async () => {
     if (!selectedCreatorId) return
     setSyncing(true)
     await fetch(`${process.env.NEXT_PUBLIC_API_URL}/sync-vault/${selectedCreatorId}`, { method: 'POST' })
-    await loadVaultMedia()
+    await loadVaultMedia(selectedCreatorId)
     setSyncing(false)
   }
 
@@ -600,9 +611,8 @@ export default function SettingsPage() {
           }}>
             <div style={{ fontSize: 16, fontWeight: 600, marginBottom: 16 }}>Add Creator</div>
             {[
-              { label: 'Username', key: 'platform_username', placeholder: 'Eliza' },
-              { label: 'Fansly Account ID', key: 'fansly_account_id', placeholder: '897586527796752385' },
-              { label: 'apifansly Account ID', key: 'apifansly_account_id', placeholder: 'fansly_a1e...' },
+              { label: 'Creator Name', key: 'platform_username', placeholder: 'e.g. Mia' },
+              { label: 'Fansly Account ID', key: 'fansly_account_id', placeholder: 'Fansly numeric account ID' },
             ].map(({ label, key, placeholder }) => (
               <div key={key} style={{ marginBottom: 12 }}>
                 <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 4 }}>{label}</div>
