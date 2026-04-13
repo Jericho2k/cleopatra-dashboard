@@ -112,6 +112,8 @@ export default function SettingsPage() {
           twofa_token: twofaToken,
           code: twofaCode,
           name: newCreator.name,
+          email: newCreator.email,
+          password: newCreator.password,
         }),
       })
       const data = await res.json()
