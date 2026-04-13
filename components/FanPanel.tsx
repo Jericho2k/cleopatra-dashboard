@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from 'react'
 import type { Fan } from '../types'
 import { supabase } from '../lib/supabase'
+import { User, FileText, Lock } from 'lucide-react'
 
 export interface FanPanelProps {
   fan: Fan | null
@@ -241,10 +242,10 @@ export default function FanPanel({ fan, creatorId, onInsertMessage }: FanPanelPr
     : fan.spend_tier === 'casual' ? { border: '1px solid var(--purple)', color: 'var(--purple)' }
     : { border: '1px solid var(--text-faint)', color: 'var(--text-faint)' }
 
-  const tabs: { id: Tab; label: string; icon: string }[] = [
-    { id: 'profile', label: 'Profile', icon: '👤' },
-    { id: 'scripts', label: 'Scripts', icon: '📋' },
-    { id: 'ppv', label: 'PPV', icon: '💰' },
+  const tabs: { id: Tab; label: string; icon: React.ReactNode }[] = [
+    { id: 'profile', label: 'Profile', icon: <User size={14} /> },
+    { id: 'scripts', label: 'Scripts', icon: <FileText size={14} /> },
+    { id: 'ppv', label: 'PPV', icon: <Lock size={14} /> },
   ]
 
   return (
@@ -295,7 +296,9 @@ export default function FanPanel({ fan, creatorId, onInsertMessage }: FanPanelPr
               letterSpacing: '0.04em', transition: 'all 0.15s ease',
             }}
           >
-            {t.icon} {t.label}
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+              {t.icon} {t.label}
+            </span>
           </button>
         ))}
       </div>
