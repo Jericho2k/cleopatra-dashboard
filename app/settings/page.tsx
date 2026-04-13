@@ -98,6 +98,8 @@ export default function SettingsPage() {
         setMaskedEmail(data.masked_email)
         setConnectStep('2fa')
       } else if (data.success) {
+        showToast('Creator connected successfully')
+        window.dispatchEvent(new CustomEvent('creator-added'))
         setCreators(prev => [...prev, data.creator])
         setSelectedCreatorId(data.creator.id)
         setShowAddCreator(false)
@@ -124,6 +126,8 @@ export default function SettingsPage() {
       })
       const data = await res.json()
       if (data.success) {
+        showToast('Creator connected successfully')
+        window.dispatchEvent(new CustomEvent('creator-added'))
         const { data: creatorsData } = await supabase
           .from('creators')
           .select('id, platform_username, fansly_account_id, apifansly_account_id')
@@ -169,9 +173,17 @@ export default function SettingsPage() {
       .eq('id', creatorId)
       .single()
       .then(({ data }) => {
-        if (data?.persona) {
-          setPersona(prev => ({ ...prev, ...data.persona }))
-        }
+        // Reset to defaults first, then apply creator's persona
+        setPersona({
+          character: '',
+          communication_style: '',
+          example_phrases: '',
+          upsell_style: '',
+          hard_limits: '',
+          emoji_style: '',
+          welcome_message: '',
+          ...(data?.persona ?? {}),
+        })
       })
   }
 
@@ -827,12 +839,10 @@ export default function SettingsPage() {
         <div style={{
           position: 'fixed', bottom: 24, right: 24,
           padding: '12px 20px', borderRadius: 8, zIndex: 999,
-          background: toast.type === 'success' ? 'rgba(76,175,130,0.15)' : 'rgba(255,80,80,0.15)',
-          border: `1px solid ${toast.type === 'success' ? 'var(--green)' : '#ff5050'}`,
-          color: toast.type === 'success' ? 'var(--green)' : '#ff5050',
-          fontSize: 13, fontWeight: 500,
-          animation: 'fadeIn 0.2s ease',
-          backdropFilter: 'blur(8px)',
+          background: toast.type === 'success' ? 'rgba(76,175,130,0.9)' : 'rgba(255,80,80,0.9)',
+          color: 'white', fontSize: 13, fontWeight: 500,
+          boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
+          transition: 'opacity 0.3s ease',
         }}>
           {toast.type === 'success' ? '✓ ' : '✕ '}{toast.message}
         </div>

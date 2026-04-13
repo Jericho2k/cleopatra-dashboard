@@ -2,7 +2,7 @@
 
 //after the revert
 
-import React, { useEffect, useRef, useState } from 'react'
+import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import type { Fan, Message, ConversationSummary, FanList } from '../types'
 import Sidebar from '../components/Sidebar'
@@ -117,20 +117,27 @@ export default function Page() {
     })
   }
 
+  const loadCreators = useCallback(async () => {
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return []
+    const { data } = await supabase
+      .from('chatter_creators')
+      .select('creator_id, creators(id, platform_username, auto_mode)')
+      .eq('chatter_id', user.id)
+    const list = (data ?? []).map((r: any) => ({
+      id: r.creator_id,
+      name: r.creators?.platform_username ?? r.creator_id,
+      autoMode: r.creators?.auto_mode ?? false,
+    }))
+    setCreators(list.map(({ id, name }) => ({ id, name })))
+    return list
+  }, [])
+
   useEffect(() => {
-    async function loadCreators() {
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) return
-      const { data } = await supabase
-        .from('chatter_creators')
-        .select('creator_id, creators(id, platform_username, auto_mode)')
-        .eq('chatter_id', user.id)
-      const list = (data ?? []).map((r: any) => ({
-        id: r.creator_id,
-        name: r.creators?.platform_username ?? r.creator_id,
-        autoMode: r.creators?.auto_mode ?? false,
-      }))
-      setCreators(list.map(({ id, name }) => ({ id, name })))
+    let alive = true
+    ;(async () => {
+      const list = await loadCreators()
+      if (!alive) return
       if (list.length > 0) {
         const first = list[0]
         const newTab: Tab = {
@@ -150,9 +157,17 @@ export default function Page() {
         loadFanLists(first.id)
       }
       setAuthLoading(false)
+    })()
+    return () => { alive = false }
+  }, [loadCreators])
+
+  useEffect(() => {
+    const handler = () => {
+      loadCreators()
     }
-    loadCreators()
-  }, [])
+    window.addEventListener('creator-added', handler)
+    return () => window.removeEventListener('creator-added', handler)
+  }, [loadCreators])
 
   async function loadFanLists(creatorId: string) {
     const { data: lists } = await supabase
