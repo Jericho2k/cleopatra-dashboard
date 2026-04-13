@@ -477,22 +477,24 @@ export default function ConversationView({
           >
             Regenerate
           </button>
-          <button
-            type="button"
-            onClick={() => setShowScripts((v) => !v)}
-            style={{
-              background: showScripts ? 'var(--bg-hover)' : 'var(--bg-elevated)',
-              border: '1px solid var(--border-strong)',
-              borderRadius: 6,
-              color: 'var(--text-secondary)',
-              fontSize: 12,
-              cursor: 'pointer',
-              padding: '5px 12px',
-              marginLeft: 8,
-            }}
-          >
-            Scripts
-          </button>
+          {scripts.length > 0 && (
+            <button
+              type="button"
+              onClick={() => setShowScripts((v) => !v)}
+              style={{
+                background: showScripts ? 'var(--bg-hover)' : 'var(--bg-elevated)',
+                border: '1px solid var(--border-strong)',
+                borderRadius: 6,
+                color: 'var(--text-secondary)',
+                fontSize: 12,
+                cursor: 'pointer',
+                padding: '5px 12px',
+                marginLeft: 8,
+              }}
+            >
+              Scripts
+            </button>
+          )}
         </div>
 
         {showScripts && (
