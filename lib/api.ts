@@ -1,26 +1,19 @@
 import { supabase } from './supabase'
 
-// 2. Send a selected reply back to the backend to save
+const API_URL = process.env.NEXT_PUBLIC_API_URL
+
+// 2. Send a selected reply back to the backend (apifansly) to save and deliver
 export async function sendReply(
   fanId: string,
   creatorId: string,
   content: string,
   wasAiSuggested: boolean
-): Promise<void> {
-  try {
-    await fetch(process.env.NEXT_PUBLIC_API_URL + '/reply', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        fan_id: fanId,
-        creator_id: creatorId,
-        content,
-        was_ai_suggested: wasAiSuggested,
-      }),
-    })
-  } catch {
-    // Silently fail
-  }
+) {
+  await fetch(`${API_URL}/reply`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ fan_id: fanId, creator_id: creatorId, content, was_ai_suggested: wasAiSuggested }),
+  })
 }
 
 export async function generateSuggestions(
