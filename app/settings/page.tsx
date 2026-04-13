@@ -86,14 +86,13 @@ export default function SettingsPage() {
   async function connectCreator() {
     setConnecting(true)
     try {
+      const { data: { user } } = await supabase.auth.getUser()
       const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/connect-creator`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          name: newCreator.name,
-          email: newCreator.email,
-          password: newCreator.password,
-          countryCode: newCreator.countryCode ?? 'US',
+          ...newCreator,
+          user_id: user?.id,
         }),
       })
       const data = await res.json()
@@ -118,6 +117,7 @@ export default function SettingsPage() {
   async function submit2FA() {
     setConnecting(true)
     try {
+      const { data: { user } } = await supabase.auth.getUser()
       const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/connect-creator-2fa`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -127,6 +127,7 @@ export default function SettingsPage() {
           name: newCreator.name,
           email: newCreator.email,
           password: newCreator.password,
+          user_id: user?.id,
         }),
       })
       const data = await res.json()

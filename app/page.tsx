@@ -172,48 +172,18 @@ export default function Page() {
     })))
   }
 
-  async function initializeTabs(creatorsData: Record<string, unknown>[]) {
-    setCreators(
-      creatorsData.map((c: any) => ({
-        id: c.id as string,
-        name: (c.platform_username as string) ?? (c.id as string),
-      })),
-    )
-    if (creatorsData.length === 0) {
-      setTabs([])
-      setActiveTabId('')
-      return
-    }
-    const newTabs: Tab[] = creatorsData.map((c: any) => ({
-      id: `tab-${c.id}`,
-      creatorId: c.id as string,
-      creatorName: (c.platform_username as string) ?? (c.id as string),
-      activeFan: null,
-      messages: [],
-      conversations: [],
-      messagesLoading: false,
-      unreadCounts: {},
-      pendingMessage: '',
-      autoMode: Boolean(c.auto_mode),
-    }))
-    setTabs(newTabs)
-    setActiveTabId(newTabs[0].id)
-    await loadFanLists(newTabs[0].creatorId)
-  }
-
   useEffect(() => {
     const handler = async () => {
-      const { data } = await supabase
-        .from('creators')
-        .select('*')
-        .order('created_at')
-      if (data) {
-        await initializeTabs(data)
-      }
+      const list = await loadCreators()
+      list.forEach((c: any) => {
+        if (!tabs.some(t => t.creatorId === c.id)) {
+          // Don't auto-open, just make available in dropdown
+        }
+      })
     }
     window.addEventListener('creator-added', handler)
     return () => window.removeEventListener('creator-added', handler)
-  }, [])
+  }, [loadCreators, tabs])
 
   async function createList(name: string, color: string, excludeFromAuto: boolean) {
     if (!activeTab) return
