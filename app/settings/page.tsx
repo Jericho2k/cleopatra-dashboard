@@ -6,6 +6,29 @@ import { supabase } from '../../lib/supabase'
 type Section = 'Creator Persona' | 'Blocked Words' | 'PPV Offers' | 'Storylines' | 'Vault Media'
 
 const SECTIONS: Section[] = ['Creator Persona', 'Blocked Words', 'PPV Offers', 'Storylines', 'Vault Media']
+const PROXY_COUNTRIES = [
+  { code: 'US', label: '🇺🇸 United States' },
+  { code: 'CA', label: '🇨🇦 Canada' },
+  { code: 'MX', label: '🇲🇽 Mexico' },
+  { code: 'GB', label: '🇬🇧 United Kingdom' },
+  { code: 'AT', label: '🇦🇹 Austria' },
+  { code: 'BE', label: '🇧🇪 Belgium' },
+  { code: 'FR', label: '🇫🇷 France' },
+  { code: 'UA', label: '🇺🇦 Ukraine' },
+  { code: 'RU', label: '🇷🇺 Russia' },
+  { code: 'PL', label: '🇵🇱 Poland' },
+  { code: 'BR', label: '🇧🇷 Brazil' },
+  { code: 'DK', label: '🇩🇰 Denmark' },
+  { code: 'EE', label: '🇪🇪 Estonia' },
+  { code: 'FI', label: '🇫🇮 Finland' },
+  { code: 'DE', label: '🇩🇪 Germany' },
+  { code: 'IE', label: '🇮🇪 Ireland' },
+  { code: 'NL', label: '🇳🇱 Netherlands' },
+  { code: 'NO', label: '🇳🇴 Norway' },
+  { code: 'ES', label: '🇪🇸 Spain' },
+  { code: 'SE', label: '🇸🇪 Sweden' },
+  { code: 'AU', label: '🇦🇺 Australia' },
+]
 
 export default function SettingsPage() {
   const [activeSection, setActiveSection] = useState<Section>('Creator Persona')
@@ -33,6 +56,7 @@ export default function SettingsPage() {
   const [twofaCode, setTwofaCode] = useState('')
   const [maskedEmail, setMaskedEmail] = useState('')
   const [connecting, setConnecting] = useState(false)
+  const [showPassword, setShowPassword] = useState(false)
   const [newCreator, setNewCreator] = useState({
     name: '',
     email: '',
@@ -155,6 +179,11 @@ export default function SettingsPage() {
     loadBlockedWords(selectedCreatorId)
     loadScripts(selectedCreatorId)
     loadVaultMedia(selectedCreatorId)
+  }, [selectedCreatorId])
+
+  useEffect(() => {
+    if (!selectedCreatorId) return
+    loadPersona(selectedCreatorId)
   }, [selectedCreatorId])
 
   const syncVault = async () => {
@@ -661,24 +690,69 @@ export default function SettingsPage() {
                   { label: 'Creator Name', key: 'name', placeholder: 'Display name', type: 'text' },
                   { label: 'Fansly Email', key: 'email', placeholder: 'email@example.com', type: 'email' },
                   { label: 'Password', key: 'password', placeholder: '••••••••', type: 'password' },
-                  { label: 'Country', key: 'countryCode', placeholder: 'US', type: 'text' },
                 ].map(({ label, key, placeholder, type }) => (
                   <div key={key} style={{ marginBottom: 12 }}>
                     <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 4 }}>{label}</div>
-                    <input
-                      type={type}
-                      value={(newCreator as any)[key]}
-                      onChange={e => setNewCreator(prev => ({ ...prev, [key]: e.target.value }))}
-                      placeholder={placeholder}
-                      style={{
-                        width: '100%', background: 'var(--bg-elevated)',
-                        border: '1px solid var(--border)', borderRadius: 6,
-                        color: 'var(--text-primary)', padding: '8px 12px', fontSize: 13,
-                        boxSizing: 'border-box',
-                      }}
-                    />
+                    {key === 'password' ? (
+                      <div style={{ position: 'relative' }}>
+                        <input
+                          type={showPassword ? 'text' : 'password'}
+                          value={newCreator.password}
+                          onChange={e => setNewCreator(prev => ({ ...prev, password: e.target.value }))}
+                          placeholder="••••••••"
+                          style={{
+                            width: '100%', background: 'var(--bg-elevated)',
+                            border: '1px solid var(--border)', borderRadius: 6,
+                            color: 'var(--text-primary)', padding: '8px 36px 8px 12px',
+                            fontSize: 13, boxSizing: 'border-box',
+                          }}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowPassword(v => !v)}
+                          style={{
+                            position: 'absolute', right: 10, top: '50%',
+                            transform: 'translateY(-50%)', background: 'none',
+                            border: 'none', cursor: 'pointer', color: 'var(--text-muted)',
+                            fontSize: 14, padding: 0,
+                          }}
+                        >
+                          {showPassword ? '🙈' : '👁'}
+                        </button>
+                      </div>
+                    ) : (
+                      <input
+                        type={type}
+                        value={(newCreator as any)[key]}
+                        onChange={e => setNewCreator(prev => ({ ...prev, [key]: e.target.value }))}
+                        placeholder={placeholder}
+                        style={{
+                          width: '100%', background: 'var(--bg-elevated)',
+                          border: '1px solid var(--border)', borderRadius: 6,
+                          color: 'var(--text-primary)', padding: '8px 12px', fontSize: 13,
+                          boxSizing: 'border-box',
+                        }}
+                      />
+                    )}
                   </div>
                 ))}
+                <div style={{ marginBottom: 12 }}>
+                  <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 4 }}>Proxy Region</div>
+                  <select
+                    value={newCreator.countryCode}
+                    onChange={e => setNewCreator(prev => ({ ...prev, countryCode: e.target.value }))}
+                    style={{
+                      width: '100%', background: 'var(--bg-elevated)',
+                      border: '1px solid var(--border)', borderRadius: 6,
+                      color: 'var(--text-primary)', padding: '8px 12px', fontSize: 13,
+                      boxSizing: 'border-box',
+                    }}
+                  >
+                    {PROXY_COUNTRIES.map(c => (
+                      <option key={c.code} value={c.code}>{c.label}</option>
+                    ))}
+                  </select>
+                </div>
                 <div style={{ display: 'flex', gap: 8, marginTop: 16 }}>
                   <button type="button" onClick={connectCreator} disabled={connecting} style={{
                     flex: 1, padding: '8px', background: 'var(--purple)',
