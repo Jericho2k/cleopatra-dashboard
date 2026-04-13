@@ -1,6 +1,7 @@
 'use client'
 
 import React, { useState, useEffect } from 'react'
+import { Eye, EyeOff } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 
 type Section = 'Creator Persona' | 'Blocked Words' | 'PPV Offers' | 'Storylines' | 'Vault Media'
@@ -717,7 +718,7 @@ export default function SettingsPage() {
                             fontSize: 14, padding: 0,
                           }}
                         >
-                          {showPassword ? '🙈' : '👁'}
+                          {showPassword ? <EyeOff size={14} /> : <Eye size={14} />}
                         </button>
                       </div>
                     ) : (
