@@ -118,8 +118,15 @@ export default function SettingsPage() {
       })
       const data = await res.json()
       if (data.success) {
-        setCreators(prev => [...prev, data.creator])
-        setSelectedCreatorId(data.creator.id)
+        const { data: creatorsData } = await supabase
+          .from('creators')
+          .select('id, platform_username, fansly_account_id, apifansly_account_id')
+          .order('created_at')
+
+        if (creatorsData) {
+          setCreators(creatorsData)
+          setSelectedCreatorId(data.creator.id)
+        }
         setShowAddCreator(false)
         setConnectStep('credentials')
         setTwofaCode('')
