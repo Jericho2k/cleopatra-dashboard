@@ -64,6 +64,12 @@ export default function SettingsPage() {
     password: '',
     countryCode: 'US',
   })
+  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null)
+
+  function showToast(message: string, type: 'success' | 'error' = 'success') {
+    setToast({ message, type })
+    setTimeout(() => setToast(null), 3000)
+  }
 
   useEffect(() => {
     supabase.from('creators')
@@ -241,6 +247,7 @@ export default function SettingsPage() {
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter') addWord()
   }
+
   return (
     <div style={{
       height: '100vh',
@@ -814,6 +821,20 @@ export default function SettingsPage() {
               </>
             )}
           </div>
+        </div>
+      )}
+      {toast && (
+        <div style={{
+          position: 'fixed', bottom: 24, right: 24,
+          padding: '12px 20px', borderRadius: 8, zIndex: 999,
+          background: toast.type === 'success' ? 'rgba(76,175,130,0.15)' : 'rgba(255,80,80,0.15)',
+          border: `1px solid ${toast.type === 'success' ? 'var(--green)' : '#ff5050'}`,
+          color: toast.type === 'success' ? 'var(--green)' : '#ff5050',
+          fontSize: 13, fontWeight: 500,
+          animation: 'fadeIn 0.2s ease',
+          backdropFilter: 'blur(8px)',
+        }}>
+          {toast.type === 'success' ? '✓ ' : '✕ '}{toast.message}
         </div>
       )}
     </div>
