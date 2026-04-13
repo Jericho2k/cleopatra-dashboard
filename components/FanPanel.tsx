@@ -49,11 +49,13 @@ export default function FanPanel({ fan, creatorId, onInsertMessage }: FanPanelPr
   const [expandedStoryline, setExpandedStoryline] = useState<string | null>(null)
   const [aiSummary, setAiSummary] = useState<any>(null)
   const [showAiProfile, setShowAiProfile] = useState(false)
+  const [isExcluded, setIsExcluded] = useState(false)
 
   useEffect(() => {
     if (fan) {
       const summary = fan.ai_summary
       setAiSummary(summary ?? null)
+      setIsExcluded(fan.exclude_from_auto ?? false)
       setDetails({
         age: (fan as any).age ?? '',
         payday: (fan as any).payday || summary?.payday || '',
@@ -61,7 +63,7 @@ export default function FanPanel({ fan, creatorId, onInsertMessage }: FanPanelPr
         relationship_status: (fan as any).relationship_status || summary?.relationship_status || '',
       })
     }
-  }, [fan?.id])
+  }, [fan?.id, fan?.exclude_from_auto])
 
   useEffect(() => {
     if (!fan) return
@@ -75,6 +77,9 @@ export default function FanPanel({ fan, creatorId, onInsertMessage }: FanPanelPr
       }, (payload) => {
         const updated = payload.new as any
         setAiSummary(updated.ai_summary ?? null)
+        if (typeof updated.exclude_from_auto === 'boolean') {
+          setIsExcluded(updated.exclude_from_auto)
+        }
         setDetails({
           age: updated.age ?? '',
           payday: updated.payday || updated.ai_summary?.payday || '',
@@ -208,6 +213,12 @@ export default function FanPanel({ fan, creatorId, onInsertMessage }: FanPanelPr
     await supabase.from('fans').update({ [field]: value }).eq('id', fan.id)
   }
 
+  async function toggleFanAutoExclusion(fanId: string) {
+    const next = !isExcluded
+    setIsExcluded(next)
+    await supabase.from('fans').update({ exclude_from_auto: next }).eq('id', fanId)
+  }
+
   const LABEL_STYLE = {
     fontSize: 11,
     textTransform: 'uppercase' as const,
@@ -275,6 +286,22 @@ export default function FanPanel({ fan, creatorId, onInsertMessage }: FanPanelPr
               {fan.spend_tier}
             </span>
           </div>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8 }}>
+          <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>Auto mode for this fan</span>
+          <button
+            type="button"
+            onClick={() => toggleFanAutoExclusion(fan.id)}
+            style={{
+              fontSize: 11, padding: '3px 8px', borderRadius: 4,
+              background: isExcluded ? 'transparent' : 'rgba(76,175,130,0.15)',
+              border: isExcluded ? '1px solid var(--border)' : '1px solid var(--green)',
+              color: isExcluded ? 'var(--text-muted)' : 'var(--green)',
+              cursor: 'pointer',
+            }}
+          >
+            {isExcluded ? 'Off' : 'On'}
+          </button>
         </div>
       </div>
 
