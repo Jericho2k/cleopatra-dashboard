@@ -12,7 +12,8 @@ export default function SettingsPage() {
   const [words, setWords] = useState<{ id: string; word: string }[]>([])
   const [newWord, setNewWord] = useState('')
   const [loading, setLoading] = useState(true)
-  const [creatorId, setCreatorId] = useState<string>('')
+  const [creators, setCreators] = useState<any[]>([])
+  const [selectedCreatorId, setSelectedCreatorId] = useState<string | null>(null)
   const [persona, setPersona] = useState({
     character: '',
     communication_style: '',
@@ -26,28 +27,55 @@ export default function SettingsPage() {
   const [personaSaved, setPersonaSaved] = useState(false)
   const [vaultMedia, setVaultMedia] = useState<any[]>([])
   const [syncing, setSyncing] = useState(false)
+  const [showAddCreator, setShowAddCreator] = useState(false)
+  const [newCreator, setNewCreator] = useState({
+    platform_username: '',
+    fansly_account_id: '',
+    apifansly_account_id: '',
+  })
 
   useEffect(() => {
-    supabase.auth.getUser().then(({ data: { user } }) => {
-      if (!user) return
-      supabase
-        .from('chatter_creators')
-        .select('creator_id')
-        .eq('chatter_id', user.id)
-        .limit(1)
-        .single()
-        .then(({ data }) => {
-          if (data) setCreatorId((data as any).creator_id as string)
-        })
-    })
+    supabase.from('creators')
+      .select('id, platform_username, fansly_account_id, apifansly_account_id')
+      .order('created_at')
+      .then(({ data }) => {
+        if (data && data.length > 0) {
+          setCreators(data)
+          setSelectedCreatorId(data[0].id)
+        }
+      })
   }, [])
 
+  async function addCreator() {
+    const { data } = await supabase.from('creators').insert({
+      platform_username: newCreator.platform_username,
+      fansly_account_id: newCreator.fansly_account_id,
+      apifansly_account_id: newCreator.apifansly_account_id,
+      auto_mode: false,
+    }).select().single()
+
+    if (data) {
+      setCreators(prev => [...prev, data])
+      setSelectedCreatorId(data.id)
+      setShowAddCreator(false)
+      setNewCreator({ platform_username: '', fansly_account_id: '', apifansly_account_id: '' })
+    }
+  }
+
+  async function deleteCreator(id: string) {
+    if (!confirm('Delete this creator? This cannot be undone.')) return
+    await supabase.from('creators').delete().eq('id', id)
+    setCreators(prev => prev.filter(c => c.id !== id))
+    setSelectedCreatorId(creators[0]?.id ?? null)
+  }
+
   useEffect(() => {
-    if (!creatorId) return
+    if (!selectedCreatorId) return
+    setLoading(true)
     supabase
       .from('blocked_words')
       .select('id, word')
-      .eq('creator_id', creatorId)
+      .eq('creator_id', selectedCreatorId)
       .order('word')
       .then(({ data }) => {
         if (data) setWords(data)
@@ -56,7 +84,7 @@ export default function SettingsPage() {
     supabase
       .from('creators')
       .select('persona')
-      .eq('id', creatorId)
+      .eq('id', selectedCreatorId)
       .single()
       .then(({ data }) => {
         if (data?.persona) {
@@ -64,20 +92,22 @@ export default function SettingsPage() {
         }
       })
     loadVaultMedia()
-  }, [creatorId])
+  }, [selectedCreatorId])
 
   const loadVaultMedia = async () => {
+    if (!selectedCreatorId) return
     const { data } = await supabase
       .from('creator_vault_media')
       .select('*')
-      .eq('creator_id', creatorId)
+      .eq('creator_id', selectedCreatorId)
       .order('created_at', { ascending: false })
     setVaultMedia(data ?? [])
   }
 
   const syncVault = async () => {
+    if (!selectedCreatorId) return
     setSyncing(true)
-    await fetch(`${process.env.NEXT_PUBLIC_API_URL}/sync-vault/${creatorId}`, { method: 'POST' })
+    await fetch(`${process.env.NEXT_PUBLIC_API_URL}/sync-vault/${selectedCreatorId}`, { method: 'POST' })
     await loadVaultMedia()
     setSyncing(false)
   }
@@ -88,20 +118,21 @@ export default function SettingsPage() {
   }
 
   const savePersona = async () => {
-    if (!creatorId) return
+    if (!selectedCreatorId) return
     setPersonaSaving(true)
-    await supabase.from('creators').update({ persona }).eq('id', creatorId)
+    await supabase.from('creators').update({ persona }).eq('id', selectedCreatorId)
     setPersonaSaving(false)
     setPersonaSaved(true)
     setTimeout(() => setPersonaSaved(false), 2000)
   }
 
   const addWord = async () => {
+    if (!selectedCreatorId) return
     const w = newWord.trim().toLowerCase()
     if (!w || words.some((x) => x.word === w)) return
     const { data } = await supabase
       .from('blocked_words')
-      .insert({ creator_id: creatorId, word: w })
+      .insert({ creator_id: selectedCreatorId, word: w })
       .select('id, word')
       .single()
     if (data) {
@@ -118,7 +149,6 @@ export default function SettingsPage() {
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter') addWord()
   }
-
   return (
     <div style={{
       height: '100vh',
@@ -154,6 +184,36 @@ export default function SettingsPage() {
           </div>
           <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
             Workspace preferences
+          </div>
+        </div>
+        <div style={{ padding: '16px', borderBottom: '1px solid var(--border)' }}>
+          <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 8, textTransform: 'uppercase' }}>
+            Creator
+          </div>
+          <select
+            value={selectedCreatorId ?? ''}
+            onChange={e => setSelectedCreatorId(e.target.value)}
+            style={{
+              width: '100%', background: 'var(--bg-elevated)',
+              border: '1px solid var(--border)', borderRadius: 6,
+              color: 'var(--text-primary)', padding: '6px 10px', fontSize: 13,
+            }}
+          >
+            {creators.map(c => (
+              <option key={c.id} value={c.id}>{c.platform_username}</option>
+            ))}
+          </select>
+          <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
+            <button type="button" onClick={() => setShowAddCreator(true)} style={{
+              flex: 1, padding: '5px', fontSize: 11,
+              background: 'var(--bg-elevated)', border: '1px solid var(--border)',
+              borderRadius: 6, color: 'var(--text-secondary)', cursor: 'pointer',
+            }}>+ Add Creator</button>
+            <button type="button" onClick={() => selectedCreatorId && deleteCreator(selectedCreatorId)} style={{
+              padding: '5px 10px', fontSize: 11,
+              background: 'transparent', border: '1px solid var(--border)',
+              borderRadius: 6, color: 'var(--text-muted)', cursor: 'pointer',
+            }}>Delete</button>
           </div>
         </div>
 
@@ -400,7 +460,7 @@ export default function SettingsPage() {
                 <button
                   type="button"
                   onClick={syncVault}
-                  disabled={syncing || !creatorId}
+                  disabled={syncing || !selectedCreatorId}
                   style={{
                     padding: '8px 16px',
                     background: 'rgba(200,200,200,0.1)',
@@ -529,6 +589,51 @@ export default function SettingsPage() {
 
         </div>
       </div>
+      {showAddCreator && (
+        <div style={{
+          position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100,
+        }}>
+          <div style={{
+            background: 'var(--bg-surface)', border: '1px solid var(--border)',
+            borderRadius: 12, padding: 24, width: 400,
+          }}>
+            <div style={{ fontSize: 16, fontWeight: 600, marginBottom: 16 }}>Add Creator</div>
+            {[
+              { label: 'Username', key: 'platform_username', placeholder: 'Eliza' },
+              { label: 'Fansly Account ID', key: 'fansly_account_id', placeholder: '897586527796752385' },
+              { label: 'apifansly Account ID', key: 'apifansly_account_id', placeholder: 'fansly_a1e...' },
+            ].map(({ label, key, placeholder }) => (
+              <div key={key} style={{ marginBottom: 12 }}>
+                <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 4 }}>{label}</div>
+                <input
+                  value={(newCreator as any)[key]}
+                  onChange={e => setNewCreator(prev => ({ ...prev, [key]: e.target.value }))}
+                  placeholder={placeholder}
+                  style={{
+                    width: '100%', background: 'var(--bg-elevated)',
+                    border: '1px solid var(--border)', borderRadius: 6,
+                    color: 'var(--text-primary)', padding: '8px 12px', fontSize: 13,
+                    boxSizing: 'border-box',
+                  }}
+                />
+              </div>
+            ))}
+            <div style={{ display: 'flex', gap: 8, marginTop: 16 }}>
+              <button type="button" onClick={addCreator} style={{
+                flex: 1, padding: '8px', background: 'var(--purple)',
+                border: 'none', borderRadius: 6, color: 'white',
+                fontSize: 13, cursor: 'pointer',
+              }}>Add Creator</button>
+              <button type="button" onClick={() => setShowAddCreator(false)} style={{
+                padding: '8px 16px', background: 'transparent',
+                border: '1px solid var(--border)', borderRadius: 6,
+                color: 'var(--text-muted)', fontSize: 13, cursor: 'pointer',
+              }}>Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
