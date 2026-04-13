@@ -161,14 +161,6 @@ export default function Page() {
     return () => { alive = false }
   }, [loadCreators])
 
-  useEffect(() => {
-    const handler = () => {
-      loadCreators()
-    }
-    window.addEventListener('creator-added', handler)
-    return () => window.removeEventListener('creator-added', handler)
-  }, [loadCreators])
-
   async function loadFanLists(creatorId: string) {
     const { data: lists } = await supabase
       .from('fan_lists')
@@ -179,6 +171,49 @@ export default function Page() {
       member_fan_ids: (l.fan_list_members ?? []).map((m: any) => m.fan_id),
     })))
   }
+
+  async function initializeTabs(creatorsData: Record<string, unknown>[]) {
+    setCreators(
+      creatorsData.map((c: any) => ({
+        id: c.id as string,
+        name: (c.platform_username as string) ?? (c.id as string),
+      })),
+    )
+    if (creatorsData.length === 0) {
+      setTabs([])
+      setActiveTabId('')
+      return
+    }
+    const newTabs: Tab[] = creatorsData.map((c: any) => ({
+      id: `tab-${c.id}`,
+      creatorId: c.id as string,
+      creatorName: (c.platform_username as string) ?? (c.id as string),
+      activeFan: null,
+      messages: [],
+      conversations: [],
+      messagesLoading: false,
+      unreadCounts: {},
+      pendingMessage: '',
+      autoMode: Boolean(c.auto_mode),
+    }))
+    setTabs(newTabs)
+    setActiveTabId(newTabs[0].id)
+    await loadFanLists(newTabs[0].creatorId)
+  }
+
+  useEffect(() => {
+    const handler = async () => {
+      const { data } = await supabase
+        .from('creators')
+        .select('*')
+        .order('created_at')
+      if (data) {
+        await initializeTabs(data)
+      }
+    }
+    window.addEventListener('creator-added', handler)
+    return () => window.removeEventListener('creator-added', handler)
+  }, [])
 
   async function createList(name: string, color: string, excludeFromAuto: boolean) {
     if (!activeTab) return
