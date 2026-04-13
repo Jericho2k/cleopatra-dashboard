@@ -28,9 +28,16 @@ export default function SettingsPage() {
   const [vaultMedia, setVaultMedia] = useState<any[]>([])
   const [syncing, setSyncing] = useState(false)
   const [showAddCreator, setShowAddCreator] = useState(false)
+  const [connectStep, setConnectStep] = useState<'credentials' | '2fa' | 'done'>('credentials')
+  const [twofaToken, setTwofaToken] = useState('')
+  const [twofaCode, setTwofaCode] = useState('')
+  const [maskedEmail, setMaskedEmail] = useState('')
+  const [connecting, setConnecting] = useState(false)
   const [newCreator, setNewCreator] = useState({
-    platform_username: '',
-    fansly_account_id: '',
+    name: '',
+    email: '',
+    password: '',
+    countryCode: 'US',
   })
 
   useEffect(() => {
@@ -45,18 +52,53 @@ export default function SettingsPage() {
       })
   }, [])
 
-  async function addCreator() {
-    const { data } = await supabase.from('creators').insert({
-      platform_username: newCreator.platform_username,
-      fansly_account_id: newCreator.fansly_account_id,
-      auto_mode: false,
-    }).select().single()
+  async function connectCreator() {
+    setConnecting(true)
+    try {
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/connect-creator`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newCreator),
+      })
+      const data = await res.json()
 
-    if (data) {
-      setCreators(prev => [...prev, data])
-      setSelectedCreatorId(data.id)
-      setShowAddCreator(false)
-      setNewCreator({ platform_username: '', fansly_account_id: '' })
+      if (data.requires_2fa) {
+        setTwofaToken(data.twofa_token)
+        setMaskedEmail(data.masked_email)
+        setConnectStep('2fa')
+      } else if (data.success) {
+        setCreators(prev => [...prev, data.creator])
+        setSelectedCreatorId(data.creator.id)
+        setShowAddCreator(false)
+        setConnectStep('credentials')
+      }
+    } finally {
+      setConnecting(false)
+    }
+  }
+
+  async function submit2FA() {
+    setConnecting(true)
+    try {
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/connect-creator-2fa`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          twofa_token: twofaToken,
+          code: twofaCode,
+          name: newCreator.name,
+        }),
+      })
+      const data = await res.json()
+      if (data.success) {
+        setCreators(prev => [...prev, data.creator])
+        setSelectedCreatorId(data.creator.id)
+        setShowAddCreator(false)
+        setConnectStep('credentials')
+        setTwofaCode('')
+      }
+    } finally {
+      setConnecting(false)
     }
   }
 
@@ -609,38 +651,83 @@ export default function SettingsPage() {
             background: 'var(--bg-surface)', border: '1px solid var(--border)',
             borderRadius: 12, padding: 24, width: 400,
           }}>
-            <div style={{ fontSize: 16, fontWeight: 600, marginBottom: 16 }}>Add Creator</div>
-            {[
-              { label: 'Creator Name', key: 'platform_username', placeholder: 'e.g. Mia' },
-              { label: 'Fansly Account ID', key: 'fansly_account_id', placeholder: 'Fansly numeric account ID' },
-            ].map(({ label, key, placeholder }) => (
-              <div key={key} style={{ marginBottom: 12 }}>
-                <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 4 }}>{label}</div>
+            {connectStep === 'credentials' ? (
+              <>
+                <div style={{ fontSize: 16, fontWeight: 600, marginBottom: 4 }}>Connect Fansly Account</div>
+                <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 16 }}>
+                  Enter the creator&apos;s Fansly login credentials
+                </div>
+                {[
+                  { label: 'Creator Name', key: 'name', placeholder: 'Display name', type: 'text' },
+                  { label: 'Fansly Email', key: 'email', placeholder: 'email@example.com', type: 'email' },
+                  { label: 'Password', key: 'password', placeholder: '••••••••', type: 'password' },
+                  { label: 'Country', key: 'countryCode', placeholder: 'US', type: 'text' },
+                ].map(({ label, key, placeholder, type }) => (
+                  <div key={key} style={{ marginBottom: 12 }}>
+                    <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 4 }}>{label}</div>
+                    <input
+                      type={type}
+                      value={(newCreator as any)[key]}
+                      onChange={e => setNewCreator(prev => ({ ...prev, [key]: e.target.value }))}
+                      placeholder={placeholder}
+                      style={{
+                        width: '100%', background: 'var(--bg-elevated)',
+                        border: '1px solid var(--border)', borderRadius: 6,
+                        color: 'var(--text-primary)', padding: '8px 12px', fontSize: 13,
+                        boxSizing: 'border-box',
+                      }}
+                    />
+                  </div>
+                ))}
+                <div style={{ display: 'flex', gap: 8, marginTop: 16 }}>
+                  <button type="button" onClick={connectCreator} disabled={connecting} style={{
+                    flex: 1, padding: '8px', background: 'var(--purple)',
+                    border: 'none', borderRadius: 6, color: 'white',
+                    fontSize: 13, cursor: connecting ? 'default' : 'pointer',
+                    opacity: connecting ? 0.7 : 1,
+                  }}>
+                    {connecting ? 'Connecting...' : 'Connect Account'}
+                  </button>
+                  <button type="button" onClick={() => setShowAddCreator(false)} style={{
+                    padding: '8px 16px', background: 'transparent',
+                    border: '1px solid var(--border)', borderRadius: 6,
+                    color: 'var(--text-muted)', fontSize: 13, cursor: 'pointer',
+                  }}>Cancel</button>
+                </div>
+              </>
+            ) : (
+              <>
+                <div style={{ fontSize: 16, fontWeight: 600, marginBottom: 4 }}>Two-Factor Authentication</div>
+                <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 16 }}>
+                  A code was sent to {maskedEmail}
+                </div>
                 <input
-                  value={(newCreator as any)[key]}
-                  onChange={e => setNewCreator(prev => ({ ...prev, [key]: e.target.value }))}
-                  placeholder={placeholder}
+                  value={twofaCode}
+                  onChange={e => setTwofaCode(e.target.value)}
+                  placeholder="Enter 2FA code"
                   style={{
                     width: '100%', background: 'var(--bg-elevated)',
                     border: '1px solid var(--border)', borderRadius: 6,
                     color: 'var(--text-primary)', padding: '8px 12px', fontSize: 13,
-                    boxSizing: 'border-box',
+                    boxSizing: 'border-box', marginBottom: 16,
                   }}
                 />
-              </div>
-            ))}
-            <div style={{ display: 'flex', gap: 8, marginTop: 16 }}>
-              <button type="button" onClick={addCreator} style={{
-                flex: 1, padding: '8px', background: 'var(--purple)',
-                border: 'none', borderRadius: 6, color: 'white',
-                fontSize: 13, cursor: 'pointer',
-              }}>Add Creator</button>
-              <button type="button" onClick={() => setShowAddCreator(false)} style={{
-                padding: '8px 16px', background: 'transparent',
-                border: '1px solid var(--border)', borderRadius: 6,
-                color: 'var(--text-muted)', fontSize: 13, cursor: 'pointer',
-              }}>Cancel</button>
-            </div>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <button type="button" onClick={submit2FA} disabled={connecting} style={{
+                    flex: 1, padding: '8px', background: 'var(--purple)',
+                    border: 'none', borderRadius: 6, color: 'white',
+                    fontSize: 13, cursor: connecting ? 'default' : 'pointer',
+                  }}>
+                    {connecting ? 'Verifying...' : 'Verify'}
+                  </button>
+                  <button type="button" onClick={() => setConnectStep('credentials')} style={{
+                    padding: '8px 16px', background: 'transparent',
+                    border: '1px solid var(--border)', borderRadius: 6,
+                    color: 'var(--text-muted)', fontSize: 13, cursor: 'pointer',
+                  }}>Back</button>
+                </div>
+              </>
+            )}
           </div>
         </div>
       )}
