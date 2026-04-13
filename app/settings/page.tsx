@@ -89,7 +89,12 @@ export default function SettingsPage() {
       const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/connect-creator`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(newCreator),
+        body: JSON.stringify({
+          name: newCreator.name,
+          email: newCreator.email,
+          password: newCreator.password,
+          countryCode: newCreator.countryCode ?? 'US',
+        }),
       })
       const data = await res.json()
 
