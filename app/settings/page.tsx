@@ -713,9 +713,10 @@ export default function SettingsPage() {
                           onClick={() => setShowPassword(v => !v)}
                           style={{
                             position: 'absolute', right: 10, top: '50%',
-                            transform: 'translateY(-50%)', background: 'none',
-                            border: 'none', cursor: 'pointer', color: 'var(--text-muted)',
-                            fontSize: 14, padding: 0,
+                            transform: 'translateY(-50%)',
+                            background: 'none', border: 'none',
+                            cursor: 'pointer', color: 'var(--text-muted)',
+                            padding: 0, display: 'flex', alignItems: 'center',
                           }}
                         >
                           {showPassword ? <EyeOff size={14} /> : <Eye size={14} />}
