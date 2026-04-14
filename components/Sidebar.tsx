@@ -22,6 +22,18 @@ export interface SidebarProps {
 
 const LIST_COLORS = ['#9b8fd4', '#4caf82', '#ff6b6b', '#f0a500', '#4fc3f7', '#f48fb1', '#aaa', '#fff']
 
+type FilterId = 'all' | 'unread' | 'whale' | 'active' | 'casual' | 'cold' | 'auto_on' | 'auto_off'
+const FILTER_OPTIONS: { id: FilterId; label: string }[] = [
+  { id: 'all', label: 'all' },
+  { id: 'unread', label: 'unread' },
+  { id: 'whale', label: 'whale' },
+  { id: 'active', label: 'active' },
+  { id: 'casual', label: 'casual' },
+  { id: 'cold', label: 'cold' },
+  { id: 'auto_on', label: 'Auto On' },
+  { id: 'auto_off', label: 'Auto Off' },
+]
+
 type ListModal = {
   mode: 'create' | 'edit'
   listId?: string
@@ -38,7 +50,7 @@ export default function Sidebar({
   onAddFanToList, onRemoveFanFromList,
 }: SidebarProps) {
   const [now, setNow] = useState(Date.now())
-  const [activeFilter, setActiveFilter] = useState<'all' | 'unread' | 'whale' | 'active' | 'casual' | 'cold'>('all')
+  const [activeFilter, setActiveFilter] = useState<FilterId>('all')
   const [listModal, setListModal] = useState<ListModal | null>(null)
   const [showListsPanel, setShowListsPanel] = useState(false)
   const [hoveredFanId, setHoveredFanId] = useState<string | null>(null)
@@ -475,11 +487,11 @@ export default function Sidebar({
               paddingBottom: 8,
             }}
           >
-            {(['all', 'unread', 'whale', 'active', 'casual', 'cold'] as const).map((f) => (
+            {FILTER_OPTIONS.map(({ id, label }) => (
               <button
-                key={f}
+                key={id}
                 type="button"
-                onClick={() => setActiveFilter(f)}
+                onClick={() => setActiveFilter(id)}
                 style={{
                   flexShrink: 0,
                   fontSize: 10,
@@ -487,13 +499,13 @@ export default function Sidebar({
                   letterSpacing: '0.04em',
                   padding: '3px 8px',
                   borderRadius: 4,
-                  border: activeFilter === f ? '1px solid var(--silver)' : '1px solid var(--border)',
-                  background: activeFilter === f ? 'rgba(200,200,200,0.1)' : 'transparent',
-                  color: activeFilter === f ? 'var(--silver)' : 'var(--text-muted)',
+                  border: activeFilter === id ? '1px solid var(--silver)' : '1px solid var(--border)',
+                  background: activeFilter === id ? 'rgba(200,200,200,0.1)' : 'transparent',
+                  color: activeFilter === id ? 'var(--silver)' : 'var(--text-muted)',
                   cursor: 'pointer',
                 }}
               >
-                {f}
+                {label}
               </button>
             ))}
           </div>
@@ -512,6 +524,8 @@ export default function Sidebar({
               if (activeListId && !fanLists.find(l => l.id === activeListId)?.member_fan_ids.includes(c.fan.id)) return false
               if (activeFilter === 'unread') return c.unread
               if (activeFilter === 'all') return true
+              if (activeFilter === 'auto_on') return c.fan.auto_mode === true
+              if (activeFilter === 'auto_off') return c.fan.auto_mode === false
               return c.fan.spend_tier === activeFilter
             })
             return filtered.map((c) => {
@@ -584,6 +598,22 @@ export default function Sidebar({
                         </span>
                       </div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                        {c.fan.auto_mode === true && (
+                          <span style={{
+                            fontSize: 9, padding: '1px 5px', borderRadius: 999,
+                            background: 'rgba(76,175,130,0.2)', color: 'var(--green)',
+                            border: '1px solid rgba(76,175,130,0.4)',
+                            marginLeft: 'auto', flexShrink: 0,
+                          }}>AUTO</span>
+                        )}
+                        {c.fan.auto_mode === false && (
+                          <span style={{
+                            fontSize: 9, padding: '1px 5px', borderRadius: 999,
+                            background: 'rgba(255,80,80,0.1)', color: '#ff6b6b',
+                            border: '1px solid rgba(255,80,80,0.3)',
+                            marginLeft: 'auto', flexShrink: 0,
+                          }}>OFF</span>
+                        )}
                         <span style={{ fontSize: 11, color: 'var(--green)', fontFamily: 'var(--font-display)' }}>
                           ${c.fan.total_spent}
                         </span>

@@ -22,8 +22,8 @@ export interface Fan {
   payday: string
   hobbies: string
   relationship_status: string
-  /** When true, this fan is excluded from creator auto mode (per-fan override). */
-  exclude_from_auto?: boolean
+  /** Per-fan auto override: null = inherit creator default, true/false = forced on/off. */
+  auto_mode?: boolean | null
   ai_summary?: any
 }
 
