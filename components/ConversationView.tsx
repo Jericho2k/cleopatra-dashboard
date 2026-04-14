@@ -246,27 +246,38 @@ export default function ConversationView({
       >
         <div
           style={{
-            width: 40,
-            height: 40,
-            borderRadius: '50%',
-            background: 'var(--bg-elevated)',
-            border: '1px solid var(--border)',
             display: 'flex',
             alignItems: 'center',
-            justifyContent: 'center',
-            fontSize: 14,
-            fontWeight: 600,
-            color: 'var(--text-secondary)',
+            gap: 12,
+            flex: 1,
+            minWidth: 0,
           }}
         >
-          {getInitials(fan.display_name)}
+          <div
+            style={{
+              width: 40,
+              height: 40,
+              borderRadius: '50%',
+              background: 'var(--bg-elevated)',
+              border: '1px solid var(--border)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              fontSize: 14,
+              fontWeight: 600,
+              color: 'var(--text-secondary)',
+              flexShrink: 0,
+            }}
+          >
+            {getInitials(fan.display_name)}
+          </div>
+          <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{fan.display_name}</span>
         </div>
-        <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{fan.display_name}</span>
         <button
           type="button"
           onClick={() => toggleFanAutoMode()}
           style={{
-            marginLeft: 'auto',
+            flexShrink: 0,
             fontSize: 11,
             padding: '4px 10px',
             borderRadius: 4,
@@ -290,6 +301,7 @@ export default function ConversationView({
             background: 'rgba(76, 175, 130, 0.15)',
             color: 'var(--green)',
             border: '1px solid rgba(76, 175, 130, 0.3)',
+            flexShrink: 0,
           }}
         >
           {stage.replace(/_/g, ' ')}
