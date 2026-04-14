@@ -14,7 +14,6 @@ export interface ConversationViewProps {
   pendingMessage?: string
   onClearPending?: () => void
   autoMode?: boolean
-  onToggleAutoMode?: () => void
 }
 
 function getInitials(displayName: string): string {
@@ -32,7 +31,6 @@ export default function ConversationView({
   pendingMessage,
   onClearPending,
   autoMode,
-  onToggleAutoMode,
 }: ConversationViewProps) {
   const [suggestions, setSuggestions] = useState<string[]>(['', '', ''])
   const [stage, setStage] = useState<string>('WARMING_UP')
@@ -229,25 +227,7 @@ export default function ConversationView({
         >
           {getInitials(fan.display_name)}
         </div>
-        <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{fan.display_name}</span>
-        <button
-          type="button"
-          onClick={onToggleAutoMode}
-          style={{
-            marginLeft: 'auto',
-            fontSize: 11,
-            padding: '4px 10px',
-            borderRadius: 4,
-            cursor: 'pointer',
-            background: autoMode ? 'rgba(76,175,130,0.15)' : 'transparent',
-            color: autoMode ? 'var(--green)' : 'var(--text-muted)',
-            border: autoMode ? '1px solid rgba(76,175,130,0.4)' : '1px solid var(--border)',
-            letterSpacing: '0.04em',
-            textTransform: 'uppercase',
-          }}
-        >
-          {autoMode ? '● Auto' : 'Auto'}
-        </button>
+        <span style={{ fontWeight: 600, color: 'var(--text-primary)', marginRight: 'auto' }}>{fan.display_name}</span>
         <span
           style={{
             fontSize: 11,
