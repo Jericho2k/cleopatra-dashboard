@@ -14,6 +14,7 @@ export interface ConversationViewProps {
   pendingMessage?: string
   onClearPending?: () => void
   autoMode?: boolean
+  onToggleAutoMode?: () => void
 }
 
 function getInitials(displayName: string): string {
@@ -31,6 +32,7 @@ export default function ConversationView({
   pendingMessage,
   onClearPending,
   autoMode,
+  onToggleAutoMode,
 }: ConversationViewProps) {
   const [suggestions, setSuggestions] = useState<string[]>(['', '', ''])
   const [stage, setStage] = useState<string>('WARMING_UP')
@@ -41,36 +43,10 @@ export default function ConversationView({
   const [showScripts, setShowScripts] = useState(false)
   const [blockedWords, setBlockedWords] = useState<string[]>([])
   const [queuedMessages, setQueuedMessages] = useState<string[]>([])
-  const [fanAutoMode, setFanAutoMode] = useState<boolean | null>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
   const lastMessage = messages[messages.length - 1]
-
-  useEffect(() => {
-    if (!fan) return
-    setFanAutoMode(fan.auto_mode ?? null)
-  }, [fan?.id, fan?.auto_mode])
-
-  useEffect(() => {
-    if (!fan) return
-    const channel = supabase
-      .channel(`fan-automode-${fan.id}`)
-      .on('postgres_changes', {
-        event: 'UPDATE',
-        schema: 'public',
-        table: 'fans',
-        filter: `id=eq.${fan.id}`,
-      }, (payload) => {
-        const updated = payload.new as { auto_mode?: boolean | null }
-        if ('auto_mode' in updated) {
-          const v = updated.auto_mode
-          setFanAutoMode(v === null || v === undefined ? null : Boolean(v))
-        }
-      })
-      .subscribe()
-    return () => { supabase.removeChannel(channel) }
-  }, [fan?.id])
 
   useEffect(() => {
     if (!fan) return
@@ -196,14 +172,6 @@ export default function ConversationView({
     ta.style.height = `${Math.min(ta.scrollHeight, maxHeight)}px`
   }
 
-  async function toggleFanAutoMode() {
-    if (!fan) return
-    const current = fanAutoMode
-    const next = current === null ? true : current === true ? false : null
-    setFanAutoMode(next)
-    await supabase.from('fans').update({ auto_mode: next }).eq('id', fan.id)
-  }
-
   if (fan === null) {
     return (
       <div
@@ -233,77 +201,47 @@ export default function ConversationView({
       }}
     >
       {/* Top bar */}
-      <div
-        style={{
-          flexShrink: 0,
-          padding: '16px 24px',
-          borderBottom: '1px solid var(--border)',
-          display: 'flex',
-          alignItems: 'center',
-          gap: 12,
-          background: 'var(--bg-surface)',
-        }}
-      >
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 12,
-            flex: 1,
-            minWidth: 0,
-          }}
-        >
-          <div
-            style={{
-              width: 40,
-              height: 40,
-              borderRadius: '50%',
-              background: 'var(--bg-elevated)',
-              border: '1px solid var(--border)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              fontSize: 14,
-              fontWeight: 600,
-              color: 'var(--text-secondary)',
-              flexShrink: 0,
-            }}
-          >
+      <div style={{
+        flexShrink: 0, padding: '16px 24px',
+        borderBottom: '1px solid var(--border)',
+        display: 'flex', alignItems: 'center', gap: 12,
+        background: 'var(--bg-surface)',
+      }}>
+        {/* Left: avatar + name */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, flex: 1, minWidth: 0 }}>
+          <div style={{
+            width: 40, height: 40, borderRadius: '50%', flexShrink: 0,
+            background: 'var(--bg-elevated)', border: '1px solid var(--border)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            fontSize: 14, fontWeight: 600, color: 'var(--text-secondary)',
+          }}>
             {getInitials(fan.display_name)}
           </div>
-          <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{fan.display_name}</span>
+          <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>
+            {fan.display_name}
+          </span>
         </div>
+
+        {/* Right: auto toggle + stage badge */}
         <button
           type="button"
-          onClick={() => toggleFanAutoMode()}
+          onClick={onToggleAutoMode}
           style={{
-            flexShrink: 0,
-            fontSize: 11,
-            padding: '4px 10px',
-            borderRadius: 4,
-            cursor: 'pointer',
-            background: fanAutoMode === true ? 'rgba(76,175,130,0.15)' : 'transparent',
-            color: fanAutoMode === true ? 'var(--green)' : 'var(--text-muted)',
-            border: fanAutoMode === true ? '1px solid rgba(76,175,130,0.4)' : '1px solid var(--border)',
-            letterSpacing: '0.04em',
-            textTransform: 'uppercase',
+            fontSize: 11, padding: '4px 10px', borderRadius: 4, cursor: 'pointer',
+            background: autoMode ? 'rgba(76,175,130,0.15)' : 'transparent',
+            color: autoMode ? 'var(--green)' : 'var(--text-muted)',
+            border: autoMode ? '1px solid rgba(76,175,130,0.4)' : '1px solid var(--border)',
+            letterSpacing: '0.04em', textTransform: 'uppercase', flexShrink: 0,
           }}
         >
-          {fanAutoMode === true ? '● Auto' : fanAutoMode === false ? 'Off' : 'Auto'}
+          {autoMode ? '● Auto' : 'Auto'}
         </button>
-        <span
-          style={{
-            fontSize: 11,
-            textTransform: 'uppercase',
-            letterSpacing: '0.04em',
-            padding: '4px 10px',
-            borderRadius: 4,
-            background: 'rgba(76, 175, 130, 0.15)',
-            color: 'var(--green)',
-            border: '1px solid rgba(76, 175, 130, 0.3)',
-            flexShrink: 0,
-          }}
-        >
+        <span style={{
+          fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.04em',
+          padding: '4px 10px', borderRadius: 4, flexShrink: 0,
+          background: 'rgba(76, 175, 130, 0.15)', color: 'var(--green)',
+          border: '1px solid rgba(76, 175, 130, 0.3)',
+        }}>
           {stage.replace(/_/g, ' ')}
         </span>
       </div>
@@ -433,7 +371,7 @@ export default function ConversationView({
           background: 'var(--bg-surface)',
         }}
       >
-        {!autoMode && <><div
+        {!(autoMode || fan.auto_mode === true) && <><div
           style={{
             fontSize: 11,
             textTransform: 'uppercase',
