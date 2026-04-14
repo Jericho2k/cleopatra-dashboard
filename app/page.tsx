@@ -121,9 +121,16 @@ export default function Page() {
       .single()
 
     const current = fanData?.auto_mode
-    const next = current === true ? false : true
+    const next = current === null || current === undefined
+      ? true
+      : current === true
+        ? false
+        : null
 
-    await supabase.from('fans').update({ auto_mode: next }).eq('id', fanId)
+    await supabase
+      .from('fans')
+      .update({ auto_mode: next })
+      .eq('id', fanId)
 
     updateTab(tabId, {
       conversations: tab.conversations.map(c =>
@@ -672,7 +679,6 @@ export default function Page() {
             messagesLoading={activeTab?.messagesLoading ?? false}
             pendingMessage={activeTab?.pendingMessage ?? ''}
             onClearPending={() => activeTab && updateTab(activeTab.id, { pendingMessage: '' })}
-            autoMode={activeTab?.activeFan?.auto_mode === true}
             creatorAutoMode={activeTab?.autoMode ?? false}
             onToggleAutoMode={() => activeTab?.activeFan && toggleFanAutoMode(activeTab.id, activeTab.activeFan.id)}
           />
