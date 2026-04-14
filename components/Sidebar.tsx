@@ -18,6 +18,8 @@ export interface SidebarProps {
   onDeleteList: (listId: string) => void
   onAddFanToList: (fanId: string, listId: string) => void
   onRemoveFanFromList: (fanId: string, listId: string) => void
+  globalAutoMode: boolean
+  onToggleAutoMode: () => void
 }
 
 const LIST_COLORS = ['#9b8fd4', '#4caf82', '#ff6b6b', '#f0a500', '#4fc3f7', '#f48fb1', '#aaa', '#fff']
@@ -48,6 +50,8 @@ export default function Sidebar({
   fanLists, activeListId, onSelectList,
   onCreateList, onUpdateList, onDeleteList,
   onAddFanToList, onRemoveFanFromList,
+  globalAutoMode,
+  onToggleAutoMode,
 }: SidebarProps) {
   const [now, setNow] = useState(Date.now())
   const [activeFilter, setActiveFilter] = useState<FilterId>('all')
@@ -297,24 +301,39 @@ export default function Sidebar({
         )}
         <div
           style={{
-            padding: '16px 16px 12px',
             borderBottom: '1px solid var(--border-subtle)',
             marginBottom: 8,
             flexShrink: 0,
           }}
         >
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <div
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px 8px' }}>
+            <span style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--text-muted)' }}>
+              Inbox
+            </span>
+            <button
+              type="button"
+              onClick={onToggleAutoMode}
               style={{
-                fontFamily: 'var(--font-display)',
-                fontSize: 22,
-                fontWeight: 700,
-                letterSpacing: '0.02em',
-                color: 'var(--silver)',
+                fontSize: 10, padding: '3px 8px', borderRadius: 4,
+                background: globalAutoMode ? 'rgba(76,175,130,0.15)' : 'transparent',
+                border: globalAutoMode ? '1px solid var(--green)' : '1px solid var(--border)',
+                color: globalAutoMode ? 'var(--green)' : 'var(--text-muted)',
+                cursor: 'pointer', letterSpacing: '0.04em', textTransform: 'uppercase',
               }}
             >
-              INBOX
-            </div>
+              {globalAutoMode ? '● Auto' : 'Auto'}
+            </button>
+          </div>
+          <div
+            style={{
+              fontSize: 11,
+              color: 'var(--text-muted)',
+              padding: '0 16px 12px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+            }}
+          >
             <span
               style={{
                 display: 'inline-flex',
@@ -335,14 +354,6 @@ export default function Sidebar({
               />
               {conversations.length}
             </span>
-          </div>
-          <div
-            style={{
-              fontSize: 11,
-              color: 'var(--text-muted)',
-              marginTop: 2,
-            }}
-          >
             {conversations.length} conversation{conversations.length !== 1 ? 's' : ''}
           </div>
         </div>
@@ -524,7 +535,10 @@ export default function Sidebar({
               if (activeListId && !fanLists.find(l => l.id === activeListId)?.member_fan_ids.includes(c.fan.id)) return false
               if (activeFilter === 'unread') return c.unread
               if (activeFilter === 'all') return true
-              if (activeFilter === 'auto_on') return c.fan.auto_mode === true
+              if (activeFilter === 'auto_on') {
+                return c.fan.auto_mode === true
+                  || (globalAutoMode && c.fan.auto_mode !== false)
+              }
               if (activeFilter === 'auto_off') return c.fan.auto_mode === false
               return c.fan.spend_tier === activeFilter
             })
@@ -550,6 +564,9 @@ export default function Sidebar({
                   : tier === 'casual'
                     ? { border: '1px solid var(--purple)', color: 'var(--purple)' }
                     : { border: '1px solid var(--text-faint)', color: 'var(--text-faint)' }
+            const showAutoIndicator = c.fan.auto_mode === true
+              || (globalAutoMode && c.fan.auto_mode !== false)
+            const showOffIndicator = c.fan.auto_mode === false
             return (
               <li key={c.fan.id} style={{ position: 'relative' }}>
                 <div
@@ -598,7 +615,7 @@ export default function Sidebar({
                         </span>
                       </div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                        {c.fan.auto_mode === true && (
+                        {showAutoIndicator && (
                           <span style={{
                             fontSize: 9, padding: '1px 5px', borderRadius: 999,
                             background: 'rgba(76,175,130,0.2)', color: 'var(--green)',
@@ -606,7 +623,7 @@ export default function Sidebar({
                             marginLeft: 'auto', flexShrink: 0,
                           }}>AUTO</span>
                         )}
-                        {c.fan.auto_mode === false && (
+                        {showOffIndicator && (
                           <span style={{
                             fontSize: 9, padding: '1px 5px', borderRadius: 999,
                             background: 'rgba(255,80,80,0.1)', color: '#ff6b6b',

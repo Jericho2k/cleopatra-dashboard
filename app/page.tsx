@@ -621,6 +621,8 @@ export default function Page() {
             onDeleteList={deleteList}
             onAddFanToList={addFanToList}
             onRemoveFanFromList={removeFanFromList}
+            globalAutoMode={activeTab?.autoMode ?? false}
+            onToggleAutoMode={() => activeTab && toggleAutoMode(activeTab.id)}
           />
         </div>
         <div style={{ height: '100%', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
@@ -646,7 +648,6 @@ export default function Page() {
             pendingMessage={activeTab?.pendingMessage ?? ''}
             onClearPending={() => activeTab && updateTab(activeTab.id, { pendingMessage: '' })}
             autoMode={activeTab?.autoMode ?? false}
-            onToggleAutoMode={() => activeTab && toggleAutoMode(activeTab.id)}
           />
         </div>
         <div style={{ height: '100%', overflow: 'hidden' }}>
