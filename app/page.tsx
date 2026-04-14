@@ -36,6 +36,9 @@ function rowToFan(row: Record<string, unknown>): Fan {
     payday: (row.payday as string) ?? '',
     hobbies: (row.hobbies as string) ?? '',
     relationship_status: (row.relationship_status as string) ?? '',
+    auto_mode: row.auto_mode === null || row.auto_mode === undefined
+      ? null
+      : Boolean(row.auto_mode),
     ai_summary: row.ai_summary ?? null,
   }
 }
@@ -308,11 +311,12 @@ export default function Page() {
       })
 
     if (activeTab?.creatorId) {
+      const cid = activeTab.creatorId
       channel.on('postgres_changes', {
         event: 'INSERT',
         schema: 'public',
         table: 'fans',
-        filter: `creator_id=eq.${activeTab.creatorId}`,
+        filter: `creator_id=eq.${cid}`,
       }, async (payload) => {
         const row = payload.new as Record<string, unknown>
         const newFan = rowToFan(row)
@@ -330,6 +334,26 @@ export default function Page() {
               unread: true,
               unread_count: 1,
             }, ...tab.conversations],
+          }
+        }))
+      })
+      channel.on('postgres_changes', {
+        event: 'UPDATE',
+        schema: 'public',
+        table: 'fans',
+        filter: `creator_id=eq.${cid}`,
+      }, (payload) => {
+        const row = payload.new as Record<string, unknown>
+        const updatedFan = rowToFan(row)
+        const fanCreatorId = row.creator_id as string
+        setTabs(prev => prev.map(tab => {
+          if (tab.creatorId !== fanCreatorId) return tab
+          return {
+            ...tab,
+            activeFan: tab.activeFan?.id === updatedFan.id ? updatedFan : tab.activeFan,
+            conversations: tab.conversations.map(c =>
+              c.fan.id === updatedFan.id ? { ...c, fan: updatedFan } : c
+            ),
           }
         }))
       })
