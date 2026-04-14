@@ -301,24 +301,37 @@ export default function Sidebar({
         )}
         <div
           style={{
+            padding: '16px 16px 12px',
             borderBottom: '1px solid var(--border-subtle)',
             marginBottom: 8,
             flexShrink: 0,
           }}
         >
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px 8px' }}>
-            <span style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--text-muted)' }}>
-              Inbox
-            </span>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <div
+              style={{
+                fontFamily: 'var(--font-display)',
+                fontSize: 22,
+                fontWeight: 700,
+                letterSpacing: '0.02em',
+                color: 'var(--silver)',
+              }}
+            >
+              INBOX
+            </div>
             <button
               type="button"
               onClick={onToggleAutoMode}
               style={{
-                fontSize: 10, padding: '3px 8px', borderRadius: 4,
+                fontSize: 11,
+                padding: '4px 10px',
+                borderRadius: 4,
+                cursor: 'pointer',
                 background: globalAutoMode ? 'rgba(76,175,130,0.15)' : 'transparent',
-                border: globalAutoMode ? '1px solid var(--green)' : '1px solid var(--border)',
                 color: globalAutoMode ? 'var(--green)' : 'var(--text-muted)',
-                cursor: 'pointer', letterSpacing: '0.04em', textTransform: 'uppercase',
+                border: globalAutoMode ? '1px solid rgba(76,175,130,0.4)' : '1px solid var(--border)',
+                letterSpacing: '0.04em',
+                textTransform: 'uppercase',
               }}
             >
               {globalAutoMode ? '● Auto' : 'Auto'}
@@ -328,32 +341,9 @@ export default function Sidebar({
             style={{
               fontSize: 11,
               color: 'var(--text-muted)',
-              padding: '0 16px 12px',
-              display: 'flex',
-              alignItems: 'center',
-              gap: 8,
+              marginTop: 2,
             }}
           >
-            <span
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 6,
-                fontSize: 12,
-                color: 'var(--text-secondary)',
-              }}
-            >
-              <span
-                style={{
-                  width: 6,
-                  height: 6,
-                  borderRadius: '50%',
-                  background: 'var(--green)',
-                  animation: 'sidebar-pulse 1.5s ease-in-out infinite',
-                }}
-              />
-              {conversations.length}
-            </span>
             {conversations.length} conversation{conversations.length !== 1 ? 's' : ''}
           </div>
         </div>
