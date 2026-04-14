@@ -13,7 +13,10 @@ export interface ConversationViewProps {
   messagesLoading?: boolean
   pendingMessage?: string
   onClearPending?: () => void
+  /** Per-fan auto on (drives header Auto button). */
   autoMode?: boolean
+  /** Creator-level auto (hides suggestions when on, independent of fan override). */
+  creatorAutoMode?: boolean
   onToggleAutoMode?: () => void
 }
 
@@ -32,6 +35,7 @@ export default function ConversationView({
   pendingMessage,
   onClearPending,
   autoMode,
+  creatorAutoMode,
   onToggleAutoMode,
 }: ConversationViewProps) {
   const [suggestions, setSuggestions] = useState<string[]>(['', '', ''])
@@ -376,7 +380,7 @@ export default function ConversationView({
           background: 'var(--bg-surface)',
         }}
       >
-        {!(autoMode || fan.auto_mode === true) && <><div
+        {!((creatorAutoMode ?? false) || fan.auto_mode === true) && <><div
           style={{
             fontSize: 11,
             textTransform: 'uppercase',

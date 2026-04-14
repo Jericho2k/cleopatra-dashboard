@@ -36,7 +36,7 @@ function rowToFan(row: Record<string, unknown>): Fan {
     payday: (row.payday as string) ?? '',
     hobbies: (row.hobbies as string) ?? '',
     relationship_status: (row.relationship_status as string) ?? '',
-    auto_mode: row.auto_mode === null || row.auto_mode === undefined
+    auto_mode: row.auto_mode === undefined || row.auto_mode === null
       ? null
       : Boolean(row.auto_mode),
     ai_summary: row.ai_summary ?? null,
@@ -108,6 +108,31 @@ export default function Page() {
     const next = !tab.autoMode
     updateTab(tabId, { autoMode: next })
     await supabase.from('creators').update({ auto_mode: next }).eq('id', tab.creatorId)
+  }
+
+  const toggleFanAutoMode = async (tabId: string, fanId: string) => {
+    const tab = tabs.find(t => t.id === tabId)
+    if (!tab) return
+
+    const { data: fanData } = await supabase
+      .from('fans')
+      .select('auto_mode')
+      .eq('id', fanId)
+      .single()
+
+    const current = fanData?.auto_mode
+    const next = current === true ? false : true
+
+    await supabase.from('fans').update({ auto_mode: next }).eq('id', fanId)
+
+    updateTab(tabId, {
+      conversations: tab.conversations.map(c =>
+        c.fan.id === fanId ? { ...c, fan: { ...c.fan, auto_mode: next } } : c
+      ),
+      activeFan: tab.activeFan?.id === fanId
+        ? { ...tab.activeFan, auto_mode: next }
+        : tab.activeFan,
+    })
   }
 
   const closeTab = (tabId: string) => {
@@ -647,7 +672,9 @@ export default function Page() {
             messagesLoading={activeTab?.messagesLoading ?? false}
             pendingMessage={activeTab?.pendingMessage ?? ''}
             onClearPending={() => activeTab && updateTab(activeTab.id, { pendingMessage: '' })}
-            autoMode={activeTab?.autoMode ?? false}
+            autoMode={activeTab?.activeFan?.auto_mode === true}
+            creatorAutoMode={activeTab?.autoMode ?? false}
+            onToggleAutoMode={() => activeTab?.activeFan && toggleFanAutoMode(activeTab.id, activeTab.activeFan.id)}
           />
         </div>
         <div style={{ height: '100%', overflow: 'hidden' }}>
