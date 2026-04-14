@@ -223,19 +223,24 @@ export default function ConversationView({
         </div>
 
         {/* Right: auto toggle + stage badge */}
-        <button
-          type="button"
-          onClick={onToggleAutoMode}
-          style={{
-            fontSize: 11, padding: '4px 10px', borderRadius: 4, cursor: 'pointer',
-            background: autoMode ? 'rgba(76,175,130,0.15)' : 'transparent',
-            color: autoMode ? 'var(--green)' : 'var(--text-muted)',
-            border: autoMode ? '1px solid rgba(76,175,130,0.4)' : '1px solid var(--border)',
-            letterSpacing: '0.04em', textTransform: 'uppercase', flexShrink: 0,
-          }}
-        >
-          {autoMode ? '● Auto' : 'Auto'}
-        </button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+          <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+            Auto mode for this fan
+          </span>
+          <button
+            type="button"
+            onClick={() => onToggleAutoMode?.()}
+            style={{
+              fontSize: 11, padding: '4px 10px', borderRadius: 4, cursor: 'pointer',
+              background: autoMode ? 'rgba(76,175,130,0.15)' : 'transparent',
+              color: autoMode ? 'var(--green)' : 'var(--text-muted)',
+              border: autoMode ? '1px solid rgba(76,175,130,0.4)' : '1px solid var(--border)',
+              letterSpacing: '0.04em', textTransform: 'uppercase',
+            }}
+          >
+            {autoMode ? '● Auto' : 'Auto'}
+          </button>
+        </div>
         <span style={{
           fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.04em',
           padding: '4px 10px', borderRadius: 4, flexShrink: 0,
