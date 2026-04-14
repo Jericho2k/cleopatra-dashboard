@@ -13,8 +13,6 @@ export interface ConversationViewProps {
   messagesLoading?: boolean
   pendingMessage?: string
   onClearPending?: () => void
-  /** Per-fan auto on (drives header Auto button). */
-  autoMode?: boolean
   /** Creator-level auto (hides suggestions when on, independent of fan override). */
   creatorAutoMode?: boolean
   onToggleAutoMode?: () => void
@@ -34,7 +32,6 @@ export default function ConversationView({
   messagesLoading,
   pendingMessage,
   onClearPending,
-  autoMode,
   creatorAutoMode,
   onToggleAutoMode,
 }: ConversationViewProps) {
@@ -195,6 +192,12 @@ export default function ConversationView({
 
   const hasBlockedWords = getBlockedMatches(inputValue).length > 0
 
+  const fanAutoMode = fan.auto_mode
+  const buttonLabel = fanAutoMode === true ? '● Auto' : fanAutoMode === false ? '○ Off' : 'Auto'
+  const buttonColor = fanAutoMode === true ? 'var(--green)' : fanAutoMode === false ? '#ff6b6b' : 'var(--text-muted)'
+  const buttonBg = fanAutoMode === true ? 'rgba(76,175,130,0.15)' : fanAutoMode === false ? 'rgba(255,80,80,0.1)' : 'transparent'
+  const buttonBorder = fanAutoMode === true ? '1px solid rgba(76,175,130,0.4)' : fanAutoMode === false ? '1px solid rgba(255,80,80,0.3)' : '1px solid var(--border)'
+
   return (
     <div
       style={{
@@ -236,13 +239,13 @@ export default function ConversationView({
             onClick={() => onToggleAutoMode?.()}
             style={{
               fontSize: 11, padding: '4px 10px', borderRadius: 4, cursor: 'pointer',
-              background: autoMode ? 'rgba(76,175,130,0.15)' : 'transparent',
-              color: autoMode ? 'var(--green)' : 'var(--text-muted)',
-              border: autoMode ? '1px solid rgba(76,175,130,0.4)' : '1px solid var(--border)',
+              background: buttonBg,
+              color: buttonColor,
+              border: buttonBorder,
               letterSpacing: '0.04em', textTransform: 'uppercase',
             }}
           >
-            {autoMode ? '● Auto' : 'Auto'}
+            {buttonLabel}
           </button>
         </div>
         <span style={{
