@@ -49,13 +49,11 @@ export default function FanPanel({ fan, creatorId, onInsertMessage }: FanPanelPr
   const [expandedStoryline, setExpandedStoryline] = useState<string | null>(null)
   const [aiSummary, setAiSummary] = useState<any>(null)
   const [showAiProfile, setShowAiProfile] = useState(false)
-  const [autoMode, setAutoMode] = useState<boolean | null>(null)
 
   useEffect(() => {
     if (fan) {
       const summary = fan.ai_summary
       setAiSummary(summary ?? null)
-      setAutoMode(fan.auto_mode ?? null)
       setDetails({
         age: (fan as any).age ?? '',
         payday: (fan as any).payday || summary?.payday || '',
@@ -63,7 +61,7 @@ export default function FanPanel({ fan, creatorId, onInsertMessage }: FanPanelPr
         relationship_status: (fan as any).relationship_status || summary?.relationship_status || '',
       })
     }
-  }, [fan?.id, fan?.auto_mode])
+  }, [fan?.id])
 
   useEffect(() => {
     if (!fan) return
@@ -77,10 +75,6 @@ export default function FanPanel({ fan, creatorId, onInsertMessage }: FanPanelPr
       }, (payload) => {
         const updated = payload.new as any
         setAiSummary(updated.ai_summary ?? null)
-        if ('auto_mode' in updated) {
-          const v = updated.auto_mode
-          setAutoMode(v === null || v === undefined ? null : Boolean(v))
-        }
         setDetails({
           age: updated.age ?? '',
           payday: updated.payday || updated.ai_summary?.payday || '',
@@ -214,14 +208,6 @@ export default function FanPanel({ fan, creatorId, onInsertMessage }: FanPanelPr
     await supabase.from('fans').update({ [field]: value }).eq('id', fan.id)
   }
 
-  async function toggleFanAutoMode() {
-    if (!fan) return
-    const current = autoMode
-    const next = current === null ? true : current === true ? false : null
-    setAutoMode(next)
-    await supabase.from('fans').update({ auto_mode: next }).eq('id', fan.id)
-  }
-
   const LABEL_STYLE = {
     fontSize: 11,
     textTransform: 'uppercase' as const,
@@ -289,30 +275,6 @@ export default function FanPanel({ fan, creatorId, onInsertMessage }: FanPanelPr
               {fan.spend_tier}
             </span>
           </div>
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8 }}>
-          <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>Auto mode for this fan</span>
-          <button
-            type="button"
-            onClick={() => toggleFanAutoMode()}
-            style={{
-              fontSize: 11, padding: '3px 8px', borderRadius: 4,
-              background: autoMode === true ? 'rgba(76,175,130,0.15)' : 'transparent',
-              border: autoMode === true
-                ? '1px solid var(--green)'
-                : autoMode === false
-                  ? '1px solid rgba(255,80,80,0.35)'
-                  : '1px solid var(--border)',
-              color: autoMode === true
-                ? 'var(--green)'
-                : autoMode === false
-                  ? '#ff6b6b'
-                  : 'var(--text-muted)',
-              cursor: 'pointer',
-            }}
-          >
-            {autoMode === null ? 'Default' : autoMode === true ? 'On' : 'Off'}
-          </button>
         </div>
       </div>
 

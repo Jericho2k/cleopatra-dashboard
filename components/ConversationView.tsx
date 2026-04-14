@@ -41,10 +41,36 @@ export default function ConversationView({
   const [showScripts, setShowScripts] = useState(false)
   const [blockedWords, setBlockedWords] = useState<string[]>([])
   const [queuedMessages, setQueuedMessages] = useState<string[]>([])
+  const [fanAutoMode, setFanAutoMode] = useState<boolean | null>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
   const lastMessage = messages[messages.length - 1]
+
+  useEffect(() => {
+    if (!fan) return
+    setFanAutoMode(fan.auto_mode ?? null)
+  }, [fan?.id, fan?.auto_mode])
+
+  useEffect(() => {
+    if (!fan) return
+    const channel = supabase
+      .channel(`fan-automode-${fan.id}`)
+      .on('postgres_changes', {
+        event: 'UPDATE',
+        schema: 'public',
+        table: 'fans',
+        filter: `id=eq.${fan.id}`,
+      }, (payload) => {
+        const updated = payload.new as { auto_mode?: boolean | null }
+        if ('auto_mode' in updated) {
+          const v = updated.auto_mode
+          setFanAutoMode(v === null || v === undefined ? null : Boolean(v))
+        }
+      })
+      .subscribe()
+    return () => { supabase.removeChannel(channel) }
+  }, [fan?.id])
 
   useEffect(() => {
     if (!fan) return
@@ -170,6 +196,14 @@ export default function ConversationView({
     ta.style.height = `${Math.min(ta.scrollHeight, maxHeight)}px`
   }
 
+  async function toggleFanAutoMode() {
+    if (!fan) return
+    const current = fanAutoMode
+    const next = current === null ? true : current === true ? false : null
+    setFanAutoMode(next)
+    await supabase.from('fans').update({ auto_mode: next }).eq('id', fan.id)
+  }
+
   if (fan === null) {
     return (
       <div
@@ -227,7 +261,25 @@ export default function ConversationView({
         >
           {getInitials(fan.display_name)}
         </div>
-        <span style={{ fontWeight: 600, color: 'var(--text-primary)', marginRight: 'auto' }}>{fan.display_name}</span>
+        <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{fan.display_name}</span>
+        <button
+          type="button"
+          onClick={() => toggleFanAutoMode()}
+          style={{
+            marginLeft: 'auto',
+            fontSize: 11,
+            padding: '4px 10px',
+            borderRadius: 4,
+            cursor: 'pointer',
+            background: fanAutoMode === true ? 'rgba(76,175,130,0.15)' : 'transparent',
+            color: fanAutoMode === true ? 'var(--green)' : 'var(--text-muted)',
+            border: fanAutoMode === true ? '1px solid rgba(76,175,130,0.4)' : '1px solid var(--border)',
+            letterSpacing: '0.04em',
+            textTransform: 'uppercase',
+          }}
+        >
+          {fanAutoMode === true ? '● Auto' : fanAutoMode === false ? 'Off' : 'Auto'}
+        </button>
         <span
           style={{
             fontSize: 11,
