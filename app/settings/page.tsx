@@ -4,9 +4,9 @@ import React, { useState, useEffect } from 'react'
 import { Eye, EyeOff } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 
-type Section = 'Creator Persona' | 'Blocked Words' | 'PPV Offers' | 'Storylines' | 'Vault Media'
+type Section = 'Creator Persona' | 'Blocked Words' | 'PPV Offers' | 'Storylines' | 'Re-engagement' | 'Vault Media'
 
-const SECTIONS: Section[] = ['Creator Persona', 'Blocked Words', 'PPV Offers', 'Storylines', 'Vault Media']
+const SECTIONS: Section[] = ['Creator Persona', 'Blocked Words', 'PPV Offers', 'Storylines', 'Re-engagement', 'Vault Media']
 const PROXY_COUNTRIES = [
   { code: 'US', label: '🇺🇸 United States' },
   { code: 'CA', label: '🇨🇦 Canada' },
@@ -65,6 +65,14 @@ export default function SettingsPage() {
     countryCode: 'US',
   })
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null)
+  const [reengagement, setReengagement] = useState({
+    enabled: false,
+    hours_threshold: 24,
+    max_per_week: 2,
+    use_ai: true,
+    ai_instructions: '',
+    template: '',
+  })
 
   function showToast(message: string, type: 'success' | 'error' = 'success') {
     setToast({ message, type })
@@ -197,6 +205,23 @@ export default function SettingsPage() {
     // Placeholder for scripts/storylines settings loading.
   }
 
+  const loadReengagement = async (creatorId: string) => {
+    const { data } = await supabase
+      .from('creators')
+      .select('reengagement_settings')
+      .eq('id', creatorId)
+      .single()
+    const s = (data as any)?.reengagement_settings ?? {}
+    setReengagement({
+      enabled: Boolean(s.enabled),
+      hours_threshold: Number(s.hours_threshold ?? 24),
+      max_per_week: Number(s.max_per_week ?? 2),
+      use_ai: s.use_ai === undefined ? true : Boolean(s.use_ai),
+      ai_instructions: (s.ai_instructions as string) ?? '',
+      template: (s.template as string) ?? '',
+    })
+  }
+
   const loadVaultMedia = async (creatorId: string) => {
     const { data } = await supabase
       .from('creator_vault_media')
@@ -212,6 +237,7 @@ export default function SettingsPage() {
     loadPersona(selectedCreatorId)
     loadBlockedWords(selectedCreatorId)
     loadScripts(selectedCreatorId)
+    loadReengagement(selectedCreatorId)
     loadVaultMedia(selectedCreatorId)
   }, [selectedCreatorId])
 
@@ -240,6 +266,15 @@ export default function SettingsPage() {
     setPersonaSaving(false)
     setPersonaSaved(true)
     setTimeout(() => setPersonaSaved(false), 2000)
+  }
+
+  const saveReengagement = async () => {
+    if (!selectedCreatorId) return
+    await supabase
+      .from('creators')
+      .update({ reengagement_settings: reengagement })
+      .eq('id', selectedCreatorId)
+    showToast('Re-engagement settings saved')
   }
 
   const addWord = async () => {
@@ -561,6 +596,150 @@ export default function SettingsPage() {
               <div style={{ color: 'var(--text-muted)', fontSize: 13 }}>
                 Storyline management coming soon.
               </div>
+            </div>
+          )}
+
+          {/* Re-engagement */}
+          {activeSection === 'Re-engagement' && (
+            <div>
+              <div style={{ marginBottom: 24 }}>
+                <div style={{ fontSize: 18, fontWeight: 600, marginBottom: 4 }}>Re-engagement</div>
+                <div style={{ fontSize: 13, color: 'var(--text-muted)' }}>
+                  Automatically re-engage fans who go quiet.
+                </div>
+              </div>
+
+              {/* Enable toggle */}
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
+                <div>
+                  <div style={{ fontSize: 13, color: 'var(--text-primary)', fontWeight: 500 }}>Enable re-engagement</div>
+                  <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>Send automatic messages to inactive fans</div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setReengagement(prev => ({ ...prev, enabled: !prev.enabled }))}
+                  style={{
+                    padding: '4px 12px', borderRadius: 4, cursor: 'pointer', fontSize: 12,
+                    background: reengagement.enabled ? 'rgba(76,175,130,0.15)' : 'transparent',
+                    border: reengagement.enabled ? '1px solid var(--green)' : '1px solid var(--border)',
+                    color: reengagement.enabled ? 'var(--green)' : 'var(--text-muted)',
+                  }}
+                >
+                  {reengagement.enabled ? 'Enabled' : 'Disabled'}
+                </button>
+              </div>
+
+              {/* Hours threshold */}
+              <div style={{ marginBottom: 16 }}>
+                <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 6, textTransform: 'uppercase' }}>
+                  Re-engage after (hours of silence)
+                </div>
+                <select
+                  value={reengagement.hours_threshold}
+                  onChange={e => setReengagement(prev => ({ ...prev, hours_threshold: Number(e.target.value) }))}
+                  style={{
+                    background: 'var(--bg-elevated)', border: '1px solid var(--border)',
+                    borderRadius: 6, color: 'var(--text-primary)', padding: '8px 12px', fontSize: 13,
+                  }}
+                >
+                  {[12, 24, 48, 72, 96].map(h => (
+                    <option key={h} value={h}>{h} hours</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Max per week */}
+              <div style={{ marginBottom: 16 }}>
+                <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 6, textTransform: 'uppercase' }}>
+                  Max re-engagements per fan per week
+                </div>
+                <select
+                  value={reengagement.max_per_week}
+                  onChange={e => setReengagement(prev => ({ ...prev, max_per_week: Number(e.target.value) }))}
+                  style={{
+                    background: 'var(--bg-elevated)', border: '1px solid var(--border)',
+                    borderRadius: 6, color: 'var(--text-primary)', padding: '8px 12px', fontSize: 13,
+                  }}
+                >
+                  {[1, 2, 3, 5].map(n => (
+                    <option key={n} value={n}>{n}x per week</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* AI or template */}
+              <div style={{ marginBottom: 16 }}>
+                <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 6, textTransform: 'uppercase' }}>
+                  Message type
+                </div>
+                <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
+                  {['ai', 'template'].map(type => (
+                    <button
+                      key={type}
+                      type="button"
+                      onClick={() => setReengagement(prev => ({ ...prev, use_ai: type === 'ai' }))}
+                      style={{
+                        padding: '6px 14px', borderRadius: 6, cursor: 'pointer', fontSize: 12,
+                        background: (reengagement.use_ai ? 'ai' : 'template') === type ? 'rgba(155,143,212,0.15)' : 'transparent',
+                        border: (reengagement.use_ai ? 'ai' : 'template') === type ? '1px solid var(--purple)' : '1px solid var(--border)',
+                        color: (reengagement.use_ai ? 'ai' : 'template') === type ? 'var(--purple)' : 'var(--text-muted)',
+                      }}
+                    >
+                      {type === 'ai' ? 'AI Generated' : 'Fixed Template'}
+                    </button>
+                  ))}
+                </div>
+
+                {reengagement.use_ai ? (
+                  <div>
+                    <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 6 }}>
+                      Instructions for the AI
+                    </div>
+                    <textarea
+                      value={reengagement.ai_instructions ?? ''}
+                      onChange={e => setReengagement(prev => ({ ...prev, ai_instructions: e.target.value }))}
+                      rows={3}
+                      placeholder="e.g. Send a warm curious message referencing something from the previous conversation"
+                      style={{
+                        width: '100%', background: 'var(--bg-elevated)',
+                        border: '1px solid var(--border-subtle)', borderRadius: 6,
+                        padding: '8px 12px', color: 'var(--text-primary)',
+                        fontSize: 13, resize: 'vertical', boxSizing: 'border-box', outline: 'none',
+                      }}
+                    />
+                  </div>
+                ) : (
+                  <div>
+                    <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 6 }}>
+                      Message template (use {'{name}'} for fan&apos;s name)
+                    </div>
+                    <textarea
+                      value={reengagement.template ?? ''}
+                      onChange={e => setReengagement(prev => ({ ...prev, template: e.target.value }))}
+                      rows={3}
+                      placeholder="hey {name}! been thinking about you 😏 you disappeared on me"
+                      style={{
+                        width: '100%', background: 'var(--bg-elevated)',
+                        border: '1px solid var(--border-subtle)', borderRadius: 6,
+                        padding: '8px 12px', color: 'var(--text-primary)',
+                        fontSize: 13, resize: 'vertical', boxSizing: 'border-box', outline: 'none',
+                      }}
+                    />
+                  </div>
+                )}
+              </div>
+
+              <button
+                type="button"
+                onClick={saveReengagement}
+                style={{
+                  padding: '8px 20px', background: 'rgba(200,200,200,0.1)',
+                  border: '1px solid var(--silver)', borderRadius: 6,
+                  color: 'var(--silver)', fontSize: 13, cursor: 'pointer',
+                }}
+              >
+                Save
+              </button>
             </div>
           )}
 
