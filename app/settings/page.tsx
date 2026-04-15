@@ -72,9 +72,8 @@ export default function SettingsPage() {
     max_per_week: 2,
     use_ai: true,
     ai_instructions: '',
-    template: '',
-    apply_to: 'all' as 'all' | 'list' | 'manual',
-    list_id: null as string | null,
+    templates: [''],
+    exclude_list_id: null as string | null,
     excluded_fan_ids: [] as string[],
   })
 
@@ -231,9 +230,10 @@ export default function SettingsPage() {
       max_per_week: Number(s.max_per_week ?? 2),
       use_ai: s.use_ai === undefined ? true : Boolean(s.use_ai),
       ai_instructions: (s.ai_instructions as string) ?? '',
-      template: (s.template as string) ?? '',
-      apply_to: (s.apply_to as 'all' | 'list' | 'manual') ?? 'all',
-      list_id: (s.list_id as string | null) ?? null,
+      templates: Array.isArray(s.templates)
+        ? (s.templates as string[])
+        : (s.template ? [s.template as string] : ['']),
+      exclude_list_id: (s.exclude_list_id as string | null) ?? null,
       excluded_fan_ids: Array.isArray(s.excluded_fan_ids) ? (s.excluded_fan_ids as string[]) : [],
     })
   }
@@ -684,45 +684,28 @@ export default function SettingsPage() {
                 </select>
               </div>
 
-              {/* Apply to */}
+              {/* Exclude fans from re-engagement */}
               <div style={{ marginBottom: 16 }}>
                 <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 6, textTransform: 'uppercase' }}>
-                  Apply to
+                  Exclude fans from re-engagement
                 </div>
-                <div style={{ display: 'flex', gap: 8 }}>
-                  {(['all', 'list'] as const).map(type => (
-                    <button
-                      key={type}
-                      type="button"
-                      onClick={() => setReengagement(prev => ({ ...prev, apply_to: type }))}
-                      style={{
-                        padding: '6px 14px', borderRadius: 6, cursor: 'pointer', fontSize: 12,
-                        background: reengagement.apply_to === type ? 'rgba(155,143,212,0.15)' : 'transparent',
-                        border: reengagement.apply_to === type ? '1px solid var(--purple)' : '1px solid var(--border)',
-                        color: reengagement.apply_to === type ? 'var(--purple)' : 'var(--text-muted)',
-                      }}
-                    >
-                      {type === 'all' ? 'All fans' : 'Specific list'}
-                    </button>
+                <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 8 }}>
+                  Fans in this list will never receive re-engagement messages
+                </div>
+                <select
+                  value={reengagement.exclude_list_id ?? ''}
+                  onChange={e => setReengagement(prev => ({ ...prev, exclude_list_id: e.target.value || null }))}
+                  style={{
+                    width: '100%', background: 'var(--bg-elevated)',
+                    border: '1px solid var(--border)', borderRadius: 6,
+                    color: 'var(--text-primary)', padding: '8px 12px', fontSize: 13,
+                  }}
+                >
+                  <option value=''>No exclusions</option>
+                  {fanLists.map(l => (
+                    <option key={l.id} value={l.id}>{l.name}</option>
                   ))}
-                </div>
-
-                {reengagement.apply_to === 'list' && (
-                  <select
-                    value={reengagement.list_id ?? ''}
-                    onChange={e => setReengagement(prev => ({ ...prev, list_id: e.target.value || null }))}
-                    style={{
-                      marginTop: 8, width: '100%', background: 'var(--bg-elevated)',
-                      border: '1px solid var(--border)', borderRadius: 6,
-                      color: 'var(--text-primary)', padding: '8px 12px', fontSize: 13,
-                    }}
-                  >
-                    <option value=''>Select a list...</option>
-                    {fanLists.map(l => (
-                      <option key={l.id} value={l.id}>{l.name}</option>
-                    ))}
-                  </select>
-                )}
+                </select>
               </div>
 
               {/* AI or template */}
@@ -768,21 +751,66 @@ export default function SettingsPage() {
                   </div>
                 ) : (
                   <div>
-                    <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 6 }}>
-                      Message template (use {'{name}'} for fan&apos;s name)
+                    <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 6, textTransform: 'uppercase' }}>
+                      Message templates (sent in sequence)
                     </div>
-                    <textarea
-                      value={reengagement.template ?? ''}
-                      onChange={e => setReengagement(prev => ({ ...prev, template: e.target.value }))}
-                      rows={3}
-                      placeholder="hey {name}! been thinking about you 😏 you disappeared on me"
+                    <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 8 }}>
+                      First template sent after {reengagement.hours_threshold}h, then each subsequent one after another {reengagement.hours_threshold}h interval. Use {'{name}'} for fan&apos;s name.
+                    </div>
+                    {(reengagement.templates ?? []).map((t: string, i: number) => (
+                      <div key={i} style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
+                        <div style={{
+                          fontSize: 11, color: 'var(--text-muted)',
+                          minWidth: 20, paddingTop: 10,
+                        }}>
+                          {i + 1}.
+                        </div>
+                        <textarea
+                          value={t}
+                          onChange={e => {
+                            const updated = [...(reengagement.templates ?? [])]
+                            updated[i] = e.target.value
+                            setReengagement(prev => ({ ...prev, templates: updated }))
+                          }}
+                          rows={2}
+                          placeholder={`Template ${i + 1}... use {name} for fan's name`}
+                          style={{
+                            flex: 1, background: 'var(--bg-elevated)',
+                            border: '1px solid var(--border-subtle)', borderRadius: 6,
+                            padding: '8px 12px', color: 'var(--text-primary)',
+                            fontSize: 13, resize: 'vertical', boxSizing: 'border-box', outline: 'none',
+                          }}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const updated = (reengagement.templates ?? []).filter((_: string, j: number) => j !== i)
+                            setReengagement(prev => ({ ...prev, templates: updated }))
+                          }}
+                          style={{
+                            background: 'transparent', border: 'none',
+                            color: 'var(--text-muted)', cursor: 'pointer',
+                            fontSize: 16, padding: '0 4px', alignSelf: 'flex-start', marginTop: 8,
+                          }}
+                        >
+                          ×
+                        </button>
+                      </div>
+                    ))}
+                    <button
+                      type="button"
+                      onClick={() => setReengagement(prev => ({
+                        ...prev,
+                        templates: [...(prev.templates ?? []), ''],
+                      }))}
                       style={{
-                        width: '100%', background: 'var(--bg-elevated)',
-                        border: '1px solid var(--border-subtle)', borderRadius: 6,
-                        padding: '8px 12px', color: 'var(--text-primary)',
-                        fontSize: 13, resize: 'vertical', boxSizing: 'border-box', outline: 'none',
+                        padding: '6px 12px', background: 'transparent',
+                        border: '1px solid var(--border)', borderRadius: 6,
+                        color: 'var(--text-muted)', fontSize: 12, cursor: 'pointer', marginTop: 4,
                       }}
-                    />
+                    >
+                      + Add template
+                    </button>
                   </div>
                 )}
               </div>
