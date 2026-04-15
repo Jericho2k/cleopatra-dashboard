@@ -65,6 +65,7 @@ export default function SettingsPage() {
     countryCode: 'US',
   })
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null)
+  const [fanLists, setFanLists] = useState<{ id: string; name: string }[]>([])
   const [reengagement, setReengagement] = useState({
     enabled: false,
     hours_threshold: 24,
@@ -72,6 +73,9 @@ export default function SettingsPage() {
     use_ai: true,
     ai_instructions: '',
     template: '',
+    apply_to: 'all' as 'all' | 'list' | 'manual',
+    list_id: null as string | null,
+    excluded_fan_ids: [] as string[],
   })
 
   function showToast(message: string, type: 'success' | 'error' = 'success') {
@@ -205,6 +209,15 @@ export default function SettingsPage() {
     // Placeholder for scripts/storylines settings loading.
   }
 
+  const loadFanLists = async (creatorId: string) => {
+    const { data } = await supabase
+      .from('fan_lists')
+      .select('id, name')
+      .eq('creator_id', creatorId)
+      .order('name')
+    setFanLists(data ?? [])
+  }
+
   const loadReengagement = async (creatorId: string) => {
     const { data } = await supabase
       .from('creators')
@@ -219,6 +232,9 @@ export default function SettingsPage() {
       use_ai: s.use_ai === undefined ? true : Boolean(s.use_ai),
       ai_instructions: (s.ai_instructions as string) ?? '',
       template: (s.template as string) ?? '',
+      apply_to: (s.apply_to as 'all' | 'list' | 'manual') ?? 'all',
+      list_id: (s.list_id as string | null) ?? null,
+      excluded_fan_ids: Array.isArray(s.excluded_fan_ids) ? (s.excluded_fan_ids as string[]) : [],
     })
   }
 
@@ -237,6 +253,7 @@ export default function SettingsPage() {
     loadPersona(selectedCreatorId)
     loadBlockedWords(selectedCreatorId)
     loadScripts(selectedCreatorId)
+    loadFanLists(selectedCreatorId)
     loadReengagement(selectedCreatorId)
     loadVaultMedia(selectedCreatorId)
   }, [selectedCreatorId])
@@ -665,6 +682,47 @@ export default function SettingsPage() {
                     <option key={n} value={n}>{n}x per week</option>
                   ))}
                 </select>
+              </div>
+
+              {/* Apply to */}
+              <div style={{ marginBottom: 16 }}>
+                <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 6, textTransform: 'uppercase' }}>
+                  Apply to
+                </div>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  {(['all', 'list'] as const).map(type => (
+                    <button
+                      key={type}
+                      type="button"
+                      onClick={() => setReengagement(prev => ({ ...prev, apply_to: type }))}
+                      style={{
+                        padding: '6px 14px', borderRadius: 6, cursor: 'pointer', fontSize: 12,
+                        background: reengagement.apply_to === type ? 'rgba(155,143,212,0.15)' : 'transparent',
+                        border: reengagement.apply_to === type ? '1px solid var(--purple)' : '1px solid var(--border)',
+                        color: reengagement.apply_to === type ? 'var(--purple)' : 'var(--text-muted)',
+                      }}
+                    >
+                      {type === 'all' ? 'All fans' : 'Specific list'}
+                    </button>
+                  ))}
+                </div>
+
+                {reengagement.apply_to === 'list' && (
+                  <select
+                    value={reengagement.list_id ?? ''}
+                    onChange={e => setReengagement(prev => ({ ...prev, list_id: e.target.value || null }))}
+                    style={{
+                      marginTop: 8, width: '100%', background: 'var(--bg-elevated)',
+                      border: '1px solid var(--border)', borderRadius: 6,
+                      color: 'var(--text-primary)', padding: '8px 12px', fontSize: 13,
+                    }}
+                  >
+                    <option value=''>Select a list...</option>
+                    {fanLists.map(l => (
+                      <option key={l.id} value={l.id}>{l.name}</option>
+                    ))}
+                  </select>
+                )}
               </div>
 
               {/* AI or template */}
