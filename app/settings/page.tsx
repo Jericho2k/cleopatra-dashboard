@@ -164,27 +164,14 @@ export default function SettingsPage() {
   }
 
   async function deleteCreator(id: string) {
-    if (!confirm('Delete this creator? This cannot be undone.')) return
+    if (!confirm('Delete this creator and ALL their data? This cannot be undone.')) return
 
-    const { data: { user } } = await supabase.auth.getUser()
-    const { error: linkError } = await supabase
-      .from('chatter_creators')
-      .delete()
-      .eq('creator_id', id)
-      .eq('chatter_id', user?.id)
+    const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/creators/${id}`, {
+      method: 'DELETE',
+    })
 
-    if (linkError) {
-      showToast('Failed to delete: ' + linkError.message, 'error')
-      return
-    }
-
-    const { error: creatorError } = await supabase
-      .from('creators')
-      .delete()
-      .eq('id', id)
-
-    if (creatorError) {
-      showToast('Failed to delete: ' + creatorError.message, 'error')
+    if (!res.ok) {
+      showToast('Failed to delete creator', 'error')
       return
     }
 
