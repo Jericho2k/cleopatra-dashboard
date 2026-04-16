@@ -167,12 +167,26 @@ export default function SettingsPage() {
     if (!confirm('Delete this creator? This cannot be undone.')) return
 
     const { data: { user } } = await supabase.auth.getUser()
-    await supabase.from('chatter_creators')
+    const { error: linkError } = await supabase
+      .from('chatter_creators')
       .delete()
       .eq('creator_id', id)
       .eq('chatter_id', user?.id)
 
-    await supabase.from('creators').delete().eq('id', id)
+    if (linkError) {
+      showToast('Failed to delete: ' + linkError.message, 'error')
+      return
+    }
+
+    const { error: creatorError } = await supabase
+      .from('creators')
+      .delete()
+      .eq('id', id)
+
+    if (creatorError) {
+      showToast('Failed to delete: ' + creatorError.message, 'error')
+      return
+    }
 
     const remaining = creators.filter(c => c.id !== id)
     setCreators(remaining)
