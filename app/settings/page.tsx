@@ -165,9 +165,22 @@ export default function SettingsPage() {
 
   async function deleteCreator(id: string) {
     if (!confirm('Delete this creator? This cannot be undone.')) return
+
+    const { data: { user } } = await supabase.auth.getUser()
+    await supabase.from('chatter_creators')
+      .delete()
+      .eq('creator_id', id)
+      .eq('chatter_id', user?.id)
+
     await supabase.from('creators').delete().eq('id', id)
-    setCreators(prev => prev.filter(c => c.id !== id))
-    setSelectedCreatorId(creators[0]?.id ?? null)
+
+    const remaining = creators.filter(c => c.id !== id)
+    setCreators(remaining)
+    setSelectedCreatorId(remaining[0]?.id ?? null)
+
+    showToast('Creator deleted')
+
+    window.dispatchEvent(new CustomEvent('creator-added'))
   }
 
   const loadBlockedWords = (creatorId: string) => {
