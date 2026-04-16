@@ -145,6 +145,7 @@ export default function SettingsPage() {
           name: newCreator.name,
           email: newCreator.email,
           password: newCreator.password,
+          countryCode: newCreator.countryCode,
           user_id: user?.id,
         }),
       })
@@ -1096,8 +1097,8 @@ export default function SettingsPage() {
                 <div style={{ fontSize: 16, fontWeight: 600, marginBottom: 4 }}>Two-Factor Authentication</div>
                 <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 16 }}>
                   {maskedEmail
-                    ? `A code was sent to ${maskedEmail}`
-                    : 'Enter the code from your authenticator app'
+                    ? `Enter the code sent to ${maskedEmail}`
+                    : 'Enter the code from your authenticator app (Google Authenticator, etc.)'
                   }
                 </div>
                 <input
