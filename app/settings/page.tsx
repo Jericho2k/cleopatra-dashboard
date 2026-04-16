@@ -83,15 +83,22 @@ export default function SettingsPage() {
   }
 
   useEffect(() => {
-    supabase.from('creators')
-      .select('id, platform_username, fansly_account_id, apifansly_account_id')
-      .order('created_at')
-      .then(({ data }) => {
-        if (data && data.length > 0) {
-          setCreators(data)
-          setSelectedCreatorId(data[0].id)
-        }
-      })
+    async function fetchCreators() {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) return
+
+      const { data } = await supabase
+        .from('chatter_creators')
+        .select('creator_id, creators(*)')
+        .eq('chatter_id', user.id)
+
+      const list = (data ?? []).map((r: any) => r.creators).filter(Boolean)
+      if (list.length > 0) {
+        setCreators(list)
+        setSelectedCreatorId(list[0].id)
+      }
+    }
+    fetchCreators()
   }, [])
 
   async function connectCreator() {
