@@ -35,8 +35,8 @@ export default function SettingsPage() {
   const [activeSection, setActiveSection] = useState<Section>('Creator Persona')
   const [words, setWords] = useState<{ id: string; word: string }[]>([])
   const [newWord, setNewWord] = useState('')
-  const [loading, setLoading] = useState(true)
   const [creatorsLoading, setCreatorsLoading] = useState(true)
+  const [contentLoading, setContentLoading] = useState(false)
   const [creators, setCreators] = useState<any[]>([])
   const [selectedCreatorId, setSelectedCreatorId] = useState<string | null>(null)
   const [persona, setPersona] = useState({
@@ -90,15 +90,30 @@ export default function SettingsPage() {
         const { data: { user } } = await supabase.auth.getUser()
         if (!user) return
 
-        const { data } = await supabase
+        const { data: links } = await supabase
           .from('chatter_creators')
-          .select('creator_id, creators(*)')
+          .select('creator_id')
           .eq('chatter_id', user.id)
 
-        const list = (data ?? []).map((r: any) => r.creators).filter(Boolean)
+        const creatorIds = (links ?? []).map((l: any) => l.creator_id)
+        if (creatorIds.length === 0) {
+          setCreators([])
+          setSelectedCreatorId(null)
+          return
+        }
+
+        const { data: creatorsData } = await supabase
+          .from('creators')
+          .select('id, platform_username, fansly_account_id, apifansly_account_id')
+          .in('id', creatorIds)
+
+        const list = creatorsData ?? []
         if (list.length > 0) {
           setCreators(list)
           setSelectedCreatorId(list[0].id)
+        } else {
+          setCreators([])
+          setSelectedCreatorId(null)
         }
       } finally {
         setCreatorsLoading(false)
@@ -199,7 +214,6 @@ export default function SettingsPage() {
   }
 
   const loadBlockedWords = (creatorId: string) => {
-    setLoading(true)
     return supabase
       .from('blocked_words')
       .select('id, word')
@@ -207,7 +221,6 @@ export default function SettingsPage() {
       .order('word')
       .then(({ data }) => {
         if (data) setWords(data)
-        setLoading(false)
       })
   }
 
@@ -277,18 +290,23 @@ export default function SettingsPage() {
 
   useEffect(() => {
     if (!selectedCreatorId) return
-    // reload persona, blocked words, scripts, vault for new creator
-    loadPersona(selectedCreatorId)
-    loadBlockedWords(selectedCreatorId)
-    loadScripts(selectedCreatorId)
-    loadFanLists(selectedCreatorId)
-    loadReengagement(selectedCreatorId)
-    loadVaultMedia(selectedCreatorId)
-  }, [selectedCreatorId])
-
-  useEffect(() => {
-    if (!selectedCreatorId) return
-    loadPersona(selectedCreatorId)
+    const creatorId = selectedCreatorId
+    async function loadCreatorContent() {
+      setContentLoading(true)
+      try {
+        await Promise.all([
+          loadPersona(creatorId),
+          loadBlockedWords(creatorId),
+          Promise.resolve(loadScripts(creatorId)),
+          loadFanLists(creatorId),
+          loadReengagement(creatorId),
+          loadVaultMedia(creatorId),
+        ])
+      } finally {
+        setContentLoading(false)
+      }
+    }
+    loadCreatorContent()
   }, [selectedCreatorId])
 
   const syncVault = async () => {
@@ -457,6 +475,18 @@ export default function SettingsPage() {
       {/* Content area */}
       <div style={{ flex: 1, overflow: 'auto', padding: 32 }}>
         <div style={{ maxWidth: 600 }}>
+          {!selectedCreatorId ? (
+            <div style={{ color: 'var(--text-muted)', fontSize: 13 }}>Select a creator to load settings.</div>
+          ) : contentLoading ? (
+            <div>
+              <div style={{ height: 22, width: 180, background: 'var(--bg-elevated)', borderRadius: 6, marginBottom: 12 }} />
+              <div style={{ height: 14, width: 320, background: 'var(--bg-elevated)', borderRadius: 6, marginBottom: 24 }} />
+              <div style={{ height: 72, width: '100%', background: 'var(--bg-elevated)', borderRadius: 8, marginBottom: 12 }} />
+              <div style={{ height: 72, width: '100%', background: 'var(--bg-elevated)', borderRadius: 8, marginBottom: 12 }} />
+              <div style={{ height: 72, width: '100%', background: 'var(--bg-elevated)', borderRadius: 8 }} />
+            </div>
+          ) : (
+            <>
 
           {/* Creator Persona */}
           {activeSection === 'Creator Persona' && (
@@ -581,9 +611,7 @@ export default function SettingsPage() {
                 </button>
               </div>
 
-              {loading ? (
-                <div style={{ color: 'var(--text-muted)', fontSize: 13 }}>Loading...</div>
-              ) : words.length === 0 ? (
+              {words.length === 0 ? (
                 <div style={{ color: 'var(--text-muted)', fontSize: 13 }}>No blocked words yet.</div>
               ) : (
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
@@ -1007,6 +1035,8 @@ export default function SettingsPage() {
                 </div>
               )}
             </div>
+          )}
+            </>
           )}
 
         </div>
