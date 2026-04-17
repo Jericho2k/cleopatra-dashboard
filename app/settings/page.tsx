@@ -90,26 +90,11 @@ export default function SettingsPage() {
         const { data: { user } } = await supabase.auth.getUser()
         if (!user) return
 
-        const { data: links } = await supabase
-          .from('chatter_creators')
-          .select('creator_id')
-          .eq('chatter_id', user.id)
-
-        const creatorIds = (links ?? []).map((l: any) => l.creator_id)
-        if (creatorIds.length === 0) {
-          setCreators([])
-          setSelectedCreatorId(null)
-          return
-        }
-
-        const { data: creatorsData } = await supabase
-          .from('creators')
-          .select('id, platform_username, fansly_account_id, apifansly_account_id')
-          .in('id', creatorIds)
-
-        const list = creatorsData ?? []
+        const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/my-creators?user_id=${user?.id}`)
+        const data = await res.json()
+        const list = data.creators ?? []
+        setCreators(list)
         if (list.length > 0) {
-          setCreators(list)
           setSelectedCreatorId(list[0].id)
         } else {
           setCreators([])
