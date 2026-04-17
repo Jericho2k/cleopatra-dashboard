@@ -36,6 +36,7 @@ export default function SettingsPage() {
   const [words, setWords] = useState<{ id: string; word: string }[]>([])
   const [newWord, setNewWord] = useState('')
   const [loading, setLoading] = useState(true)
+  const [creatorsLoading, setCreatorsLoading] = useState(true)
   const [creators, setCreators] = useState<any[]>([])
   const [selectedCreatorId, setSelectedCreatorId] = useState<string | null>(null)
   const [persona, setPersona] = useState({
@@ -84,18 +85,23 @@ export default function SettingsPage() {
 
   useEffect(() => {
     async function fetchCreators() {
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) return
+      setCreatorsLoading(true)
+      try {
+        const { data: { user } } = await supabase.auth.getUser()
+        if (!user) return
 
-      const { data } = await supabase
-        .from('chatter_creators')
-        .select('creator_id, creators(*)')
-        .eq('chatter_id', user.id)
+        const { data } = await supabase
+          .from('chatter_creators')
+          .select('creator_id, creators(*)')
+          .eq('chatter_id', user.id)
 
-      const list = (data ?? []).map((r: any) => r.creators).filter(Boolean)
-      if (list.length > 0) {
-        setCreators(list)
-        setSelectedCreatorId(list[0].id)
+        const list = (data ?? []).map((r: any) => r.creators).filter(Boolean)
+        if (list.length > 0) {
+          setCreators(list)
+          setSelectedCreatorId(list[0].id)
+        }
+      } finally {
+        setCreatorsLoading(false)
       }
     }
     fetchCreators()
@@ -381,19 +387,31 @@ export default function SettingsPage() {
           <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 8, textTransform: 'uppercase' }}>
             Creator
           </div>
-          <select
-            value={selectedCreatorId ?? ''}
-            onChange={e => setSelectedCreatorId(e.target.value)}
-            style={{
-              width: '100%', background: 'var(--bg-elevated)',
-              border: '1px solid var(--border)', borderRadius: 6,
-              color: 'var(--text-primary)', padding: '6px 10px', fontSize: 13,
-            }}
-          >
-            {creators.map(c => (
-              <option key={c.id} value={c.id}>{c.platform_username}</option>
-            ))}
-          </select>
+          {creatorsLoading ? (
+            <div style={{
+              padding: '8px 12px', fontSize: 12,
+              color: 'var(--text-muted)',
+              background: 'var(--bg-elevated)',
+              border: '1px solid var(--border)',
+              borderRadius: 6,
+            }}>
+              Loading creators...
+            </div>
+          ) : (
+            <select
+              value={selectedCreatorId ?? ''}
+              onChange={e => setSelectedCreatorId(e.target.value)}
+              style={{
+                width: '100%', background: 'var(--bg-elevated)',
+                border: '1px solid var(--border)', borderRadius: 6,
+                color: 'var(--text-primary)', padding: '6px 10px', fontSize: 13,
+              }}
+            >
+              {creators.map(c => (
+                <option key={c.id} value={c.id}>{c.platform_username}</option>
+              ))}
+            </select>
+          )}
           <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
             <button type="button" onClick={() => setShowAddCreator(true)} style={{
               flex: 1, padding: '5px', fontSize: 11,
