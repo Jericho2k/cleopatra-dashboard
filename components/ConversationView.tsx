@@ -313,6 +313,11 @@ export default function ConversationView({
               }}
             >
               {msg.content && <div>{msg.content}</div>}
+              {!msg.content && !msg.media_context ? (
+                <div style={{ fontSize: 12, color: 'var(--text-muted)', fontStyle: 'italic' }}>
+                  📎 Media
+                </div>
+              ) : null}
               {msg.media_context?.attachments?.map((_: any, i: number) => (
                 <div key={i} style={{
                   marginTop: 8,
