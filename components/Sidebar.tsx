@@ -20,6 +20,8 @@ export interface SidebarProps {
   onRemoveFanFromList: (fanId: string, listId: string) => void
   globalAutoMode: boolean
   onToggleAutoMode: () => void
+  syncingChats: boolean
+  onSyncChats: () => void
 }
 
 const LIST_COLORS = ['#9b8fd4', '#4caf82', '#ff6b6b', '#f0a500', '#4fc3f7', '#f48fb1', '#aaa', '#fff']
@@ -52,6 +54,8 @@ export default function Sidebar({
   onAddFanToList, onRemoveFanFromList,
   globalAutoMode,
   onToggleAutoMode,
+  syncingChats,
+  onSyncChats,
 }: SidebarProps) {
   const [now, setNow] = useState(Date.now())
   const [activeFilter, setActiveFilter] = useState<FilterId>('all')
@@ -307,7 +311,7 @@ export default function Sidebar({
             flexShrink: 0,
           }}
         >
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
             <div
               style={{
                 fontFamily: 'var(--font-display)',
@@ -319,6 +323,19 @@ export default function Sidebar({
             >
               INBOX
             </div>
+            <button
+              type="button"
+              onClick={onSyncChats}
+              disabled={syncingChats}
+              style={{
+                fontSize: 11, padding: '3px 8px', borderRadius: 4,
+                background: 'transparent', border: '1px solid var(--border)',
+                color: 'var(--text-muted)', cursor: 'pointer',
+                opacity: syncingChats ? 0.5 : 1,
+              }}
+            >
+              {syncingChats ? 'Syncing...' : '↻ Sync'}
+            </button>
             <button
               type="button"
               onClick={onToggleAutoMode}
