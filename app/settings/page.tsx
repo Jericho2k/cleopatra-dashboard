@@ -390,31 +390,50 @@ export default function SettingsPage() {
           <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 8, textTransform: 'uppercase' }}>
             Creator
           </div>
-          {creatorsLoading ? (
-            <div style={{
-              padding: '8px 12px', fontSize: 12,
-              color: 'var(--text-muted)',
-              background: 'var(--bg-elevated)',
-              border: '1px solid var(--border)',
-              borderRadius: 6,
-            }}>
-              Loading creators...
-            </div>
-          ) : (
-            <select
-              value={selectedCreatorId ?? ''}
-              onChange={e => setSelectedCreatorId(e.target.value)}
+          <div style={{ display: 'flex', gap: 8, alignItems: 'stretch' }}>
+            {creatorsLoading ? (
+              <div style={{
+                flex: 1,
+                padding: '8px 12px', fontSize: 12,
+                color: 'var(--text-muted)',
+                background: 'var(--bg-elevated)',
+                border: '1px solid var(--border)',
+                borderRadius: 6,
+              }}>
+                Loading creators...
+              </div>
+            ) : (
+              <select
+                value={selectedCreatorId ?? ''}
+                onChange={e => setSelectedCreatorId(e.target.value)}
+                style={{
+                  flex: 1, minWidth: 0, background: 'var(--bg-elevated)',
+                  border: '1px solid var(--border)', borderRadius: 6,
+                  color: 'var(--text-primary)', padding: '6px 10px', fontSize: 13,
+                }}
+              >
+                {creators.map(c => (
+                  <option key={c.id} value={c.id}>{c.platform_username}</option>
+                ))}
+              </select>
+            )}
+            <button
+              type="button"
+              onClick={async () => {
+                if (!selectedCreatorId) return
+                await fetch(`${process.env.NEXT_PUBLIC_API_URL}/sync-chats/${selectedCreatorId}`, { method: 'POST' })
+                showToast('Chats synced')
+              }}
               style={{
-                width: '100%', background: 'var(--bg-elevated)',
-                border: '1px solid var(--border)', borderRadius: 6,
-                color: 'var(--text-primary)', padding: '6px 10px', fontSize: 13,
+                padding: '5px 10px', fontSize: 11,
+                background: 'transparent', border: '1px solid var(--border)',
+                borderRadius: 6, color: 'var(--text-muted)', cursor: 'pointer',
+                flexShrink: 0, alignSelf: 'stretch',
               }}
             >
-              {creators.map(c => (
-                <option key={c.id} value={c.id}>{c.platform_username}</option>
-              ))}
-            </select>
-          )}
+              ↻ Sync Chats
+            </button>
+          </div>
           <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
             <button type="button" onClick={() => setShowAddCreator(true)} style={{
               flex: 1, padding: '5px', fontSize: 11,
