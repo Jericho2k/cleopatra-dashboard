@@ -66,6 +66,7 @@ export default function Page() {
   const [draggedTabId, setDraggedTabId] = useState<string | null>(null)
   const [fanLists, setFanLists] = useState<FanList[]>([])
   const [activeListId, setActiveListId] = useState<string | null>(null)
+  const [syncingChats, setSyncingChats] = useState(false)
 
   const activeTab = tabs.find(t => t.id === activeTabId) ?? null
 
@@ -309,14 +310,15 @@ export default function Page() {
   useEffect(() => {
     const handler = (e: Event) => {
       const ce = e as CustomEvent<{ creatorId?: string }>
-      const creatorId = ce.detail?.creatorId
-      const tab = tabs.find(t => t.creatorId === creatorId)
-      if (!tab) return
-      updateTab(tab.id, { conversations: [] })
+      const creatorId = ce.detail?.creatorId ?? activeTab?.creatorId
+      setTabs(prev => prev.map(tab => {
+        if (tab.creatorId !== creatorId) return tab
+        return { ...tab, conversations: [] }
+      }))
     }
     window.addEventListener('chats-synced', handler)
     return () => window.removeEventListener('chats-synced', handler)
-  }, [tabs])
+  }, [activeTab?.creatorId])
 
   useEffect(() => {
     if (!activeTab?.activeFan) return
@@ -544,6 +546,30 @@ export default function Page() {
             </div>
           )
         })}
+
+        <button
+          type="button"
+          onClick={async () => {
+            if (!activeTab) return
+            setSyncingChats(true)
+            try {
+              const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/sync-chats/${activeTab.creatorId}`, { method: 'POST' })
+              const data = await res.json()
+              // Reset conversations to trigger reload
+              updateTab(activeTab.id, { conversations: [] })
+            } finally {
+              setSyncingChats(false)
+            }
+          }}
+          style={{
+            marginLeft: 'auto', fontSize: 11, padding: '4px 10px',
+            borderRadius: 4, cursor: 'pointer',
+            background: 'transparent', border: '1px solid var(--border)',
+            color: 'var(--text-muted)',
+          }}
+        >
+          {syncingChats ? 'Syncing...' : '↻ Sync Chats'}
+        </button>
 
         {/* + button with dropdown */}
         <div style={{ position: 'relative' }}>
