@@ -52,6 +52,7 @@ export default function SettingsPage() {
   const [personaSaved, setPersonaSaved] = useState(false)
   const [vaultMedia, setVaultMedia] = useState<any[]>([])
   const [syncing, setSyncing] = useState(false)
+  const [syncingChats, setSyncingChats] = useState(false)
   const [showAddCreator, setShowAddCreator] = useState(false)
   const [connectStep, setConnectStep] = useState<'credentials' | '2fa' | 'done'>('credentials')
   const [twofaToken, setTwofaToken] = useState('')
@@ -83,27 +84,51 @@ export default function SettingsPage() {
     setTimeout(() => setToast(null), 3000)
   }
 
-  useEffect(() => {
-    async function fetchCreators() {
-      setCreatorsLoading(true)
-      try {
-        const { data: { user } } = await supabase.auth.getUser()
-        if (!user) return
-
-        const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/my-creators?user_id=${user?.id}`)
-        const data = await res.json()
-        const list = data.creators ?? []
-        setCreators(list)
-        if (list.length > 0) {
-          setSelectedCreatorId(list[0].id)
-        } else {
-          setCreators([])
-          setSelectedCreatorId(null)
-        }
-      } finally {
-        setCreatorsLoading(false)
-      }
+  async function fetchCreators() {
+    const cached = sessionStorage.getItem('creators')
+    if (cached) {
+      const list = JSON.parse(cached)
+      setCreators(list)
+      if (list.length > 0) setSelectedCreatorId(list[0].id)
+      else setSelectedCreatorId(null)
+      setCreatorsLoading(false)
+      return
     }
+
+    setCreatorsLoading(true)
+    try {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) {
+        setCreators([])
+        setSelectedCreatorId(null)
+        return
+      }
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/my-creators?user_id=${user.id}`)
+      const data = await res.json()
+      const next = data.creators ?? []
+      sessionStorage.setItem('creators', JSON.stringify(next))
+      setCreators(next)
+      if (next.length > 0) setSelectedCreatorId(next[0].id)
+      else setSelectedCreatorId(null)
+    } finally {
+      setCreatorsLoading(false)
+    }
+  }
+
+  async function syncChats() {
+    if (!selectedCreatorId) return
+    setSyncingChats(true)
+    try {
+      await fetch(`${process.env.NEXT_PUBLIC_API_URL}/sync-chats/${selectedCreatorId}`, { method: 'POST' })
+      showToast('Chats synced successfully')
+    } catch {
+      showToast('Failed to sync chats', 'error')
+    } finally {
+      setSyncingChats(false)
+    }
+  }
+
+  useEffect(() => {
     fetchCreators()
   }, [])
 
@@ -126,6 +151,7 @@ export default function SettingsPage() {
         setMaskedEmail(data.masked_email)
         setConnectStep('2fa')
       } else if (data.success) {
+        sessionStorage.removeItem('creators')
         showToast('Creator connected successfully')
         window.dispatchEvent(new CustomEvent('creator-added'))
         setCreators(prev => [...prev, data.creator])
@@ -157,6 +183,7 @@ export default function SettingsPage() {
       })
       const data = await res.json()
       if (data.success) {
+        sessionStorage.removeItem('creators')
         showToast('Creator connected successfully')
         window.dispatchEvent(new CustomEvent('creator-added'))
         const { data: creatorsData } = await supabase
@@ -188,6 +215,8 @@ export default function SettingsPage() {
       showToast('Failed to delete creator', 'error')
       return
     }
+
+    sessionStorage.removeItem('creators')
 
     const remaining = creators.filter(c => c.id !== id)
     setCreators(remaining)
@@ -419,19 +448,17 @@ export default function SettingsPage() {
             )}
             <button
               type="button"
-              onClick={async () => {
-                if (!selectedCreatorId) return
-                await fetch(`${process.env.NEXT_PUBLIC_API_URL}/sync-chats/${selectedCreatorId}`, { method: 'POST' })
-                showToast('Chats synced')
-              }}
+              onClick={syncChats}
+              disabled={syncingChats || !selectedCreatorId}
               style={{
                 padding: '5px 10px', fontSize: 11,
                 background: 'transparent', border: '1px solid var(--border)',
-                borderRadius: 6, color: 'var(--text-muted)', cursor: 'pointer',
+                borderRadius: 6, color: 'var(--text-muted)', cursor: syncingChats || !selectedCreatorId ? 'default' : 'pointer',
                 flexShrink: 0, alignSelf: 'stretch',
+                opacity: syncingChats ? 0.6 : 1,
               }}
             >
-              ↻ Sync Chats
+              {syncingChats ? 'Syncing...' : '↻ Sync Chats'}
             </button>
           </div>
           <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
