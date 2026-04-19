@@ -9,6 +9,7 @@ export interface FanPanelProps {
   fan: Fan | null
   creatorId: string
   onInsertMessage?: (text: string) => void
+  onHistoryLoaded?: () => void
 }
 
 type Tab = 'profile' | 'scripts' | 'ppv'
@@ -39,8 +40,9 @@ interface PPVOffer {
   sendId: string | null
 }
 
-export default function FanPanel({ fan, creatorId, onInsertMessage }: FanPanelProps) {
+export default function FanPanel({ fan, creatorId, onInsertMessage, onHistoryLoaded }: FanPanelProps) {
   const [activeTab, setActiveTab] = useState<Tab>('profile')
+  const [loadingHistory, setLoadingHistory] = useState(false)
   const [storylines, setStorylines] = useState<Storyline[]>([])
   const [ppvOffers, setPPVOffers] = useState<PPVOffer[]>([])
   const [details, setDetails] = useState({
@@ -208,6 +210,21 @@ export default function FanPanel({ fan, creatorId, onInsertMessage }: FanPanelPr
     await supabase.from('fans').update({ [field]: value }).eq('id', fan.id)
   }
 
+  async function loadHistory() {
+    if (!fan || !creatorId) return
+    setLoadingHistory(true)
+    try {
+      const res = await fetch(
+        `${process.env.NEXT_PUBLIC_API_URL}/load-history/${creatorId}/${fan.id}`,
+        { method: 'POST' }
+      )
+      await res.json()
+      onHistoryLoaded?.()
+    } finally {
+      setLoadingHistory(false)
+    }
+  }
+
   const LABEL_STYLE = {
     fontSize: 11,
     textTransform: 'uppercase' as const,
@@ -275,6 +292,21 @@ export default function FanPanel({ fan, creatorId, onInsertMessage }: FanPanelPr
               {fan.spend_tier}
             </span>
           </div>
+        </div>
+        <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 12 }}>
+          <button
+            type="button"
+            onClick={loadHistory}
+            disabled={loadingHistory}
+            style={{
+              fontSize: 11, padding: '3px 8px', borderRadius: 4,
+              background: 'transparent', border: '1px solid var(--border)',
+              color: 'var(--text-muted)', cursor: 'pointer',
+              opacity: loadingHistory ? 0.5 : 1,
+            }}
+          >
+            {loadingHistory ? 'Loading...' : '↓ Load History'}
+          </button>
         </div>
       </div>
 
