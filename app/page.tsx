@@ -110,6 +110,19 @@ export default function Page() {
     await supabase.from('creators').update({ auto_mode: next }).eq('id', tab.creatorId)
   }
 
+  async function markAllAsRead(creatorId: string) {
+    setTabs(prev => prev.map(tab => {
+      if (tab.creatorId !== creatorId) return tab
+      return {
+        ...tab,
+        unreadCounts: {},
+        conversations: tab.conversations.map(c => ({ ...c, unread: false, unread_count: 0 })),
+      }
+    }))
+
+    await fetch(`${process.env.NEXT_PUBLIC_API_URL}/mark-all-read/${creatorId}`, { method: 'POST' })
+  }
+
   const toggleFanAutoMode = async (tabId: string, fanId: string) => {
     const tab = tabs.find(t => t.id === tabId)
     if (!tab) return
@@ -688,6 +701,22 @@ export default function Page() {
           fan={activeTab?.activeFan ?? null}
           creatorId={activeTab?.creatorId ?? ''}
           onInsertMessage={insertMessage}
+          onHistoryLoaded={() => {
+            if (!activeTab?.activeFan) return
+            updateTab(activeTab.id, { messagesLoading: true })
+            supabase
+              .from('messages')
+              .select('*')
+              .eq('fan_id', activeTab.activeFan.id)
+              .eq('creator_id', activeTab.creatorId)
+              .order('sent_at', { ascending: true })
+              .then(({ data }) => {
+                updateTab(activeTab.id, {
+                  messages: (data ?? []).map(rowToMessage),
+                  messagesLoading: false,
+                })
+              })
+          }}
         />
         </div>
       </div>
