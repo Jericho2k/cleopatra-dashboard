@@ -304,7 +304,19 @@ export default function Page() {
       })
     }
     load()
-  }, [activeTabId])
+  }, [activeTabId, activeTab?.conversations.length])
+
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const ce = e as CustomEvent<{ creatorId?: string }>
+      const creatorId = ce.detail?.creatorId
+      const tab = tabs.find(t => t.creatorId === creatorId)
+      if (!tab) return
+      updateTab(tab.id, { conversations: [] })
+    }
+    window.addEventListener('chats-synced', handler)
+    return () => window.removeEventListener('chats-synced', handler)
+  }, [tabs])
 
   useEffect(() => {
     if (!activeTab?.activeFan) return

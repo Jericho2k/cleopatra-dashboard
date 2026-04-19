@@ -119,8 +119,10 @@ export default function SettingsPage() {
     if (!selectedCreatorId) return
     setSyncingChats(true)
     try {
-      await fetch(`${process.env.NEXT_PUBLIC_API_URL}/sync-chats/${selectedCreatorId}`, { method: 'POST' })
-      showToast('Chats synced successfully')
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/sync-chats/${selectedCreatorId}`, { method: 'POST' })
+      const data = await res.json()
+      showToast(`Synced ${data.synced ?? 0} chats`)
+      window.dispatchEvent(new CustomEvent('chats-synced', { detail: { creatorId: selectedCreatorId } }))
     } catch {
       showToast('Failed to sync chats', 'error')
     } finally {
