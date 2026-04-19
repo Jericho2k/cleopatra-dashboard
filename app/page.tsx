@@ -547,30 +547,6 @@ export default function Page() {
           )
         })}
 
-        <button
-          type="button"
-          onClick={async () => {
-            if (!activeTab) return
-            setSyncingChats(true)
-            try {
-              const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/sync-chats/${activeTab.creatorId}`, { method: 'POST' })
-              const data = await res.json()
-              // Reset conversations to trigger reload
-              updateTab(activeTab.id, { conversations: [] })
-            } finally {
-              setSyncingChats(false)
-            }
-          }}
-          style={{
-            marginLeft: 'auto', fontSize: 11, padding: '4px 10px',
-            borderRadius: 4, cursor: 'pointer',
-            background: 'transparent', border: '1px solid var(--border)',
-            color: 'var(--text-muted)',
-          }}
-        >
-          {syncingChats ? 'Syncing...' : '↻ Sync Chats'}
-        </button>
-
         {/* + button with dropdown */}
         <div style={{ position: 'relative' }}>
           <button
@@ -706,6 +682,18 @@ export default function Page() {
             onRemoveFanFromList={removeFanFromList}
             globalAutoMode={activeTab?.autoMode ?? false}
             onToggleAutoMode={() => activeTab && toggleAutoMode(activeTab.id)}
+            syncingChats={syncingChats}
+            onSyncChats={async () => {
+              if (!activeTab) return
+              setSyncingChats(true)
+              try {
+                const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/sync-chats/${activeTab.creatorId}`, { method: 'POST' })
+                await res.json()
+                updateTab(activeTab.id, { conversations: [] })
+              } finally {
+                setSyncingChats(false)
+              }
+            }}
           />
         </div>
         <div style={{ height: '100%', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
