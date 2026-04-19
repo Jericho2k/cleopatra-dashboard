@@ -532,19 +532,23 @@ export default function Sidebar({
               if (activeFilter === 'auto_off') return c.fan.auto_mode === false
               return c.fan.spend_tier === activeFilter
             })
+            const formatTime = (d: Date) => {
+              const diff = now - d.getTime()
+              const m = 60 * 1000
+              const h = 60 * m
+              const dMs = 24 * h
+              if (diff >= 7 * dMs) return d.toLocaleDateString()
+              if (diff >= dMs) return `${Math.floor(diff / dMs)}d`
+              if (diff >= h) return `${Math.floor(diff / h)}h`
+              if (diff >= m) return `${Math.floor(diff / m)}m`
+              return 'now'
+            }
             return filtered.map((c) => {
             const isActive = c.fan.id === activeFanId
             const preview = c.last_message.length > 40 ? c.last_message.slice(0, 40) + '…' : c.last_message
-            const iso = c.last_message_time
-            const diff = now - new Date(iso).getTime()
-            const m = 60 * 1000
-            const h = 60 * m
-            const dMs = 24 * h
-            let timeSince = 'now'
-            if (diff >= 7 * dMs) timeSince = new Date(iso).toLocaleDateString()
-            else if (diff >= dMs) timeSince = `${Math.floor(diff / dMs)}d`
-            else if (diff >= h) timeSince = `${Math.floor(diff / h)}h`
-            else if (diff >= m) timeSince = `${Math.floor(diff / m)}m`
+            const msgTime = new Date(c.last_message_time)
+            const isValid = msgTime.getFullYear() > 2000
+            const timeDisplay = isValid ? formatTime(msgTime) : ''
             const tier = c.fan.spend_tier
             const tierStyles: React.CSSProperties =
               tier === 'whale'
@@ -625,7 +629,7 @@ export default function Sidebar({
                           ${c.fan.total_spent}
                         </span>
                         <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
-                          {timeSince}
+                          {timeDisplay}
                         </span>
                       </div>
                     </div>
