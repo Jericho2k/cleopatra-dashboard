@@ -71,6 +71,8 @@ export default function Page() {
   const activeTab = tabs.find(t => t.id === activeTabId) ?? null
 
   const activeTabIdRef = useRef(activeTabId)
+  const conversationsCache = useRef<Record<string, ConversationSummary[]>>({})
+  const messagesCache = useRef<Record<string, Message[]>>({})
   useEffect(() => {
     activeTabIdRef.current = activeTabId
   }, [activeTabId])
@@ -273,7 +275,13 @@ export default function Page() {
   }
 
   useEffect(() => {
-    if (!activeTab || activeTab.conversations.length > 0) return
+    if (!activeTab) return
+    if (activeTab.conversations.length > 0) return
+    const cached = conversationsCache.current[activeTab.creatorId]
+    if (cached && cached.length > 0) {
+      updateTab(activeTab.id, { conversations: cached })
+      return
+    }
     async function load() {
       const { data: fansData } = await supabase
         .from('fans')
@@ -298,11 +306,11 @@ export default function Page() {
           unread_count: 0,
         }
       }))
-      updateTab(activeTab!.id, {
-        conversations: summaries.sort((a, b) =>
-          new Date(b.last_message_time).getTime() - new Date(a.last_message_time).getTime()
-        )
-      })
+      const sorted = summaries.sort((a, b) =>
+        new Date(b.last_message_time).getTime() - new Date(a.last_message_time).getTime()
+      )
+      conversationsCache.current[activeTab!.creatorId] = sorted
+      updateTab(activeTab!.id, { conversations: sorted })
     }
     load()
   }, [activeTabId, activeTab?.conversations.length])
@@ -311,6 +319,7 @@ export default function Page() {
     const handler = (e: Event) => {
       const ce = e as CustomEvent<{ creatorId?: string }>
       const creatorId = ce.detail?.creatorId ?? activeTab?.creatorId
+      if (creatorId) delete conversationsCache.current[creatorId]
       setTabs(prev => prev.map(tab => {
         if (tab.creatorId !== creatorId) return tab
         return { ...tab, conversations: [] }
@@ -322,6 +331,11 @@ export default function Page() {
 
   useEffect(() => {
     if (!activeTab?.activeFan) return
+    const cachedMsgs = messagesCache.current[activeTab.activeFan.id]
+    if (cachedMsgs && cachedMsgs.length > 0) {
+      updateTab(activeTab.id, { messages: cachedMsgs, messagesLoading: false })
+      return
+    }
     updateTab(activeTab.id, { messagesLoading: true })
     supabase
       .from('messages')
@@ -330,8 +344,10 @@ export default function Page() {
       .eq('creator_id', activeTab.creatorId)
       .order('sent_at', { ascending: true })
       .then(({ data }) => {
+        const msgs = (data ?? []).map(rowToMessage)
+        messagesCache.current[activeTab.activeFan!.id] = msgs
         updateTab(activeTab.id, {
-          messages: (data ?? []).map(rowToMessage),
+          messages: msgs,
           messagesLoading: false,
         })
       })
@@ -689,6 +705,7 @@ export default function Page() {
               try {
                 const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/sync-chats/${activeTab.creatorId}`, { method: 'POST' })
                 await res.json()
+                delete conversationsCache.current[activeTab.creatorId]
                 updateTab(activeTab.id, { conversations: [] })
               } finally {
                 setSyncingChats(false)
