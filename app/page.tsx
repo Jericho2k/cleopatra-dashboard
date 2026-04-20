@@ -744,10 +744,18 @@ export default function Page() {
           fan={activeTab?.activeFan ?? null}
           creatorId={activeTab?.creatorId ?? ''}
           onInsertMessage={insertMessage}
-          onHistoryLoaded={() => {
+          onHistoryLoaded={async () => {
             if (!activeTab?.activeFan) return
-            messagesCache.current[activeTab.activeFan.id] = []
-            updateTab(activeTab.id, { messages: [] })
+            // Reload messages from DB without clearing first
+            const { data } = await supabase
+              .from('messages')
+              .select('*')
+              .eq('fan_id', activeTab.activeFan.id)
+              .eq('creator_id', activeTab.creatorId)
+              .order('sent_at', { ascending: true })
+            if (data) {
+              updateTab(activeTab.id, { messages: data.map(rowToMessage) })
+            }
           }}
         />
         </div>
