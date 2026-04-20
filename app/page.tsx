@@ -746,6 +746,12 @@ export default function Page() {
           onInsertMessage={insertMessage}
           onHistoryLoaded={async () => {
             if (!activeTab?.activeFan) return
+            
+            // Clear cache for this fan
+            if (messagesCache.current) {
+              delete messagesCache.current[activeTab.activeFan.id]
+            }
+            
             // Reload messages from DB without clearing first
             const { data } = await supabase
               .from('messages')
