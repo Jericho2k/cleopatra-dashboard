@@ -746,19 +746,8 @@ export default function Page() {
           onInsertMessage={insertMessage}
           onHistoryLoaded={() => {
             if (!activeTab?.activeFan) return
-            updateTab(activeTab.id, { messagesLoading: true })
-            supabase
-              .from('messages')
-              .select('*')
-              .eq('fan_id', activeTab.activeFan.id)
-              .eq('creator_id', activeTab.creatorId)
-              .order('sent_at', { ascending: true })
-              .then(({ data }) => {
-                updateTab(activeTab.id, {
-                  messages: (data ?? []).map(rowToMessage),
-                  messagesLoading: false,
-                })
-              })
+            messagesCache.current[activeTab.activeFan.id] = []
+            updateTab(activeTab.id, { messages: [] })
           }}
         />
         </div>
