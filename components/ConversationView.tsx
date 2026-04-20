@@ -326,22 +326,26 @@ export default function ConversationView({
                   📎 Media
                 </div>
               )}
-              {msg.media_context?.attachments?.map((_: any, i: number) => (
-                <div key={i} style={{
-                  marginTop: 8,
-                  padding: '10px 12px',
-                  background: 'var(--bg-elevated)',
-                  border: '1px solid var(--border)',
-                  borderRadius: 8,
-                  fontSize: 12,
-                  color: 'var(--text-muted)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 8,
-                }}>
-                  <span style={{ fontSize: 16 }}>🖼</span>
-                  <span>Image — view on Fansly</span>
-                </div>
+              {msg.media_context?.attachments?.map((att: any, i: number) => (
+                att.url ? (
+                  <img key={i} src={att.url} alt="" style={{
+                    marginTop: 8, maxWidth: 220, borderRadius: 8,
+                    border: '1px solid var(--border)', display: 'block',
+                  }} onError={(e) => {
+                    (e.target as HTMLImageElement).style.display = 'none'
+                  }} />
+                ) : (
+                  <div key={i} style={{
+                    marginTop: 8, padding: '8px 12px',
+                    background: 'var(--bg-elevated)',
+                    border: '1px solid var(--border)',
+                    borderRadius: 8, fontSize: 12,
+                    color: 'var(--text-muted)',
+                    display: 'flex', alignItems: 'center', gap: 6,
+                  }}>
+                    <span>🖼</span><span>Media</span>
+                  </div>
+                )
               ))}
               {msg.media_context?.ppv && (
                 <div style={{
