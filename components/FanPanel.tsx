@@ -10,6 +10,7 @@ export interface FanPanelProps {
   creatorId: string
   onInsertMessage?: (text: string) => void
   onHistoryLoaded?: () => void
+  showToast?: (message: string) => void
 }
 
 type Tab = 'profile' | 'scripts' | 'ppv'
@@ -40,7 +41,7 @@ interface PPVOffer {
   sendId: string | null
 }
 
-export default function FanPanel({ fan, creatorId, onInsertMessage, onHistoryLoaded }: FanPanelProps) {
+export default function FanPanel({ fan, creatorId, onInsertMessage, onHistoryLoaded, showToast }: FanPanelProps) {
   const [activeTab, setActiveTab] = useState<Tab>('profile')
   const [loadingHistory, setLoadingHistory] = useState(false)
   const [storylines, setStorylines] = useState<Storyline[]>([])
@@ -218,8 +219,9 @@ export default function FanPanel({ fan, creatorId, onInsertMessage, onHistoryLoa
         `${process.env.NEXT_PUBLIC_API_URL}/load-history/${creatorId}/${fan.id}`,
         { method: 'POST' }
       )
-      await res.json()
+      const data = await res.json()
       onHistoryLoaded?.()
+      showToast?.(`Imported ${data.imported} messages`)
     } finally {
       setLoadingHistory(false)
     }
