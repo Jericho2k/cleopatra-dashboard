@@ -4,6 +4,7 @@ import React, { useState, useRef, useEffect } from 'react'
 import type { Fan, Message } from '../types'
 import { sendReply, getLatestSuggestions, generateSuggestions } from '../lib/api'
 import { supabase } from '../lib/supabase'
+import { ChevronDown } from 'lucide-react'
 
 export interface ConversationViewProps {
   fan: Fan | null
@@ -36,6 +37,7 @@ export default function ConversationView({
   onToggleAutoMode,
 }: ConversationViewProps) {
   const [suggestions, setSuggestions] = useState<string[]>(['', '', ''])
+  const [suggestionsOpen, setSuggestionsOpen] = useState(true)
   const [stage, setStage] = useState<string>('WARMING_UP')
   const [loading, setLoading] = useState(false)
   const [inputValue, setInputValue] = useState('')
@@ -51,6 +53,8 @@ export default function ConversationView({
 
   useEffect(() => {
     if (!fan) return
+    setSuggestions(['', '', ''])
+    setLoading(false)
     getLatestSuggestions(fan.id, creatorId).then((res) => {
       if (res.suggestions.length > 0) setSuggestions(res.suggestions)
       setStage(res.stage)
@@ -405,15 +409,22 @@ export default function ConversationView({
       >
         {!((creatorAutoMode ?? false) || fan.auto_mode === true) && <><div
           style={{
-            fontSize: 11,
-            textTransform: 'uppercase',
-            letterSpacing: '0.06em',
-            color: 'var(--text-muted)',
-            marginBottom: 10,
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+            marginBottom: suggestionsOpen ? 10 : 0, cursor: 'pointer',
           }}
+          onClick={() => setSuggestionsOpen(v => !v)}
         >
-          AI SUGGESTIONS
+          <div style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--text-muted)' }}>
+            AI Suggestions
+          </div>
+          <ChevronDown size={12} style={{
+            color: 'var(--text-muted)',
+            transform: suggestionsOpen ? 'rotate(0deg)' : 'rotate(180deg)',
+            transition: 'transform 0.2s ease',
+          }} />
         </div>
+        {suggestionsOpen && (
+        <>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 12 }}>
           {(loading ? ['', '', ''] : suggestions.slice(0, 3)).map((s, i) => (
             <button
@@ -568,6 +579,8 @@ export default function ConversationView({
               )
             })}
           </div>
+        )}
+        </>
         )}
         </>}
 
