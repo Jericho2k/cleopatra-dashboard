@@ -326,27 +326,30 @@ export default function ConversationView({
                   📎 Media
                 </div>
               )}
-              {msg.media_context?.attachments?.map((att: any, i: number) => (
-                att.url ? (
-                  <img key={i} src={att.url} alt="" style={{
-                    marginTop: 8, maxWidth: 220, borderRadius: 8,
-                    border: '1px solid var(--border)', display: 'block',
-                  }} onError={(e) => {
-                    (e.target as HTMLImageElement).style.display = 'none'
-                  }} />
-                ) : (
-                  <div key={i} style={{
-                    marginTop: 8, padding: '8px 12px',
-                    background: 'var(--bg-elevated)',
-                    border: '1px solid var(--border)',
-                    borderRadius: 8, fontSize: 12,
-                    color: 'var(--text-muted)',
-                    display: 'flex', alignItems: 'center', gap: 6,
-                  }}>
-                    <span>🖼</span><span>Media</span>
-                  </div>
-                )
-              ))}
+              {msg.media_context?.attachments && msg.media_context.attachments.length > 0 && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 8 }}>
+                  {msg.media_context.attachments.map((att: any, i: number) => (
+                    att.url ? (
+                      <img key={i} src={att.url} alt="" style={{
+                        maxWidth: 220, borderRadius: 8,
+                        border: '1px solid var(--border)', display: 'block',
+                      }} onError={(e) => {
+                        (e.target as HTMLImageElement).parentElement!.innerHTML =
+                          '<div style="padding:8px;color:var(--text-muted);font-size:12px">🖼 Media</div>'
+                      }} />
+                    ) : (
+                      <div key={i} style={{
+                        padding: '8px 12px', background: 'var(--bg-elevated)',
+                        border: '1px solid var(--border)', borderRadius: 8,
+                        fontSize: 12, color: 'var(--text-muted)',
+                        display: 'flex', alignItems: 'center', gap: 6,
+                      }}>
+                        <span>🖼</span><span>Media</span>
+                      </div>
+                    )
+                  ))}
+                </div>
+              )}
               {msg.media_context?.ppv && (
                 <div style={{
                   marginTop: 8, padding: '10px 12px',
