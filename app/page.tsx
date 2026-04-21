@@ -113,19 +113,6 @@ export default function Page() {
     await supabase.from('creators').update({ auto_mode: next }).eq('id', tab.creatorId)
   }
 
-  async function markAllAsRead(creatorId: string) {
-    setTabs(prev => prev.map(tab => {
-      if (tab.creatorId !== creatorId) return tab
-      return {
-        ...tab,
-        unreadCounts: {},
-        conversations: tab.conversations.map(c => ({ ...c, unread: false, unread_count: 0 })),
-      }
-    }))
-
-    await fetch(`${process.env.NEXT_PUBLIC_API_URL}/mark-all-read/${creatorId}`, { method: 'POST' })
-  }
-
   const toggleFanAutoMode = async (tabId: string, fanId: string) => {
     const tab = tabs.find(t => t.id === tabId)
     if (!tab) return
@@ -710,6 +697,14 @@ export default function Page() {
               } finally {
                 setSyncingChats(false)
               }
+            }}
+            onMarkAllRead={async () => {
+              if (!activeTab) return
+              await fetch(`${process.env.NEXT_PUBLIC_API_URL}/mark-all-read/${activeTab.creatorId}`, { method: 'POST' })
+              updateTab(activeTab.id, {
+                conversations: activeTab.conversations.map(c => ({ ...c, unread: false, unread_count: 0 })),
+                unreadCounts: {},
+              })
             }}
           />
         </div>

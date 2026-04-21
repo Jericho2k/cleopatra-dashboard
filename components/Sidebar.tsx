@@ -22,6 +22,7 @@ export interface SidebarProps {
   onToggleAutoMode: () => void
   syncingChats: boolean
   onSyncChats: () => void
+  onMarkAllRead: () => void
 }
 
 const LIST_COLORS = ['#9b8fd4', '#4caf82', '#ff6b6b', '#f0a500', '#4fc3f7', '#f48fb1', '#aaa', '#fff']
@@ -56,6 +57,7 @@ export default function Sidebar({
   onToggleAutoMode,
   syncingChats,
   onSyncChats,
+  onMarkAllRead,
 }: SidebarProps) {
   const [now, setNow] = useState(Date.now())
   const [activeFilter, setActiveFilter] = useState<FilterId>('all')
@@ -323,19 +325,32 @@ export default function Sidebar({
             >
               INBOX
             </div>
-            <button
-              type="button"
-              onClick={onSyncChats}
-              disabled={syncingChats}
-              style={{
-                fontSize: 11, padding: '3px 8px', borderRadius: 4,
-                background: 'transparent', border: '1px solid var(--border)',
-                color: 'var(--text-muted)', cursor: 'pointer',
-                opacity: syncingChats ? 0.5 : 1,
-              }}
-            >
-              {syncingChats ? 'Syncing...' : '↻ Sync'}
-            </button>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <button
+                type="button"
+                onClick={onSyncChats}
+                disabled={syncingChats}
+                style={{
+                  fontSize: 11, padding: '3px 8px', borderRadius: 4,
+                  background: 'transparent', border: '1px solid var(--border)',
+                  color: 'var(--text-muted)', cursor: 'pointer',
+                  opacity: syncingChats ? 0.5 : 1,
+                }}
+              >
+                {syncingChats ? 'Syncing...' : '↻ Sync'}
+              </button>
+              <button
+                type="button"
+                onClick={onMarkAllRead}
+                style={{
+                  fontSize: 11, padding: '3px 8px', borderRadius: 4,
+                  background: 'transparent', border: '1px solid var(--border)',
+                  color: 'var(--text-muted)', cursor: 'pointer',
+                }}
+              >
+                ✓ Mark all read
+              </button>
+            </div>
             <button
               type="button"
               onClick={onToggleAutoMode}
