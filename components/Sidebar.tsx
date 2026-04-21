@@ -313,7 +313,7 @@ export default function Sidebar({
             flexShrink: 0,
           }}
         >
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+          <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8 }}>
             <div
               style={{
                 fontFamily: 'var(--font-display)',
@@ -325,25 +325,44 @@ export default function Sidebar({
             >
               INBOX
             </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              <button
-                type="button"
-                onClick={onSyncChats}
-                disabled={syncingChats}
-                style={{
-                  fontSize: 11, padding: '3px 8px', borderRadius: 4,
-                  background: 'transparent', border: '1px solid var(--border)',
-                  color: 'var(--text-muted)', cursor: 'pointer',
-                  opacity: syncingChats ? 0.5 : 1,
-                }}
-              >
-                {syncingChats ? 'Syncing...' : '↻ Sync'}
-              </button>
+            <div style={{ padding: '8px 12px', display: 'flex', flexDirection: 'column', gap: 6, flex: 1, minWidth: 0 }}>
+              <div style={{ display: 'flex', gap: 6 }}>
+                <button
+                  type="button"
+                  onClick={onToggleAutoMode}
+                  style={{
+                    fontSize: 11,
+                    padding: '4px 10px',
+                    borderRadius: 4,
+                    cursor: 'pointer',
+                    background: globalAutoMode ? 'rgba(76,175,130,0.15)' : 'transparent',
+                    color: globalAutoMode ? 'var(--green)' : 'var(--text-muted)',
+                    border: globalAutoMode ? '1px solid rgba(76,175,130,0.4)' : '1px solid var(--border)',
+                    letterSpacing: '0.04em',
+                    textTransform: 'uppercase',
+                  }}
+                >
+                  {globalAutoMode ? '● Auto' : 'Auto'}
+                </button>
+                <button
+                  type="button"
+                  onClick={onSyncChats}
+                  disabled={syncingChats}
+                  style={{
+                    fontSize: 11, padding: '3px 8px', borderRadius: 4,
+                    background: 'transparent', border: '1px solid var(--border)',
+                    color: 'var(--text-muted)', cursor: 'pointer',
+                    opacity: syncingChats ? 0.5 : 1,
+                  }}
+                >
+                  {syncingChats ? 'Syncing...' : '↻ Sync'}
+                </button>
+              </div>
               <button
                 type="button"
                 onClick={onMarkAllRead}
                 style={{
-                  fontSize: 11, padding: '3px 8px', borderRadius: 4,
+                  width: '100%', fontSize: 11, padding: '4px 8px', borderRadius: 4,
                   background: 'transparent', border: '1px solid var(--border)',
                   color: 'var(--text-muted)', cursor: 'pointer',
                 }}
@@ -351,23 +370,6 @@ export default function Sidebar({
                 ✓ Mark all read
               </button>
             </div>
-            <button
-              type="button"
-              onClick={onToggleAutoMode}
-              style={{
-                fontSize: 11,
-                padding: '4px 10px',
-                borderRadius: 4,
-                cursor: 'pointer',
-                background: globalAutoMode ? 'rgba(76,175,130,0.15)' : 'transparent',
-                color: globalAutoMode ? 'var(--green)' : 'var(--text-muted)',
-                border: globalAutoMode ? '1px solid rgba(76,175,130,0.4)' : '1px solid var(--border)',
-                letterSpacing: '0.04em',
-                textTransform: 'uppercase',
-              }}
-            >
-              {globalAutoMode ? '● Auto' : 'Auto'}
-            </button>
           </div>
           <div
             style={{
