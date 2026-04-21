@@ -326,6 +326,7 @@ export default function Sidebar({
                   width: 'max-content',
                   maxWidth: '100%',
                   alignItems: 'stretch',
+                  marginLeft: 'auto',
                 }}
                 >
                   <div style={{ display: 'flex', gap: 6, alignItems: 'center', width: '100%' }}>
