@@ -51,6 +51,7 @@ export default function SettingsPage() {
   const [personaSaving, setPersonaSaving] = useState(false)
   const [personaSaved, setPersonaSaved] = useState(false)
   const [vaultAlbums, setVaultAlbums] = useState<Record<string, any[]>>({})
+  const [syncingVault, setSyncingVault] = useState(false)
   const [syncing, setSyncing] = useState(false)
   const [syncingChats, setSyncingChats] = useState(false)
   const [showAddCreator, setShowAddCreator] = useState(false)
@@ -322,13 +323,30 @@ export default function SettingsPage() {
           Promise.resolve(loadScripts(creatorId)),
           loadFanLists(creatorId),
           loadReengagement(creatorId),
-          loadVaultMedia(creatorId),
         ])
       } finally {
         setContentLoading(false)
       }
     }
     loadCreatorContent()
+  }, [selectedCreatorId])
+
+  useEffect(() => {
+    if (!selectedCreatorId) return
+    supabase
+      .from('creator_vault_media')
+      .select('id, filename, url, album_title, mimetype, ai_description')
+      .eq('creator_id', selectedCreatorId)
+      .order('album_title')
+      .then(({ data }) => {
+        const byAlbum = (data || []).reduce((acc: any, item: any) => {
+          const album = item.album_title || 'Uncategorized'
+          if (!acc[album]) acc[album] = []
+          acc[album].push(item)
+          return acc
+        }, {})
+        setVaultAlbums(byAlbum)
+      })
   }, [selectedCreatorId])
 
   const syncVault = async () => {
@@ -945,6 +963,33 @@ export default function SettingsPage() {
           {/* Vault */}
           {activeSection === 'Vault' && (
             <div>
+              <button
+                onClick={async () => {
+                  if (!selectedCreatorId) return
+                  setSyncingVault(true)
+                  await fetch(`${process.env.NEXT_PUBLIC_API_URL}/sync-vault/${selectedCreatorId}`, { method: 'POST' })
+                  const { data: vaultData } = await supabase
+                    .from('creator_vault_media')
+                    .select('id, filename, url, album_title, mimetype, ai_description')
+                    .eq('creator_id', selectedCreatorId)
+                    .order('album_title')
+                  const byAlbum = (vaultData || []).reduce((acc: any, item: any) => {
+                    const album = item.album_title || 'Uncategorized'
+                    if (!acc[album]) acc[album] = []
+                    acc[album].push(item)
+                    return acc
+                  }, {})
+                  setVaultAlbums(byAlbum)
+                  setSyncingVault(false)
+                }}
+                style={{
+                  padding: '6px 14px', borderRadius: 6, cursor: 'pointer',
+                  background: 'transparent', border: '1px solid var(--border)',
+                  color: 'var(--text-muted)', fontSize: 12, marginBottom: 20,
+                }}
+              >
+                {syncingVault ? 'Syncing...' : '↻ Sync Vault'}
+              </button>
               <div style={{ marginBottom: 24 }}>
                 <div style={{ fontSize: 18, fontWeight: 600, marginBottom: 4 }}>Vault</div>
                 <div style={{ fontSize: 13, color: 'var(--text-muted)' }}>
