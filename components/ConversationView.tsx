@@ -407,10 +407,11 @@ export default function ConversationView({
           background: 'var(--bg-surface)',
         }}
       >
-        {!((creatorAutoMode ?? false) || fan.auto_mode === true) && <><div
+        {!((creatorAutoMode ?? false) || fan.auto_mode === true) && <>        <div
           style={{
             display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-            marginBottom: suggestionsOpen ? 10 : 0, cursor: 'pointer',
+            padding: suggestionsOpen ? '0 0 10px 0' : '4px 0',
+            cursor: 'pointer',
           }}
           onClick={() => setSuggestionsOpen(v => !v)}
         >

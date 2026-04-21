@@ -313,54 +313,86 @@ export default function Sidebar({
             flexShrink: 0,
           }}
         >
-          <div style={{ padding: '8px 16px 4px', display: 'flex', flexDirection: 'column', gap: 6 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              <span style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--text-muted)', flex: 1 }}>
+          <div style={{ padding: '8px 16px 4px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%' }}>
+              <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>
                 Inbox
               </span>
-              <button
-                type="button"
-                onClick={onToggleAutoMode}
-                style={{
-                  fontSize: 11,
-                  padding: '4px 10px',
-                  borderRadius: 4,
-                  cursor: 'pointer',
-                  background: globalAutoMode ? 'rgba(76,175,130,0.15)' : 'transparent',
-                  color: globalAutoMode ? 'var(--green)' : 'var(--text-muted)',
-                  border: globalAutoMode ? '1px solid rgba(76,175,130,0.4)' : '1px solid var(--border)',
-                  letterSpacing: '0.04em',
-                  textTransform: 'uppercase',
+              <div style={{ flex: 1, minWidth: 0, display: 'flex', justifyContent: 'flex-end' }}>
+                <div style={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 6,
+                  width: 'max-content',
+                  maxWidth: '100%',
+                  alignItems: 'stretch',
                 }}
-              >
-                {globalAutoMode ? '● Auto' : 'Auto'}
-              </button>
-              <button
-                type="button"
-                onClick={onSyncChats}
-                disabled={syncingChats}
-                style={{
-                  fontSize: 11, padding: '3px 8px', borderRadius: 4,
-                  background: 'transparent', border: '1px solid var(--border)',
-                  color: 'var(--text-muted)', cursor: 'pointer',
-                  opacity: syncingChats ? 0.5 : 1,
-                }}
-              >
-                {syncingChats ? 'Syncing...' : '↻ Sync'}
-              </button>
+                >
+                  <div style={{ display: 'flex', gap: 6, alignItems: 'center', width: '100%' }}>
+                    <button
+                      type="button"
+                      onClick={onToggleAutoMode}
+                      style={{
+                        marginLeft: 'auto',
+                        fontSize: 11,
+                        padding: '6px 10px',
+                        borderRadius: 4,
+                        cursor: 'pointer',
+                        lineHeight: 1.2,
+                        boxSizing: 'border-box',
+                        minHeight: 28,
+                        background: globalAutoMode ? 'rgba(76,175,130,0.15)' : 'transparent',
+                        color: globalAutoMode ? 'var(--green)' : 'var(--text-muted)',
+                        border: globalAutoMode ? '1px solid rgba(76,175,130,0.4)' : '1px solid var(--border)',
+                        letterSpacing: '0.04em',
+                        textTransform: 'uppercase',
+                      }}
+                    >
+                      {globalAutoMode ? '● Auto' : 'Auto'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={onSyncChats}
+                      disabled={syncingChats}
+                      style={{
+                        fontSize: 11,
+                        padding: '6px 10px',
+                        borderRadius: 4,
+                        cursor: 'pointer',
+                        lineHeight: 1.2,
+                        boxSizing: 'border-box',
+                        minHeight: 28,
+                        background: 'transparent',
+                        border: '1px solid var(--border)',
+                        color: 'var(--text-muted)',
+                        opacity: syncingChats ? 0.5 : 1,
+                      }}
+                    >
+                      {syncingChats ? 'Syncing...' : '↻ Sync'}
+                    </button>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={onMarkAllRead}
+                    style={{
+                      width: '100%',
+                      fontSize: 11,
+                      padding: '6px 10px',
+                      borderRadius: 4,
+                      cursor: 'pointer',
+                      lineHeight: 1.2,
+                      boxSizing: 'border-box',
+                      minHeight: 28,
+                      background: 'transparent',
+                      border: '1px solid var(--border)',
+                      color: 'var(--text-muted)',
+                    }}
+                  >
+                    ✓ Mark all read
+                  </button>
+                </div>
+              </div>
             </div>
-            <button
-              type="button"
-              onClick={onMarkAllRead}
-              style={{
-                fontSize: 11, padding: '3px 8px', borderRadius: 4,
-                background: 'transparent', border: '1px solid var(--border)',
-                color: 'var(--text-muted)', cursor: 'pointer',
-                alignSelf: 'flex-end',
-              }}
-            >
-              ✓ Mark all read
-            </button>
           </div>
           <div
             style={{
