@@ -51,6 +51,8 @@ export default function SettingsPage() {
   const [personaSaving, setPersonaSaving] = useState(false)
   const [personaSaved, setPersonaSaved] = useState(false)
   const [vaultAlbums, setVaultAlbums] = useState<Record<string, any[]>>({})
+  const [selectedAlbum, setSelectedAlbum] = useState<string | null>(null)
+  const [previewItem, setPreviewItem] = useState<any>(null)
   const [syncingVault, setSyncingVault] = useState(false)
   const [syncing, setSyncing] = useState(false)
   const [syncingChats, setSyncingChats] = useState(false)
@@ -997,62 +999,124 @@ export default function SettingsPage() {
                 </div>
               </div>
 
-              {Object.keys(vaultAlbums).length === 0 ? (
-                <div style={{ color: 'var(--text-muted)', fontSize: 13 }}>
-                  No vault media found. Click "Sync Vault" to import.
-                </div>
-              ) : (
-                <div>
+              {!selectedAlbum && (
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
+                  <div
+                    onClick={() => setSelectedAlbum('__all__')}
+                    style={{
+                      width: 140, padding: '16px 12px', borderRadius: 8,
+                      border: '1px solid var(--border)', cursor: 'pointer',
+                      background: 'var(--bg-elevated)',
+                      display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8,
+                    }}
+                  >
+                    <div style={{ fontSize: 28 }}>📁</div>
+                    <div style={{ fontSize: 12, fontWeight: 600, textAlign: 'center' }}>All</div>
+                    <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                      {Object.values(vaultAlbums).flat().length} items
+                    </div>
+                  </div>
+
                   {Object.entries(vaultAlbums).map(([albumTitle, items]: [string, any[]]) => (
-                    <div key={albumTitle} style={{ marginBottom: 24 }}>
-                      <div style={{
-                        fontSize: 12, fontWeight: 600, color: 'var(--text-primary)',
-                        marginBottom: 10, textTransform: 'uppercase', letterSpacing: '0.04em',
-                      }}>
-                        {albumTitle} ({items.length})
+                    <div
+                      key={albumTitle}
+                      onClick={() => setSelectedAlbum(albumTitle)}
+                      style={{
+                        width: 140, padding: '16px 12px', borderRadius: 8,
+                        border: '1px solid var(--border)', cursor: 'pointer',
+                        background: 'var(--bg-elevated)',
+                        display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8,
+                      }}
+                    >
+                      <div style={{ fontSize: 28 }}>📂</div>
+                      <div style={{ fontSize: 12, fontWeight: 600, textAlign: 'center', wordBreak: 'break-word' }}>
+                        {albumTitle}
                       </div>
-                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-                        {items.map((item: any) => (
-                          <div key={item.id} style={{ position: 'relative' }}>
-                            {item.mimetype?.startsWith('video') ? (
-                              <div style={{
-                                width: 80, height: 80, borderRadius: 6,
-                                background: 'var(--bg-elevated)',
-                                border: '1px solid var(--border)',
-                                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                fontSize: 20,
-                              }}>🎥</div>
-                            ) : item.url ? (
-                              <img src={item.url} style={{
-                                width: 80, height: 80, objectFit: 'cover',
-                                borderRadius: 6, border: '1px solid var(--border)',
-                                display: 'block',
-                              }} onError={(e) => {
-                                (e.target as HTMLImageElement).style.display = 'none'
-                              }} />
-                            ) : (
-                              <div style={{
-                                width: 80, height: 80, borderRadius: 6,
-                                background: 'var(--bg-elevated)',
-                                border: '1px solid var(--border)',
-                              }} />
-                            )}
-                            {item.ai_description && (
-                              <div style={{
-                                position: 'absolute', bottom: 2, left: 2, right: 2,
-                                fontSize: 8, color: 'white',
-                                background: 'rgba(0,0,0,0.6)',
-                                borderRadius: 3, padding: '1px 3px',
-                                overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis',
-                              }}>
-                                {item.ai_description}
-                              </div>
-                            )}
-                          </div>
-                        ))}
-                      </div>
+                      <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{items.length} items</div>
                     </div>
                   ))}
+                </div>
+              )}
+
+              {selectedAlbum && (
+                <div>
+                  <button
+                    onClick={() => setSelectedAlbum(null)}
+                    style={{
+                      marginBottom: 16, fontSize: 12, padding: '4px 10px',
+                      background: 'transparent', border: '1px solid var(--border)',
+                      borderRadius: 4, color: 'var(--text-muted)', cursor: 'pointer',
+                    }}
+                  >
+                    ← Back
+                  </button>
+                  <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 16 }}>
+                    {selectedAlbum === '__all__' ? 'All Media' : selectedAlbum}
+                  </div>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                    {(selectedAlbum === '__all__'
+                      ? Object.values(vaultAlbums).flat()
+                      : vaultAlbums[selectedAlbum] || []
+                    ).map((item: any) => (
+                      <div
+                        key={item.id}
+                        onClick={() => setPreviewItem(item)}
+                        style={{ cursor: 'pointer', position: 'relative' }}
+                      >
+                        {item.mimetype?.startsWith('video') ? (
+                          <div style={{
+                            width: 100, height: 100, borderRadius: 6,
+                            background: 'var(--bg-elevated)',
+                            border: '1px solid var(--border)',
+                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                            fontSize: 24,
+                          }}>🎥</div>
+                        ) : item.url ? (
+                          <img src={item.url} style={{
+                            width: 100, height: 100, objectFit: 'cover',
+                            borderRadius: 6, border: '1px solid var(--border)',
+                          }} onError={(e) => {
+                            (e.target as HTMLImageElement).parentElement!.innerHTML =
+                              '<div style="width:100px;height:100px;background:var(--bg-elevated);border:1px solid var(--border);border-radius:6px"></div>'
+                          }} />
+                        ) : (
+                          <div style={{
+                            width: 100, height: 100, borderRadius: 6,
+                            background: 'var(--bg-elevated)',
+                            border: '1px solid var(--border)',
+                          }} />
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {previewItem && (
+                <div
+                  onClick={() => setPreviewItem(null)}
+                  style={{
+                    position: 'fixed', inset: 0, zIndex: 1000,
+                    background: 'rgba(0,0,0,0.85)',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  }}
+                >
+                  <div onClick={e => e.stopPropagation()} style={{ maxWidth: '90vw', maxHeight: '90vh' }}>
+                    {previewItem.mimetype?.startsWith('video') ? (
+                      <video src={previewItem.url} controls style={{ maxWidth: '90vw', maxHeight: '80vh' }} />
+                    ) : (
+                      <img src={previewItem.url} style={{ maxWidth: '90vw', maxHeight: '80vh', borderRadius: 8 }} />
+                    )}
+                    {previewItem.ai_description && (
+                      <div style={{
+                        marginTop: 12, padding: '8px 12px',
+                        background: 'rgba(0,0,0,0.6)', borderRadius: 6,
+                        fontSize: 12, color: 'white',
+                      }}>
+                        {previewItem.ai_description}
+                      </div>
+                    )}
+                  </div>
                 </div>
               )}
             </div>
