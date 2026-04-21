@@ -50,7 +50,7 @@ export default function SettingsPage() {
   })
   const [personaSaving, setPersonaSaving] = useState(false)
   const [personaSaved, setPersonaSaved] = useState(false)
-  const [vaultMedia, setVaultMedia] = useState<any[]>([])
+  const [vaultAlbums, setVaultAlbums] = useState<Record<string, any[]>>({})
   const [syncing, setSyncing] = useState(false)
   const [syncingChats, setSyncingChats] = useState(false)
   const [showAddCreator, setShowAddCreator] = useState(false)
@@ -296,12 +296,18 @@ export default function SettingsPage() {
   }
 
   const loadVaultMedia = async (creatorId: string) => {
-    const { data } = await supabase
+    const { data: vaultData } = await supabase
       .from('creator_vault_media')
-      .select('*')
+      .select('id, filename, url, album_title, mimetype, ai_description, thumbnail_url, media_type, title, price, active')
       .eq('creator_id', creatorId)
-      .order('created_at', { ascending: false })
-    setVaultMedia(data ?? [])
+      .order('album_title')
+    const byAlbum = vaultData?.reduce((acc: Record<string, any[]>, item: any) => {
+      const album = item.album_title || 'Uncategorized'
+      if (!acc[album]) acc[album] = []
+      acc[album].push(item)
+      return acc
+    }, {} as Record<string, any[]>)
+    setVaultAlbums(byAlbum ?? {})
   }
 
   useEffect(() => {
@@ -335,7 +341,13 @@ export default function SettingsPage() {
 
   const updateVaultItem = async (id: string, fields: { title?: string; price?: number; active?: boolean }) => {
     await supabase.from('creator_vault_media').update(fields).eq('id', id)
-    setVaultMedia(prev => prev.map(m => m.id === id ? { ...m, ...fields } : m))
+    setVaultAlbums(prev => {
+      const next: Record<string, any[]> = {}
+      Object.entries(prev).forEach(([album, items]) => {
+        next[album] = items.map(m => (m.id === id ? { ...m, ...fields } : m))
+      })
+      return next
+    })
   }
 
   const savePersona = async () => {
@@ -960,109 +972,107 @@ export default function SettingsPage() {
                 </button>
               </div>
 
-              {vaultMedia.length === 0 ? (
+              {Object.keys(vaultAlbums).length === 0 ? (
                 <div style={{ color: 'var(--text-muted)', fontSize: 13 }}>
                   No vault media found. Click "Sync Vault" to import.
                 </div>
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                  {vaultMedia.map(item => (
-                    <div
-                      key={item.id}
-                      style={{
-                        background: 'var(--bg-elevated)',
-                        border: '1px solid var(--border-subtle)',
-                        borderRadius: 8,
-                        padding: '12px 14px',
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: 12,
-                        opacity: item.active === false ? 0.5 : 1,
-                      }}
-                    >
-                      {/* Thumbnail */}
-                      {item.thumbnail_url ? (
-                        <img
-                          src={item.thumbnail_url}
-                          alt=""
-                          style={{ width: 48, height: 48, borderRadius: 6, objectFit: 'cover', flexShrink: 0 }}
-                        />
-                      ) : (
-                        <div style={{
-                          width: 48, height: 48, borderRadius: 6, flexShrink: 0,
-                          background: 'var(--bg-surface)', display: 'flex',
-                          alignItems: 'center', justifyContent: 'center',
-                          fontSize: 18, color: 'var(--text-muted)',
-                        }}>
-                          {item.media_type === 'video' ? '▶' : '🖼'}
-                        </div>
-                      )}
-
-                      {/* Title */}
-                      <input
-                        type="text"
-                        defaultValue={item.title ?? ''}
-                        onBlur={e => {
-                          const val = e.target.value.trim()
-                          if (val !== (item.title ?? '')) updateVaultItem(item.id, { title: val })
-                        }}
-                        placeholder="Add a title..."
-                        style={{
-                          flex: 1,
-                          background: 'transparent',
-                          border: 'none',
-                          borderBottom: '1px solid var(--border-subtle)',
-                          borderRadius: 0,
-                          padding: '4px 0',
-                          color: 'var(--text-primary)',
-                          fontSize: 13,
-                          outline: 'none',
-                        }}
-                      />
-
-                      {/* Price */}
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}>
-                        <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>$</span>
-                        <input
-                          type="number"
-                          min="0"
-                          step="1"
-                          defaultValue={item.price ?? ''}
-                          onBlur={e => {
-                            const val = parseFloat(e.target.value)
-                            if (!isNaN(val) && val !== item.price) updateVaultItem(item.id, { price: val })
-                          }}
-                          placeholder="0"
+                  {Object.entries(vaultAlbums).map(([album, items]) => (
+                    <div key={album} style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                      <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)' }}>{album}</div>
+                      {items.map(item => (
+                        <div
+                          key={item.id}
                           style={{
-                            width: 60,
-                            background: 'var(--bg-surface)',
+                            background: 'var(--bg-elevated)',
                             border: '1px solid var(--border-subtle)',
-                            borderRadius: 4,
-                            padding: '4px 6px',
-                            color: 'var(--text-primary)',
-                            fontSize: 13,
-                            outline: 'none',
+                            borderRadius: 8,
+                            padding: '12px 14px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 12,
+                            opacity: item.active === false ? 0.5 : 1,
                           }}
-                        />
-                      </div>
-
-                      {/* Active toggle */}
-                      <button
-                        type="button"
-                        onClick={() => updateVaultItem(item.id, { active: !item.active })}
-                        style={{
-                          padding: '4px 10px',
-                          background: item.active !== false ? 'rgba(76,175,130,0.15)' : 'rgba(200,200,200,0.08)',
-                          border: item.active !== false ? '1px solid var(--green)' : '1px solid var(--border-subtle)',
-                          borderRadius: 4,
-                          color: item.active !== false ? 'var(--green)' : 'var(--text-muted)',
-                          fontSize: 11,
-                          cursor: 'pointer',
-                          flexShrink: 0,
-                        }}
-                      >
-                        {item.active !== false ? 'Active' : 'Off'}
-                      </button>
+                        >
+                          {item.thumbnail_url ? (
+                            <img
+                              src={item.thumbnail_url}
+                              alt=""
+                              style={{ width: 48, height: 48, borderRadius: 6, objectFit: 'cover', flexShrink: 0 }}
+                            />
+                          ) : (
+                            <div style={{
+                              width: 48, height: 48, borderRadius: 6, flexShrink: 0,
+                              background: 'var(--bg-surface)', display: 'flex',
+                              alignItems: 'center', justifyContent: 'center',
+                              fontSize: 18, color: 'var(--text-muted)',
+                            }}>
+                              {item.media_type === 'video' ? '▶' : '🖼'}
+                            </div>
+                          )}
+                          <input
+                            type="text"
+                            defaultValue={item.title ?? ''}
+                            onBlur={e => {
+                              const val = e.target.value.trim()
+                              if (val !== (item.title ?? '')) updateVaultItem(item.id, { title: val })
+                            }}
+                            placeholder="Add a title..."
+                            style={{
+                              flex: 1,
+                              background: 'transparent',
+                              border: 'none',
+                              borderBottom: '1px solid var(--border-subtle)',
+                              borderRadius: 0,
+                              padding: '4px 0',
+                              color: 'var(--text-primary)',
+                              fontSize: 13,
+                              outline: 'none',
+                            }}
+                          />
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}>
+                            <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>$</span>
+                            <input
+                              type="number"
+                              min="0"
+                              step="1"
+                              defaultValue={item.price ?? ''}
+                              onBlur={e => {
+                                const val = parseFloat(e.target.value)
+                                if (!isNaN(val) && val !== item.price) updateVaultItem(item.id, { price: val })
+                              }}
+                              placeholder="0"
+                              style={{
+                                width: 60,
+                                background: 'var(--bg-surface)',
+                                border: '1px solid var(--border-subtle)',
+                                borderRadius: 4,
+                                padding: '4px 6px',
+                                color: 'var(--text-primary)',
+                                fontSize: 13,
+                                outline: 'none',
+                              }}
+                            />
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => updateVaultItem(item.id, { active: !item.active })}
+                            style={{
+                              padding: '4px 10px',
+                              background: item.active !== false ? 'rgba(76,175,130,0.15)' : 'rgba(200,200,200,0.08)',
+                              border: item.active !== false ? '1px solid var(--green)' : '1px solid var(--border-subtle)',
+                              borderRadius: 4,
+                              color: item.active !== false ? 'var(--green)' : 'var(--text-muted)',
+                              fontSize: 11,
+                              cursor: 'pointer',
+                              flexShrink: 0,
+                            }}
+                          >
+                            {item.active !== false ? 'Active' : 'Off'}
+                          </button>
+                        </div>
+                      ))}
                     </div>
                   ))}
                 </div>
