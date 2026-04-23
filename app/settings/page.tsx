@@ -977,18 +977,7 @@ export default function SettingsPage() {
                     } else if (msg.type === 'done') {
                       setVaultProgress({ synced: msg.synced, total: msg.total, album: '' })
                       es.close()
-                      const { data: vaultData } = await supabase
-                        .from('creator_vault_media')
-                        .select('id, filename, url, album_title, mimetype, ai_description')
-                        .eq('creator_id', selectedCreatorId)
-                        .order('album_title')
-                      const byAlbum = (vaultData || []).reduce((acc: any, item: any) => {
-                        const album = item.album_title || 'Uncategorized'
-                        if (!acc[album]) acc[album] = []
-                        acc[album].push(item)
-                        return acc
-                      }, {})
-                      setVaultAlbums(byAlbum)
+                      await loadVaultMedia(selectedCreatorId)
                       setSyncingVault(false)
                       setTimeout(() => setVaultProgress(null), 1500)
                     }
