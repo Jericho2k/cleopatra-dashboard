@@ -971,7 +971,7 @@ export default function SettingsPage() {
                   es.onmessage = async (e) => {
                     const msg = JSON.parse(e.data)
                     if (msg.type === 'start') {
-                      setVaultProgress({ synced: 0, total: msg.total, album: '' })
+                      setVaultProgress({ synced: 0, total: msg.total, album: msg.already > 0 ? `${msg.already} already synced, fetching new...` : '' })
                     } else if (msg.type === 'progress') {
                       setVaultProgress({ synced: msg.synced, total: msg.total, album: msg.album })
                     } else if (msg.type === 'done') {
