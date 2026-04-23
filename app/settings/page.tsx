@@ -305,6 +305,7 @@ export default function SettingsPage() {
       .select('id, filename, url, album_title, mimetype, ai_description, thumbnail_url, media_type, title, price, is_active')
       .eq('creator_id', creatorId)
       .order('album_title')
+      .limit(5000)
     console.log('[VAULT] creatorId:', creatorId, 'rows:', vaultData?.length, 'error:', error)
     const byAlbum = vaultData?.reduce((acc: Record<string, any[]>, item: any) => {
       const album = item.album_title || 'Uncategorized'
