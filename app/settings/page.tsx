@@ -964,17 +964,18 @@ export default function SettingsPage() {
                   setSyncingVault(true)
                   setVaultProgress({ synced: 0, total: 0, album: 'Starting...' })
 
-                  await fetch(`${process.env.NEXT_PUBLIC_API_URL}/sync-vault-start/${selectedCreatorId}`, { method: 'POST' })
+                  const creatorId = selectedCreatorId
+                  await fetch(`${process.env.NEXT_PUBLIC_API_URL}/sync-vault-start/${creatorId}`, { method: 'POST' })
 
                   const interval = setInterval(async () => {
                     try {
-                      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/sync-vault-status/${selectedCreatorId}`)
+                      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/sync-vault-status/${creatorId}`)
                       const state = await res.json()
                       setVaultProgress({ synced: state.synced, total: state.total, album: state.album })
 
                       if (state.status === 'done' || state.status === 'error') {
                         clearInterval(interval)
-                        await loadVaultMedia(selectedCreatorId)
+                        await loadVaultMedia(creatorId)
                         setSyncingVault(false)
                         setTimeout(() => setVaultProgress(null), 1500)
                       }
