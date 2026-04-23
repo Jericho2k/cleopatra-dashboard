@@ -58,6 +58,12 @@ export default function SettingsPage() {
   const [uploadingVault, setUploadingVault] = useState(false)
   const [uploadAlbum, setUploadAlbum] = useState('')
   const [newAlbumName, setNewAlbumName] = useState('')
+  const [showUploadModal, setShowUploadModal] = useState(false)
+  const [uploadFile, setUploadFile] = useState<File | null>(null)
+  const [uploadPreview, setUploadPreview] = useState<string | null>(null)
+  const [uploadNotes, setUploadNotes] = useState('')
+  const [uploadNotesMode, setUploadNotesMode] = useState<'manual' | 'ai'>('ai')
+  const [uploadDragOver, setUploadDragOver] = useState(false)
   const [syncing, setSyncing] = useState(false)
   const [syncingChats, setSyncingChats] = useState(false)
   const [showAddCreator, setShowAddCreator] = useState(false)
@@ -959,22 +965,19 @@ export default function SettingsPage() {
           {/* Vault */}
           {activeSection === 'Vault' && (
             <div>
-              <div style={{ display: 'flex', gap: 8, marginBottom: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: vaultProgress ? 12 : 20 }}>
                 <button
                   onClick={async () => {
                     if (!selectedCreatorId || syncingVault) return
                     setSyncingVault(true)
                     setVaultProgress({ synced: 0, total: 0, album: 'Starting...' })
-
                     const creatorId = selectedCreatorId
                     await fetch(`${process.env.NEXT_PUBLIC_API_URL}/sync-vault-start/${creatorId}`, { method: 'POST' })
-
                     const interval = setInterval(async () => {
                       try {
                         const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/sync-vault-status/${creatorId}`)
                         const state = await res.json()
                         setVaultProgress({ synced: state.synced, total: state.total, album: state.album })
-
                         if (state.status === 'done' || state.status === 'error') {
                           clearInterval(interval)
                           await loadVaultMedia(creatorId)
@@ -989,90 +992,27 @@ export default function SettingsPage() {
                     }, 1000)
                   }}
                   style={{
-                    padding: '6px 14px', borderRadius: 6, cursor: syncingVault ? 'not-allowed' : 'pointer',
+                    padding: '6px 14px', borderRadius: 6,
+                    cursor: syncingVault ? 'not-allowed' : 'pointer',
                     background: 'transparent', border: '1px solid var(--border)',
-                    color: 'var(--text-muted)', fontSize: 12, marginBottom: vaultProgress ? 12 : 20,
+                    color: 'var(--text-muted)', fontSize: 12,
                     opacity: syncingVault ? 0.5 : 1,
                   }}
                 >
                   {syncingVault ? 'Syncing...' : '↻ Sync Vault'}
                 </button>
-
-                <label style={{
-                  padding: '6px 14px', borderRadius: 6,
-                  cursor: uploadingVault ? 'not-allowed' : 'pointer',
-                  background: 'transparent', border: '1px solid var(--border)',
-                  color: 'var(--text-muted)', fontSize: 12,
-                  opacity: uploadingVault ? 0.5 : 1,
-                  display: 'inline-flex', alignItems: 'center', gap: 6,
-                }}>
-                  {uploadingVault ? '⏳ Uploading...' : '↑ Upload Media'}
-                  <input
-                    type="file"
-                    accept="image/*,video/*"
-                    style={{ display: 'none' }}
-                    disabled={uploadingVault || !selectedCreatorId}
-                    onChange={async (e) => {
-                      const file = e.target.files?.[0]
-                      if (!file || !selectedCreatorId) return
-                      e.target.value = ''
-                      const album = uploadAlbum === '__new__'
-                        ? newAlbumName.trim() || 'Uncategorized'
-                        : uploadAlbum || 'Uncategorized'
-                      setUploadingVault(true)
-                      try {
-                        const formData = new FormData()
-                        formData.append('file', file)
-                        formData.append('album_title', album)
-                        const res = await fetch(
-                          `${process.env.NEXT_PUBLIC_API_URL}/upload-vault-media/${selectedCreatorId}`,
-                          { method: 'POST', body: formData }
-                        )
-                        const data = await res.json()
-                        if (data.status === 'ok' && data.item) {
-                          const item = data.item
-                          const albumKey = item.album_title || 'Uncategorized'
-                          setVaultAlbums(prev => ({
-                            ...prev,
-                            [albumKey]: [...(prev[albumKey] || []), item],
-                          }))
-                        }
-                      } finally {
-                        setUploadingVault(false)
-                      }
-                    }}
-                  />
-                </label>
-
-                <select
-                  value={uploadAlbum}
-                  onChange={e => setUploadAlbum(e.target.value)}
+                <button
+                  onClick={() => setShowUploadModal(true)}
+                  disabled={!selectedCreatorId}
                   style={{
-                    background: 'var(--bg-elevated)', border: '1px solid var(--border)',
-                    borderRadius: 6, color: 'var(--text-muted)', padding: '5px 10px',
-                    fontSize: 12, cursor: 'pointer',
+                    padding: '6px 14px', borderRadius: 6, cursor: 'pointer',
+                    background: 'transparent', border: '1px solid var(--border)',
+                    color: 'var(--text-muted)', fontSize: 12,
+                    opacity: !selectedCreatorId ? 0.5 : 1,
                   }}
                 >
-                  <option value="">Select album</option>
-                  {Object.keys(vaultAlbums).map(a => (
-                    <option key={a} value={a}>{a}</option>
-                  ))}
-                  <option value="__new__">+ New album...</option>
-                </select>
-
-                {uploadAlbum === '__new__' && (
-                  <input
-                    type="text"
-                    value={newAlbumName}
-                    onChange={e => setNewAlbumName(e.target.value)}
-                    placeholder="Album name..."
-                    style={{
-                      background: 'var(--bg-elevated)', border: '1px solid var(--border)',
-                      borderRadius: 6, color: 'var(--text-primary)', padding: '5px 10px',
-                      fontSize: 12, outline: 'none', width: 140,
-                    }}
-                  />
-                )}
+                  ↑ Add Media
+                </button>
               </div>
 
               {vaultProgress && (
@@ -1236,6 +1176,227 @@ export default function SettingsPage() {
 
         </div>
       </div>
+      {showUploadModal && (
+        <div
+          onClick={() => { if (!uploadingVault) { setShowUploadModal(false); setUploadFile(null); setUploadPreview(null); setUploadNotes(''); setUploadAlbum(''); setNewAlbumName('') } }}
+          style={{
+            position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 200,
+          }}
+        >
+          <div
+            onClick={e => e.stopPropagation()}
+            style={{
+              background: 'var(--bg-surface)', border: '1px solid var(--border)',
+              borderRadius: 12, padding: 24, width: 480, maxWidth: '95vw',
+              maxHeight: '90vh', overflowY: 'auto',
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+              <div style={{ fontSize: 15, fontWeight: 600 }}>Add Media to Vault</div>
+              <button type="button" onClick={() => { setShowUploadModal(false); setUploadFile(null); setUploadPreview(null); setUploadNotes(''); setUploadAlbum(''); setNewAlbumName('') }}
+                style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: 18, padding: 0 }}>×</button>
+            </div>
+
+            {!uploadFile ? (
+              <div
+                onDragOver={e => { e.preventDefault(); setUploadDragOver(true) }}
+                onDragLeave={() => setUploadDragOver(false)}
+                onDrop={e => {
+                  e.preventDefault()
+                  setUploadDragOver(false)
+                  const f = e.dataTransfer.files[0]
+                  if (!f) return
+                  setUploadFile(f)
+                  setUploadPreview(URL.createObjectURL(f))
+                }}
+                onClick={() => document.getElementById('vault-file-input')?.click()}
+                style={{
+                  border: `2px dashed ${uploadDragOver ? 'var(--purple)' : 'var(--border)'}`,
+                  borderRadius: 8, padding: '40px 20px',
+                  display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8,
+                  cursor: 'pointer', transition: 'border-color 0.2s',
+                  background: uploadDragOver ? 'rgba(155,143,212,0.05)' : 'transparent',
+                }}
+              >
+                <div style={{ fontSize: 32 }}>📎</div>
+                <div style={{ fontSize: 13, color: 'var(--text-muted)', textAlign: 'center' }}>
+                  Drag & drop an image or video<br />
+                  <span style={{ fontSize: 12, color: 'var(--purple)' }}>or click to browse</span>
+                </div>
+                <input
+                  id="vault-file-input"
+                  type="file"
+                  accept="image/*,video/*"
+                  style={{ display: 'none' }}
+                  onChange={e => {
+                    const f = e.target.files?.[0]
+                    if (!f) return
+                    setUploadFile(f)
+                    setUploadPreview(URL.createObjectURL(f))
+                    e.target.value = ''
+                  }}
+                />
+              </div>
+            ) : (
+              <div style={{ marginBottom: 16, position: 'relative' }}>
+                {uploadFile.type.startsWith('video') ? (
+                  <video src={uploadPreview!} controls style={{ width: '100%', maxHeight: 240, borderRadius: 8, background: '#000' }} />
+                ) : (
+                  <img src={uploadPreview!} style={{ width: '100%', maxHeight: 240, objectFit: 'contain', borderRadius: 8, background: 'var(--bg-elevated)' }} />
+                )}
+                <button
+                  type="button"
+                  onClick={() => { setUploadFile(null); setUploadPreview(null) }}
+                  style={{
+                    position: 'absolute', top: 8, right: 8,
+                    background: 'rgba(0,0,0,0.6)', border: 'none', borderRadius: '50%',
+                    color: 'white', cursor: 'pointer', width: 24, height: 24,
+                    fontSize: 14, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  }}
+                >×</button>
+                <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 6 }}>{uploadFile.name}</div>
+              </div>
+            )}
+
+            <div style={{ marginBottom: 16, marginTop: 16 }}>
+              <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 6, textTransform: 'uppercase' }}>Album</div>
+              <select
+                value={uploadAlbum}
+                onChange={e => setUploadAlbum(e.target.value)}
+                style={{
+                  width: '100%', background: 'var(--bg-elevated)', border: '1px solid var(--border)',
+                  borderRadius: 6, color: 'var(--text-primary)', padding: '8px 12px', fontSize: 13,
+                  boxSizing: 'border-box',
+                }}
+              >
+                <option value="">No album</option>
+                {Object.keys(vaultAlbums).map(a => (
+                  <option key={a} value={a}>{a}</option>
+                ))}
+                <option value="__new__">+ Create new album...</option>
+              </select>
+              {uploadAlbum === '__new__' && (
+                <input
+                  type="text"
+                  value={newAlbumName}
+                  onChange={e => setNewAlbumName(e.target.value)}
+                  placeholder="Album name..."
+                  style={{
+                    width: '100%', marginTop: 8, background: 'var(--bg-elevated)',
+                    border: '1px solid var(--border)', borderRadius: 6,
+                    color: 'var(--text-primary)', padding: '8px 12px',
+                    fontSize: 13, outline: 'none', boxSizing: 'border-box',
+                  }}
+                />
+              )}
+            </div>
+
+            <div style={{ marginBottom: 20 }}>
+              <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 6, textTransform: 'uppercase' }}>AI Description</div>
+              <div style={{ display: 'flex', gap: 6, marginBottom: 8 }}>
+                {(['ai', 'manual'] as const).map(mode => (
+                  <button
+                    key={mode}
+                    type="button"
+                    onClick={() => setUploadNotesMode(mode)}
+                    style={{
+                      padding: '4px 12px', borderRadius: 6, cursor: 'pointer', fontSize: 12,
+                      background: uploadNotesMode === mode ? 'rgba(155,143,212,0.15)' : 'transparent',
+                      border: uploadNotesMode === mode ? '1px solid var(--purple)' : '1px solid var(--border)',
+                      color: uploadNotesMode === mode ? 'var(--purple)' : 'var(--text-muted)',
+                    }}
+                  >
+                    {mode === 'ai' ? '✦ Auto-generate' : '✎ Write manually'}
+                  </button>
+                ))}
+              </div>
+              {uploadNotesMode === 'manual' ? (
+                <textarea
+                  value={uploadNotes}
+                  onChange={e => setUploadNotes(e.target.value)}
+                  rows={3}
+                  placeholder="Describe this media for the AI (e.g. 'red lingerie set, bedroom, playful mood')..."
+                  style={{
+                    width: '100%', background: 'var(--bg-elevated)',
+                    border: '1px solid var(--border-subtle)', borderRadius: 6,
+                    padding: '8px 12px', color: 'var(--text-primary)',
+                    fontSize: 13, resize: 'vertical', boxSizing: 'border-box', outline: 'none',
+                  }}
+                />
+              ) : (
+                <div style={{ fontSize: 12, color: 'var(--text-muted)', padding: '8px 12px', background: 'var(--bg-elevated)', borderRadius: 6, border: '1px solid var(--border-subtle)' }}>
+                  AI will analyze the media and generate a description automatically after upload.
+                </div>
+              )}
+            </div>
+
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button
+                type="button"
+                onClick={async () => {
+                  if (!uploadFile || !selectedCreatorId || uploadingVault) return
+                  const album = uploadAlbum === '__new__'
+                    ? newAlbumName.trim() || 'Uncategorized'
+                    : uploadAlbum || 'Uncategorized'
+                  setUploadingVault(true)
+                  try {
+                    const formData = new FormData()
+                    formData.append('file', uploadFile)
+                    formData.append('album_title', album)
+                    if (uploadNotesMode === 'manual' && uploadNotes.trim()) {
+                      formData.append('ai_description', uploadNotes.trim())
+                    }
+                    const res = await fetch(
+                      `${process.env.NEXT_PUBLIC_API_URL}/upload-vault-media/${selectedCreatorId}`,
+                      { method: 'POST', body: formData }
+                    )
+                    const data = await res.json()
+                    if (data.status === 'ok' && data.item) {
+                      const item = data.item
+                      const albumKey = item.album_title || 'Uncategorized'
+                      setVaultAlbums(prev => ({
+                        ...prev,
+                        [albumKey]: [...(prev[albumKey] || []), item],
+                      }))
+                      setShowUploadModal(false)
+                      setUploadFile(null)
+                      setUploadPreview(null)
+                      setUploadNotes('')
+                      setUploadAlbum('')
+                      setNewAlbumName('')
+                    }
+                  } finally {
+                    setUploadingVault(false)
+                  }
+                }}
+                disabled={!uploadFile || uploadingVault}
+                style={{
+                  flex: 1, padding: '8px', background: 'var(--purple)',
+                  border: 'none', borderRadius: 6, color: 'white',
+                  fontSize: 13, cursor: !uploadFile || uploadingVault ? 'not-allowed' : 'pointer',
+                  opacity: !uploadFile || uploadingVault ? 0.6 : 1,
+                }}
+              >
+                {uploadingVault ? 'Uploading...' : 'Upload'}
+              </button>
+              <button
+                type="button"
+                onClick={() => { setShowUploadModal(false); setUploadFile(null); setUploadPreview(null); setUploadNotes(''); setUploadAlbum(''); setNewAlbumName('') }}
+                disabled={uploadingVault}
+                style={{
+                  padding: '8px 16px', background: 'transparent',
+                  border: '1px solid var(--border)', borderRadius: 6,
+                  color: 'var(--text-muted)', fontSize: 13, cursor: 'pointer',
+                }}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {showAddCreator && (
         <div style={{
           position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)',
