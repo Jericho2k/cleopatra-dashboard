@@ -300,21 +300,29 @@ export default function SettingsPage() {
   }
 
   const loadVaultMedia = async (creatorId: string) => {
-    const { data: vaultData, error } = await supabase
-      .from('creator_vault_media')
-      .select('id, filename, url, album_title, mimetype, ai_description, thumbnail_url, media_type, title, price, is_active')
-      .eq('creator_id', creatorId)
-      .order('album_title')
-      .limit(5000)
-    console.log('[VAULT] creatorId:', creatorId, 'rows:', vaultData?.length, 'error:', error)
-    const byAlbum = vaultData?.reduce((acc: Record<string, any[]>, item: any) => {
+    const allRows: any[] = []
+    const pageSize = 1000
+    let from = 0
+    while (true) {
+      const { data, error } = await supabase
+        .from('creator_vault_media')
+        .select('id, filename, url, album_title, mimetype, ai_description, thumbnail_url, media_type, title, price, is_active')
+        .eq('creator_id', creatorId)
+        .order('album_title')
+        .range(from, from + pageSize - 1)
+      console.log('[VAULT] page from:', from, 'rows:', data?.length, 'error:', error)
+      if (data) allRows.push(...data)
+      if (!data || data.length < pageSize) break
+      from += pageSize
+    }
+    console.log('[VAULT] total rows:', allRows.length)
+    const byAlbum = allRows.reduce((acc: Record<string, any[]>, item: any) => {
       const album = item.album_title || 'Uncategorized'
       if (!acc[album]) acc[album] = []
       acc[album].push(item)
       return acc
     }, {} as Record<string, any[]>)
-    console.log('[VAULT] albums:', Object.keys(byAlbum ?? {}))
-    setVaultAlbums(byAlbum ?? {})
+    setVaultAlbums(byAlbum)
   }
 
   useEffect(() => {
