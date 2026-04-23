@@ -959,35 +959,31 @@ export default function SettingsPage() {
           {activeSection === 'Vault' && (
             <div>
               <button
-                onClick={() => {
+                onClick={async () => {
                   if (!selectedCreatorId || syncingVault) return
                   setSyncingVault(true)
-                  setVaultProgress(null)
+                  setVaultProgress({ synced: 0, total: 0, album: 'Starting...' })
 
-                  const es = new EventSource(
-                    `${process.env.NEXT_PUBLIC_API_URL}/sync-vault-stream/${selectedCreatorId}`
-                  )
+                  await fetch(`${process.env.NEXT_PUBLIC_API_URL}/sync-vault-start/${selectedCreatorId}`, { method: 'POST' })
 
-                  es.onmessage = async (e) => {
-                    const msg = JSON.parse(e.data)
-                    if (msg.type === 'start') {
-                      setVaultProgress({ synced: 0, total: msg.total, album: msg.already > 0 ? `${msg.already} already synced, fetching new...` : '' })
-                    } else if (msg.type === 'progress') {
-                      setVaultProgress({ synced: msg.synced, total: msg.total, album: msg.album })
-                    } else if (msg.type === 'done') {
-                      setVaultProgress({ synced: msg.synced, total: msg.total, album: '' })
-                      es.close()
-                      await loadVaultMedia(selectedCreatorId)
+                  const interval = setInterval(async () => {
+                    try {
+                      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/sync-vault-status/${selectedCreatorId}`)
+                      const state = await res.json()
+                      setVaultProgress({ synced: state.synced, total: state.total, album: state.album })
+
+                      if (state.status === 'done' || state.status === 'error') {
+                        clearInterval(interval)
+                        await loadVaultMedia(selectedCreatorId)
+                        setSyncingVault(false)
+                        setTimeout(() => setVaultProgress(null), 1500)
+                      }
+                    } catch {
+                      clearInterval(interval)
                       setSyncingVault(false)
-                      setTimeout(() => setVaultProgress(null), 1500)
+                      setVaultProgress(null)
                     }
-                  }
-
-                  es.onerror = () => {
-                    es.close()
-                    setSyncingVault(false)
-                    setVaultProgress(null)
-                  }
+                  }, 1000)
                 }}
                 style={{
                   padding: '6px 14px', borderRadius: 6, cursor: syncingVault ? 'not-allowed' : 'pointer',
