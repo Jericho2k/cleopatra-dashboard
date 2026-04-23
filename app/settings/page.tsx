@@ -997,7 +997,7 @@ export default function SettingsPage() {
                       {vaultProgress.synced >= vaultProgress.total ? '✓ Sync complete' : vaultProgress.album || 'Starting...'}
                     </span>
                     <span style={{ fontSize: 11, color: 'var(--text-primary)', fontVariantNumeric: 'tabular-nums' }}>
-                      {vaultProgress.synced} / {vaultProgress.total}
+                      {vaultProgress.total > 0 ? `${vaultProgress.synced} / ${vaultProgress.total}` : `${vaultProgress.synced} new`}
                     </span>
                   </div>
                   <div style={{ height: 3, borderRadius: 99, background: 'var(--border)', overflow: 'hidden' }}>
