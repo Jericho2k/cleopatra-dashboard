@@ -326,7 +326,6 @@ export default function SettingsPage() {
           Promise.resolve(loadScripts(creatorId)),
           loadFanLists(creatorId),
           loadReengagement(creatorId),
-          loadVaultMedia(creatorId),
         ])
       } finally {
         setContentLoading(false)
