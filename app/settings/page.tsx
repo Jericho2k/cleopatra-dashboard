@@ -54,6 +54,7 @@ export default function SettingsPage() {
   const [selectedAlbum, setSelectedAlbum] = useState<string | null>(null)
   const [previewItem, setPreviewItem] = useState<any>(null)
   const [syncingVault, setSyncingVault] = useState(false)
+  const [vaultProgress, setVaultProgress] = useState<{ synced: number; total: number; album: string } | null>(null)
   const [syncing, setSyncing] = useState(false)
   const [syncingChats, setSyncingChats] = useState(false)
   const [showAddCreator, setShowAddCreator] = useState(false)
@@ -350,14 +351,6 @@ export default function SettingsPage() {
         setVaultAlbums(byAlbum)
       })
   }, [selectedCreatorId])
-
-  const syncVault = async () => {
-    if (!selectedCreatorId) return
-    setSyncing(true)
-    await fetch(`${process.env.NEXT_PUBLIC_API_URL}/sync-vault/${selectedCreatorId}`, { method: 'POST' })
-    await loadVaultMedia(selectedCreatorId)
-    setSyncing(false)
-  }
 
   const updateVaultItem = async (id: string, fields: { title?: string; price?: number; active?: boolean }) => {
     await supabase.from('creator_vault_media').update(fields).eq('id', id)
@@ -966,32 +959,83 @@ export default function SettingsPage() {
           {activeSection === 'Vault' && (
             <div>
               <button
-                onClick={async () => {
-                  if (!selectedCreatorId) return
+                onClick={() => {
+                  if (!selectedCreatorId || syncingVault) return
                   setSyncingVault(true)
-                  await fetch(`${process.env.NEXT_PUBLIC_API_URL}/sync-vault/${selectedCreatorId}`, { method: 'POST' })
-                  const { data: vaultData } = await supabase
-                    .from('creator_vault_media')
-                    .select('id, filename, url, album_title, mimetype, ai_description')
-                    .eq('creator_id', selectedCreatorId)
-                    .order('album_title')
-                  const byAlbum = (vaultData || []).reduce((acc: any, item: any) => {
-                    const album = item.album_title || 'Uncategorized'
-                    if (!acc[album]) acc[album] = []
-                    acc[album].push(item)
-                    return acc
-                  }, {})
-                  setVaultAlbums(byAlbum)
-                  setSyncingVault(false)
+                  setVaultProgress(null)
+
+                  const es = new EventSource(
+                    `${process.env.NEXT_PUBLIC_API_URL}/sync-vault-stream/${selectedCreatorId}`
+                  )
+
+                  es.onmessage = async (e) => {
+                    const msg = JSON.parse(e.data)
+                    if (msg.type === 'start') {
+                      setVaultProgress({ synced: 0, total: msg.total, album: '' })
+                    } else if (msg.type === 'progress') {
+                      setVaultProgress({ synced: msg.synced, total: msg.total, album: msg.album })
+                    } else if (msg.type === 'done') {
+                      setVaultProgress({ synced: msg.synced, total: msg.total, album: '' })
+                      es.close()
+                      const { data: vaultData } = await supabase
+                        .from('creator_vault_media')
+                        .select('id, filename, url, album_title, mimetype, ai_description')
+                        .eq('creator_id', selectedCreatorId)
+                        .order('album_title')
+                      const byAlbum = (vaultData || []).reduce((acc: any, item: any) => {
+                        const album = item.album_title || 'Uncategorized'
+                        if (!acc[album]) acc[album] = []
+                        acc[album].push(item)
+                        return acc
+                      }, {})
+                      setVaultAlbums(byAlbum)
+                      setSyncingVault(false)
+                      setTimeout(() => setVaultProgress(null), 1500)
+                    }
+                  }
+
+                  es.onerror = () => {
+                    es.close()
+                    setSyncingVault(false)
+                    setVaultProgress(null)
+                  }
                 }}
                 style={{
-                  padding: '6px 14px', borderRadius: 6, cursor: 'pointer',
+                  padding: '6px 14px', borderRadius: 6, cursor: syncingVault ? 'not-allowed' : 'pointer',
                   background: 'transparent', border: '1px solid var(--border)',
-                  color: 'var(--text-muted)', fontSize: 12, marginBottom: 20,
+                  color: 'var(--text-muted)', fontSize: 12, marginBottom: vaultProgress ? 12 : 20,
+                  opacity: syncingVault ? 0.5 : 1,
                 }}
               >
                 {syncingVault ? 'Syncing...' : '↻ Sync Vault'}
               </button>
+              {vaultProgress && (
+                <div style={{
+                  marginBottom: 20,
+                  padding: '10px 14px',
+                  borderRadius: 8,
+                  background: 'var(--bg-elevated)',
+                  border: '1px solid var(--border)',
+                }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
+                    <span style={{ fontSize: 11, color: 'var(--text-muted)', maxWidth: '70%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {vaultProgress.synced >= vaultProgress.total ? '✓ Sync complete' : vaultProgress.album || 'Starting...'}
+                    </span>
+                    <span style={{ fontSize: 11, color: 'var(--text-primary)', fontVariantNumeric: 'tabular-nums' }}>
+                      {vaultProgress.synced} / {vaultProgress.total}
+                    </span>
+                  </div>
+                  <div style={{ height: 3, borderRadius: 99, background: 'var(--border)', overflow: 'hidden' }}>
+                    <div style={{
+                      height: '100%',
+                      borderRadius: 99,
+                      background: 'linear-gradient(90deg, #a78bfa, #818cf8)',
+                      width: `${vaultProgress.total > 0 ? Math.round((vaultProgress.synced / vaultProgress.total) * 100) : 0}%`,
+                      transition: 'width 0.4s ease',
+                    }} />
+                  </div>
+                </div>
+              )}
               <div style={{ marginBottom: 24 }}>
                 <div style={{ fontSize: 18, fontWeight: 600, marginBottom: 4 }}>Vault</div>
                 <div style={{ fontSize: 13, color: 'var(--text-muted)' }}>
