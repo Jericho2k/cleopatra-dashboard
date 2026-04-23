@@ -55,6 +55,9 @@ export default function SettingsPage() {
   const [previewItem, setPreviewItem] = useState<any>(null)
   const [syncingVault, setSyncingVault] = useState(false)
   const [vaultProgress, setVaultProgress] = useState<{ synced: number; total: number; album: string } | null>(null)
+  const [uploadingVault, setUploadingVault] = useState(false)
+  const [uploadAlbum, setUploadAlbum] = useState('')
+  const [newAlbumName, setNewAlbumName] = useState('')
   const [syncing, setSyncing] = useState(false)
   const [syncingChats, setSyncingChats] = useState(false)
   const [showAddCreator, setShowAddCreator] = useState(false)
@@ -956,43 +959,122 @@ export default function SettingsPage() {
           {/* Vault */}
           {activeSection === 'Vault' && (
             <div>
-              <button
-                onClick={async () => {
-                  if (!selectedCreatorId || syncingVault) return
-                  setSyncingVault(true)
-                  setVaultProgress({ synced: 0, total: 0, album: 'Starting...' })
+              <div style={{ display: 'flex', gap: 8, marginBottom: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+                <button
+                  onClick={async () => {
+                    if (!selectedCreatorId || syncingVault) return
+                    setSyncingVault(true)
+                    setVaultProgress({ synced: 0, total: 0, album: 'Starting...' })
 
-                  const creatorId = selectedCreatorId
-                  await fetch(`${process.env.NEXT_PUBLIC_API_URL}/sync-vault-start/${creatorId}`, { method: 'POST' })
+                    const creatorId = selectedCreatorId
+                    await fetch(`${process.env.NEXT_PUBLIC_API_URL}/sync-vault-start/${creatorId}`, { method: 'POST' })
 
-                  const interval = setInterval(async () => {
-                    try {
-                      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/sync-vault-status/${creatorId}`)
-                      const state = await res.json()
-                      setVaultProgress({ synced: state.synced, total: state.total, album: state.album })
+                    const interval = setInterval(async () => {
+                      try {
+                        const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/sync-vault-status/${creatorId}`)
+                        const state = await res.json()
+                        setVaultProgress({ synced: state.synced, total: state.total, album: state.album })
 
-                      if (state.status === 'done' || state.status === 'error') {
+                        if (state.status === 'done' || state.status === 'error') {
+                          clearInterval(interval)
+                          await loadVaultMedia(creatorId)
+                          setSyncingVault(false)
+                          setTimeout(() => setVaultProgress(null), 1500)
+                        }
+                      } catch {
                         clearInterval(interval)
-                        await loadVaultMedia(creatorId)
                         setSyncingVault(false)
-                        setTimeout(() => setVaultProgress(null), 1500)
+                        setVaultProgress(null)
                       }
-                    } catch {
-                      clearInterval(interval)
-                      setSyncingVault(false)
-                      setVaultProgress(null)
-                    }
-                  }, 1000)
-                }}
-                style={{
-                  padding: '6px 14px', borderRadius: 6, cursor: syncingVault ? 'not-allowed' : 'pointer',
+                    }, 1000)
+                  }}
+                  style={{
+                    padding: '6px 14px', borderRadius: 6, cursor: syncingVault ? 'not-allowed' : 'pointer',
+                    background: 'transparent', border: '1px solid var(--border)',
+                    color: 'var(--text-muted)', fontSize: 12, marginBottom: vaultProgress ? 12 : 20,
+                    opacity: syncingVault ? 0.5 : 1,
+                  }}
+                >
+                  {syncingVault ? 'Syncing...' : '↻ Sync Vault'}
+                </button>
+
+                <label style={{
+                  padding: '6px 14px', borderRadius: 6,
+                  cursor: uploadingVault ? 'not-allowed' : 'pointer',
                   background: 'transparent', border: '1px solid var(--border)',
-                  color: 'var(--text-muted)', fontSize: 12, marginBottom: vaultProgress ? 12 : 20,
-                  opacity: syncingVault ? 0.5 : 1,
-                }}
-              >
-                {syncingVault ? 'Syncing...' : '↻ Sync Vault'}
-              </button>
+                  color: 'var(--text-muted)', fontSize: 12,
+                  opacity: uploadingVault ? 0.5 : 1,
+                  display: 'inline-flex', alignItems: 'center', gap: 6,
+                }}>
+                  {uploadingVault ? '⏳ Uploading...' : '↑ Upload Media'}
+                  <input
+                    type="file"
+                    accept="image/*,video/*"
+                    style={{ display: 'none' }}
+                    disabled={uploadingVault || !selectedCreatorId}
+                    onChange={async (e) => {
+                      const file = e.target.files?.[0]
+                      if (!file || !selectedCreatorId) return
+                      e.target.value = ''
+                      const album = uploadAlbum === '__new__'
+                        ? newAlbumName.trim() || 'Uncategorized'
+                        : uploadAlbum || 'Uncategorized'
+                      setUploadingVault(true)
+                      try {
+                        const formData = new FormData()
+                        formData.append('file', file)
+                        formData.append('album_title', album)
+                        const res = await fetch(
+                          `${process.env.NEXT_PUBLIC_API_URL}/upload-vault-media/${selectedCreatorId}`,
+                          { method: 'POST', body: formData }
+                        )
+                        const data = await res.json()
+                        if (data.status === 'ok' && data.item) {
+                          const item = data.item
+                          const albumKey = item.album_title || 'Uncategorized'
+                          setVaultAlbums(prev => ({
+                            ...prev,
+                            [albumKey]: [...(prev[albumKey] || []), item],
+                          }))
+                        }
+                      } finally {
+                        setUploadingVault(false)
+                      }
+                    }}
+                  />
+                </label>
+
+                <select
+                  value={uploadAlbum}
+                  onChange={e => setUploadAlbum(e.target.value)}
+                  style={{
+                    background: 'var(--bg-elevated)', border: '1px solid var(--border)',
+                    borderRadius: 6, color: 'var(--text-muted)', padding: '5px 10px',
+                    fontSize: 12, cursor: 'pointer',
+                  }}
+                >
+                  <option value="">Select album</option>
+                  {Object.keys(vaultAlbums).map(a => (
+                    <option key={a} value={a}>{a}</option>
+                  ))}
+                  <option value="__new__">+ New album...</option>
+                </select>
+
+                {uploadAlbum === '__new__' && (
+                  <input
+                    type="text"
+                    value={newAlbumName}
+                    onChange={e => setNewAlbumName(e.target.value)}
+                    placeholder="Album name..."
+                    style={{
+                      background: 'var(--bg-elevated)', border: '1px solid var(--border)',
+                      borderRadius: 6, color: 'var(--text-primary)', padding: '5px 10px',
+                      fontSize: 12, outline: 'none', width: 140,
+                    }}
+                  />
+                )}
+              </div>
+
               {vaultProgress && (
                 <div style={{
                   marginBottom: 20,
