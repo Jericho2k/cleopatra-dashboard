@@ -326,6 +326,7 @@ export default function SettingsPage() {
           Promise.resolve(loadScripts(creatorId)),
           loadFanLists(creatorId),
           loadReengagement(creatorId),
+          loadVaultMedia(creatorId),
         ])
       } finally {
         setContentLoading(false)
@@ -336,20 +337,7 @@ export default function SettingsPage() {
 
   useEffect(() => {
     if (!selectedCreatorId) return
-    supabase
-      .from('creator_vault_media')
-      .select('id, filename, url, album_title, mimetype, ai_description')
-      .eq('creator_id', selectedCreatorId)
-      .order('album_title')
-      .then(({ data }) => {
-        const byAlbum = (data || []).reduce((acc: any, item: any) => {
-          const album = item.album_title || 'Uncategorized'
-          if (!acc[album]) acc[album] = []
-          acc[album].push(item)
-          return acc
-        }, {})
-        setVaultAlbums(byAlbum)
-      })
+    loadVaultMedia(selectedCreatorId)
   }, [selectedCreatorId])
 
   const updateVaultItem = async (id: string, fields: { title?: string; price?: number; active?: boolean }) => {
