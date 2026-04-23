@@ -302,7 +302,7 @@ export default function SettingsPage() {
   const loadVaultMedia = async (creatorId: string) => {
     const { data: vaultData, error } = await supabase
       .from('creator_vault_media')
-      .select('id, filename, url, album_title, mimetype, ai_description, thumbnail_url, media_type, title, price, active')
+      .select('id, filename, url, album_title, mimetype, ai_description, thumbnail_url, media_type, title, price, is_active')
       .eq('creator_id', creatorId)
       .order('album_title')
     console.log('[VAULT] creatorId:', creatorId, 'rows:', vaultData?.length, 'error:', error)
