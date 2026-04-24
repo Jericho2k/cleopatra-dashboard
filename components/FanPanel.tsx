@@ -13,7 +13,7 @@ export interface FanPanelProps {
   showToast?: (message: string) => void
 }
 
-type Tab = 'profile' | 'scripts' | 'ppv'
+type Tab = 'profile' | 'scripts' | 'ppv' | 'sales'
 
 interface StorylineStep {
   id: string
@@ -43,6 +43,11 @@ interface PPVOffer {
 
 export default function FanPanel({ fan, creatorId, onInsertMessage, onHistoryLoaded, showToast }: FanPanelProps) {
   const [activeTab, setActiveTab] = useState<Tab>('profile')
+  const [salesLog, setSalesLog] = useState<{ date: string; item: string; amount: number; chatter: string }[]>([])
+  const [notSoldLog, setNotSoldLog] = useState<{ date: string; item: string; amount: number; reason: string; chatter: string }[]>([])
+  const [newSale, setNewSale] = useState({ item: '', amount: '', chatter: '' })
+  const [newNotSold, setNewNotSold] = useState({ item: '', amount: '', reason: '', chatter: '' })
+  const [salesLoading, setSalesLoading] = useState(false)
   const [loadingHistory, setLoadingHistory] = useState(false)
   const [storylines, setStorylines] = useState<Storyline[]>([])
   const [ppvOffers, setPPVOffers] = useState<PPVOffer[]>([])
@@ -52,6 +57,23 @@ export default function FanPanel({ fan, creatorId, onInsertMessage, onHistoryLoa
   const [expandedStoryline, setExpandedStoryline] = useState<string | null>(null)
   const [aiSummary, setAiSummary] = useState<any>(null)
   const [showAiProfile, setShowAiProfile] = useState(false)
+
+  useEffect(() => {
+    if (!fan?.id) return
+    void supabase
+      .from('fans')
+      .select('sales_log, not_sold_log')
+      .eq('id', fan.id)
+      .single()
+      .then(({ data, error }) => {
+        if (error) {
+          showToast?.(error.message)
+          return
+        }
+        setSalesLog((data as any)?.sales_log ?? [])
+        setNotSoldLog((data as any)?.not_sold_log ?? [])
+      })
+  }, [fan?.id])
 
   useEffect(() => {
     if (fan) {
@@ -78,6 +100,8 @@ export default function FanPanel({ fan, creatorId, onInsertMessage, onHistoryLoa
       }, (payload) => {
         const updated = payload.new as any
         setAiSummary(updated.ai_summary ?? null)
+        if (Array.isArray(updated.sales_log)) setSalesLog(updated.sales_log)
+        if (Array.isArray(updated.not_sold_log)) setNotSoldLog(updated.not_sold_log)
         setDetails({
           age: updated.age ?? '',
           payday: updated.payday || updated.ai_summary?.payday || '',
@@ -265,6 +289,7 @@ export default function FanPanel({ fan, creatorId, onInsertMessage, onHistoryLoa
     { id: 'profile', label: 'Profile', icon: <User size={14} /> },
     { id: 'scripts', label: 'Scripts', icon: <FileText size={14} /> },
     { id: 'ppv', label: 'PPV', icon: <Lock size={14} /> },
+    { id: 'sales', label: 'Sales', icon: <span style={{ fontSize: 12 }}>$</span> },
   ]
 
   return (
@@ -639,6 +664,164 @@ export default function FanPanel({ fan, creatorId, onInsertMessage, onHistoryLoa
                 </div>
               </div>
             ))}
+          </div>
+        )}
+
+        {/* SALES TAB */}
+        {activeTab === 'sales' && (
+          <div>
+            {/* SOLD */}
+            <div style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>Sales</div>
+            {salesLog.length === 0 && (
+              <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 12 }}>No sales logged yet.</div>
+            )}
+            {salesLog.map((s, i) => (
+              <div key={i} style={{ ...CARD_STYLE, marginBottom: 8 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                  <div>
+                    <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-primary)' }}>{s.item}</div>
+                    <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>{s.date} · {s.chatter}</div>
+                  </div>
+                  <span style={{ fontFamily: 'var(--font-display)', fontSize: 15, fontWeight: 700, color: 'var(--green)', flexShrink: 0, marginLeft: 8 }}>
+                    ${s.amount}
+                  </span>
+                </div>
+              </div>
+            ))}
+
+            {/* Add sale */}
+            <div style={{ marginBottom: 20, padding: 10, background: 'var(--bg-elevated)', borderRadius: 8, border: '1px solid var(--border)' }}>
+              <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 8 }}>+ Log sale</div>
+              <input
+                placeholder="Item (e.g. pussy photo)"
+                value={newSale.item}
+                onChange={e => setNewSale(p => ({ ...p, item: e.target.value }))}
+                style={{ width: '100%', background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: 6, padding: '6px 10px', fontSize: 12, color: 'var(--text-primary)', marginBottom: 6, boxSizing: 'border-box', outline: 'none' }}
+              />
+              <div style={{ display: 'flex', gap: 6, marginBottom: 6 }}>
+                <input
+                  placeholder="Amount $"
+                  type="number"
+                  value={newSale.amount}
+                  onChange={e => setNewSale(p => ({ ...p, amount: e.target.value }))}
+                  style={{ flex: 1, background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: 6, padding: '6px 10px', fontSize: 12, color: 'var(--text-primary)', outline: 'none' }}
+                />
+                <input
+                  placeholder="Your name"
+                  value={newSale.chatter}
+                  onChange={e => setNewSale(p => ({ ...p, chatter: e.target.value }))}
+                  style={{ flex: 1, background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: 6, padding: '6px 10px', fontSize: 12, color: 'var(--text-primary)', outline: 'none' }}
+                />
+              </div>
+              <button
+                type="button"
+                disabled={salesLoading || !newSale.item || !newSale.amount}
+                onClick={async () => {
+                  if (!fan?.id || !newSale.item || !newSale.amount) return
+                  setSalesLoading(true)
+                  const entry = {
+                    date: new Date().toLocaleDateString('en-GB'),
+                    item: newSale.item,
+                    amount: Number(newSale.amount),
+                    chatter: newSale.chatter || 'unknown',
+                  }
+                  const updated = [...salesLog, entry]
+                  await supabase.from('fans').update({
+                    sales_log: updated,
+                    total_spent: (fan.total_spent ?? 0) + entry.amount,
+                  }).eq('id', fan.id)
+                  setSalesLog(updated)
+                  setNewSale({ item: '', amount: '', chatter: '' })
+                  setSalesLoading(false)
+                }}
+                style={{
+                  width: '100%', padding: '6px', borderRadius: 6,
+                  background: 'rgba(76,175,130,0.15)', border: '1px solid var(--green)',
+                  color: 'var(--green)', fontSize: 12, cursor: 'pointer',
+                }}
+              >
+                {salesLoading ? 'Saving...' : 'Log Sale'}
+              </button>
+            </div>
+
+            {/* NOT SOLD */}
+            <div style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>Not Sold</div>
+            {notSoldLog.length === 0 && (
+              <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 12 }}>No failed attempts logged yet.</div>
+            )}
+            {notSoldLog.map((s, i) => (
+              <div key={i} style={{ ...CARD_STYLE, marginBottom: 8 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-primary)' }}>{s.item}</div>
+                    <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>{s.date} · {s.chatter}</div>
+                    <div style={{ fontSize: 11, color: 'rgba(255,120,120,0.8)', marginTop: 2 }}>{s.reason}</div>
+                  </div>
+                  <span style={{ fontFamily: 'var(--font-display)', fontSize: 15, fontWeight: 700, color: 'var(--text-muted)', flexShrink: 0, marginLeft: 8 }}>
+                    ${s.amount}
+                  </span>
+                </div>
+              </div>
+            ))}
+
+            {/* Add not sold */}
+            <div style={{ padding: 10, background: 'var(--bg-elevated)', borderRadius: 8, border: '1px solid var(--border)' }}>
+              <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 8 }}>+ Log failed attempt</div>
+              <input
+                placeholder="Item you tried to sell"
+                value={newNotSold.item}
+                onChange={e => setNewNotSold(p => ({ ...p, item: e.target.value }))}
+                style={{ width: '100%', background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: 6, padding: '6px 10px', fontSize: 12, color: 'var(--text-primary)', marginBottom: 6, boxSizing: 'border-box', outline: 'none' }}
+              />
+              <input
+                placeholder="Reason (e.g. too expensive, limit $400)"
+                value={newNotSold.reason}
+                onChange={e => setNewNotSold(p => ({ ...p, reason: e.target.value }))}
+                style={{ width: '100%', background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: 6, padding: '6px 10px', fontSize: 12, color: 'var(--text-primary)', marginBottom: 6, boxSizing: 'border-box', outline: 'none' }}
+              />
+              <div style={{ display: 'flex', gap: 6, marginBottom: 6 }}>
+                <input
+                  placeholder="Amount $"
+                  type="number"
+                  value={newNotSold.amount}
+                  onChange={e => setNewNotSold(p => ({ ...p, amount: e.target.value }))}
+                  style={{ flex: 1, background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: 6, padding: '6px 10px', fontSize: 12, color: 'var(--text-primary)', outline: 'none' }}
+                />
+                <input
+                  placeholder="Your name"
+                  value={newNotSold.chatter}
+                  onChange={e => setNewNotSold(p => ({ ...p, chatter: e.target.value }))}
+                  style={{ flex: 1, background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: 6, padding: '6px 10px', fontSize: 12, color: 'var(--text-primary)', outline: 'none' }}
+                />
+              </div>
+              <button
+                type="button"
+                disabled={salesLoading || !newNotSold.item}
+                onClick={async () => {
+                  if (!fan?.id || !newNotSold.item) return
+                  setSalesLoading(true)
+                  const entry = {
+                    date: new Date().toLocaleDateString('en-GB'),
+                    item: newNotSold.item,
+                    amount: Number(newNotSold.amount) || 0,
+                    reason: newNotSold.reason || '',
+                    chatter: newNotSold.chatter || 'unknown',
+                  }
+                  const updated = [...notSoldLog, entry]
+                  await supabase.from('fans').update({ not_sold_log: updated }).eq('id', fan.id)
+                  setNotSoldLog(updated)
+                  setNewNotSold({ item: '', amount: '', reason: '', chatter: '' })
+                  setSalesLoading(false)
+                }}
+                style={{
+                  width: '100%', padding: '6px', borderRadius: 6,
+                  background: 'rgba(255,80,80,0.1)', border: '1px solid rgba(255,80,80,0.3)',
+                  color: 'rgba(255,120,120,0.9)', fontSize: 12, cursor: 'pointer',
+                }}
+              >
+                {salesLoading ? 'Saving...' : 'Log Failed Attempt'}
+              </button>
+            </div>
           </div>
         )}
 
