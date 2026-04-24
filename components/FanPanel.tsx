@@ -704,13 +704,13 @@ export default function FanPanel({ fan, creatorId, onInsertMessage, onHistoryLoa
                   type="number"
                   value={newSale.amount}
                   onChange={e => setNewSale(p => ({ ...p, amount: e.target.value }))}
-                  style={{ flex: 1, background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: 6, padding: '6px 10px', fontSize: 12, color: 'var(--text-primary)', outline: 'none' }}
+                  style={{ flex: 1, minWidth: 0, background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: 6, padding: '6px 10px', fontSize: 12, color: 'var(--text-primary)', outline: 'none', boxSizing: 'border-box' }}
                 />
                 <input
                   placeholder="Your name"
                   value={newSale.chatter}
                   onChange={e => setNewSale(p => ({ ...p, chatter: e.target.value }))}
-                  style={{ flex: 1, background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: 6, padding: '6px 10px', fontSize: 12, color: 'var(--text-primary)', outline: 'none' }}
+                  style={{ flex: 1, minWidth: 0, background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: 6, padding: '6px 10px', fontSize: 12, color: 'var(--text-primary)', outline: 'none', boxSizing: 'border-box' }}
                 />
               </div>
               <button
@@ -785,13 +785,13 @@ export default function FanPanel({ fan, creatorId, onInsertMessage, onHistoryLoa
                   type="number"
                   value={newNotSold.amount}
                   onChange={e => setNewNotSold(p => ({ ...p, amount: e.target.value }))}
-                  style={{ flex: 1, background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: 6, padding: '6px 10px', fontSize: 12, color: 'var(--text-primary)', outline: 'none' }}
+                  style={{ flex: 1, minWidth: 0, background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: 6, padding: '6px 10px', fontSize: 12, color: 'var(--text-primary)', outline: 'none', boxSizing: 'border-box' }}
                 />
                 <input
                   placeholder="Your name"
                   value={newNotSold.chatter}
                   onChange={e => setNewNotSold(p => ({ ...p, chatter: e.target.value }))}
-                  style={{ flex: 1, background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: 6, padding: '6px 10px', fontSize: 12, color: 'var(--text-primary)', outline: 'none' }}
+                  style={{ flex: 1, minWidth: 0, background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: 6, padding: '6px 10px', fontSize: 12, color: 'var(--text-primary)', outline: 'none', boxSizing: 'border-box' }}
                 />
               </div>
               <button
