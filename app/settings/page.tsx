@@ -969,7 +969,7 @@ export default function SettingsPage() {
           {/* Vault */}
           {activeSection === 'Vault' && (
             <div>
-              <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: vaultProgress ? 12 : 20 }}>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 20 }}>
                 <button
                   onClick={async () => {
                     if (!selectedCreatorId || syncingVault) return
@@ -1001,9 +1001,12 @@ export default function SettingsPage() {
                     background: 'transparent', border: '1px solid var(--border)',
                     color: 'var(--text-muted)', fontSize: 12,
                     opacity: syncingVault ? 0.5 : 1,
+                    fontVariantNumeric: 'tabular-nums',
                   }}
                 >
-                  {syncingVault ? 'Syncing...' : '↻ Sync Vault'}
+                  {syncingVault
+                    ? `↻ ${vaultProgress?.synced ?? 0}${vaultProgress?.total ? `/${vaultProgress.total}` : ''}`
+                    : '↻ Sync Vault'}
                 </button>
                 <button
                   onClick={() => setShowUploadModal(true)}
@@ -1047,33 +1050,6 @@ export default function SettingsPage() {
                 </button>
               </div>
 
-              {vaultProgress && (
-                <div style={{
-                  marginBottom: 20,
-                  padding: '10px 14px',
-                  borderRadius: 8,
-                  background: 'var(--bg-elevated)',
-                  border: '1px solid var(--border)',
-                }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
-                    <span style={{ fontSize: 11, color: 'var(--text-muted)', maxWidth: '70%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                      {vaultProgress.synced >= vaultProgress.total ? '✓ Sync complete' : vaultProgress.album || 'Starting...'}
-                    </span>
-                    <span style={{ fontSize: 11, color: 'var(--text-primary)', fontVariantNumeric: 'tabular-nums' }}>
-                      {vaultProgress.total > 0 ? `${vaultProgress.synced} / ${vaultProgress.total}` : `${vaultProgress.synced} new`}
-                    </span>
-                  </div>
-                  <div style={{ height: 3, borderRadius: 99, background: 'var(--border)', overflow: 'hidden' }}>
-                    <div style={{
-                      height: '100%',
-                      borderRadius: 99,
-                      background: 'linear-gradient(90deg, #a78bfa, #818cf8)',
-                      width: `${vaultProgress.total > 0 ? Math.round((vaultProgress.synced / vaultProgress.total) * 100) : 0}%`,
-                      transition: 'width 0.4s ease',
-                    }} />
-                  </div>
-                </div>
-              )}
               <div style={{ marginBottom: 24 }}>
                 <div style={{ fontSize: 18, fontWeight: 600, marginBottom: 4 }}>Vault</div>
                 <div style={{ fontSize: 13, color: 'var(--text-muted)' }}>
