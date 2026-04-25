@@ -56,6 +56,8 @@ export default function SettingsPage() {
   const [syncingVault, setSyncingVault] = useState(false)
   const [vaultProgress, setVaultProgress] = useState<{ synced: number; total: number; album: string } | null>(null)
   const [uploadingVault, setUploadingVault] = useState(false)
+  const [categorizingVault, setCategorizingVault] = useState(false)
+  const [categorizeProgress, setCategorizeProgress] = useState<{ done: number; total: number; status: string } | null>(null)
   const [uploadAlbum, setUploadAlbum] = useState('')
   const [newAlbumName, setNewAlbumName] = useState('')
   const [showUploadModal, setShowUploadModal] = useState(false)
@@ -1012,6 +1014,34 @@ export default function SettingsPage() {
                   }}
                 >
                   ↑ Add Media
+                </button>
+                <button
+                  onClick={async () => {
+                    if (!selectedCreatorId || categorizingVault) return
+                    setCategorizingVault(true)
+                    await fetch(`${process.env.NEXT_PUBLIC_API_URL}/categorize-vault/${selectedCreatorId}`, { method: 'POST' })
+                    const interval = setInterval(async () => {
+                      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/categorize-vault-status/${selectedCreatorId}`)
+                      const state = await res.json()
+                      setCategorizeProgress(state)
+                      if (state.status === 'done' || state.status === 'error') {
+                        clearInterval(interval)
+                        setCategorizingVault(false)
+                        setTimeout(() => setCategorizeProgress(null), 2000)
+                      }
+                    }, 2000)
+                  }}
+                  disabled={!selectedCreatorId || categorizingVault}
+                  style={{
+                    padding: '6px 14px', borderRadius: 6, cursor: categorizingVault ? 'not-allowed' : 'pointer',
+                    background: 'transparent', border: '1px solid var(--border)',
+                    color: 'var(--text-muted)', fontSize: 12,
+                    opacity: !selectedCreatorId || categorizingVault ? 0.5 : 1,
+                  }}
+                >
+                  {categorizingVault
+                    ? `✦ ${categorizeProgress?.done ?? 0}/${categorizeProgress?.total ?? '?'}`
+                    : '✦ Categorize'}
                 </button>
               </div>
 
