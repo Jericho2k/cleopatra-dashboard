@@ -53,6 +53,8 @@ export default function SettingsPage() {
   const [vaultAlbums, setVaultAlbums] = useState<Record<string, any[]>>({})
   const [selectedAlbum, setSelectedAlbum] = useState<string | null>(null)
   const [previewItem, setPreviewItem] = useState<any>(null)
+  const [previewEdits, setPreviewEdits] = useState<{ content_category: string; ai_description: string; price_min: string; price_max: string } | null>(null)
+  const [previewSaving, setPreviewSaving] = useState(false)
   const [syncingVault, setSyncingVault] = useState(false)
   const [vaultProgress, setVaultProgress] = useState<{ synced: number; total: number; album: string } | null>(null)
   const [uploadingVault, setUploadingVault] = useState(false)
@@ -1140,7 +1142,15 @@ export default function SettingsPage() {
                     ).map((item: any) => (
                       <div
                         key={item.id}
-                        onClick={() => setPreviewItem(item)}
+                        onClick={() => {
+                          setPreviewItem(item)
+                          setPreviewEdits({
+                            content_category: item.content_category || '',
+                            ai_description: item.ai_description || '',
+                            price_min: String(item.price_min || ''),
+                            price_max: String(item.price_max || ''),
+                          })
+                        }}
                         style={{ cursor: 'pointer', position: 'relative' }}
                       >
                         {item.mimetype?.startsWith('video') ? (
@@ -1172,30 +1182,161 @@ export default function SettingsPage() {
                 </div>
               )}
 
-              {previewItem && (
+              {previewItem && previewEdits && (
                 <div
-                  onClick={() => setPreviewItem(null)}
+                  onClick={() => { setPreviewItem(null); setPreviewEdits(null) }}
                   style={{
                     position: 'fixed', inset: 0, zIndex: 1000,
                     background: 'rgba(0,0,0,0.85)',
                     display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    padding: 24,
                   }}
                 >
-                  <div onClick={e => e.stopPropagation()} style={{ maxWidth: '90vw', maxHeight: '90vh' }}>
-                    {previewItem.mimetype?.startsWith('video') ? (
-                      <video src={previewItem.url} controls style={{ maxWidth: '90vw', maxHeight: '80vh' }} />
-                    ) : (
-                      <img src={previewItem.url} style={{ maxWidth: '90vw', maxHeight: '80vh', borderRadius: 8 }} />
-                    )}
-                    {previewItem.ai_description && (
-                      <div style={{
-                        marginTop: 12, padding: '8px 12px',
-                        background: 'rgba(0,0,0,0.6)', borderRadius: 6,
-                        fontSize: 12, color: 'white',
-                      }}>
-                        {previewItem.ai_description}
+                  <div
+                    onClick={e => e.stopPropagation()}
+                    style={{
+                      display: 'flex', gap: 20, maxWidth: '90vw', maxHeight: '90vh',
+                      alignItems: 'flex-start',
+                    }}
+                  >
+                    {/* Media */}
+                    <div style={{ flexShrink: 0, maxWidth: '60vw' }}>
+                      {previewItem.mimetype?.startsWith('video') ? (
+                        <video src={previewItem.url} controls style={{ maxHeight: '80vh', maxWidth: '60vw', borderRadius: 8, background: '#000' }} />
+                      ) : (
+                        <img src={previewItem.url} style={{ maxHeight: '80vh', maxWidth: '60vw', objectFit: 'contain', borderRadius: 8 }} />
+                      )}
+                      <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', marginTop: 6, textAlign: 'center' }}>
+                        {previewItem.filename}
                       </div>
-                    )}
+                    </div>
+
+                    {/* Metadata panel */}
+                    <div style={{
+                      width: 280, flexShrink: 0,
+                      background: 'var(--bg-surface)', border: '1px solid var(--border)',
+                      borderRadius: 12, padding: 20, overflowY: 'auto', maxHeight: '80vh',
+                    }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+                        <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>Media Details</div>
+                        <button
+                          onClick={() => { setPreviewItem(null); setPreviewEdits(null) }}
+                          style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: 18, padding: 0 }}
+                        >×</button>
+                      </div>
+
+                      {/* Category */}
+                      <div style={{ marginBottom: 14 }}>
+                        <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 5, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Category</div>
+                        <select
+                          value={previewEdits.content_category}
+                          onChange={e => setPreviewEdits(p => p ? { ...p, content_category: e.target.value } : p)}
+                          style={{
+                            width: '100%', background: 'var(--bg-elevated)',
+                            border: '1px solid var(--border)', borderRadius: 6,
+                            color: 'var(--text-primary)', padding: '7px 10px', fontSize: 12,
+                            boxSizing: 'border-box',
+                          }}
+                        >
+                          <option value="">— uncategorized —</option>
+                          <option value="teaser_clothed">Clothed teaser (free)</option>
+                          <option value="teaser_bundle">Teaser bundle no nudity (free)</option>
+                          <option value="legs_feet">Legs / feet / armpits ($15-70)</option>
+                          <option value="lingerie_photo">Lingerie photo ($10-80)</option>
+                          <option value="lingerie_video">Lingerie video ($15-90)</option>
+                          <option value="nude_photo">Nude photo ($15-80)</option>
+                          <option value="striptease_video">Striptease video ($15-100)</option>
+                          <option value="closeup_photo">Closeup photo ($25-130)</option>
+                          <option value="closeup_video">Closeup video ($25-130)</option>
+                          <option value="dictate_video">Dictate / dirty talk video ($15-50)</option>
+                          <option value="solo_toy_photo">Solo / toy photo ($20-80)</option>
+                          <option value="solo_toy_video">Solo / toy / orgasm video ($30-150)</option>
+                          <option value="bg_content">BG content ($50-300)</option>
+                          <option value="task">Task / custom ($10-50)</option>
+                          <option value="other">Other</option>
+                        </select>
+                      </div>
+
+                      {/* Price range */}
+                      <div style={{ marginBottom: 14 }}>
+                        <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 5, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Price range ($)</div>
+                        <div style={{ display: 'flex', gap: 8 }}>
+                          <input
+                            type="number"
+                            placeholder="Min"
+                            value={previewEdits.price_min}
+                            onChange={e => setPreviewEdits(p => p ? { ...p, price_min: e.target.value } : p)}
+                            style={{ flex: 1, minWidth: 0, background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: 6, padding: '7px 10px', fontSize: 12, color: 'var(--text-primary)', outline: 'none', boxSizing: 'border-box' }}
+                          />
+                          <input
+                            type="number"
+                            placeholder="Max"
+                            value={previewEdits.price_max}
+                            onChange={e => setPreviewEdits(p => p ? { ...p, price_max: e.target.value } : p)}
+                            style={{ flex: 1, minWidth: 0, background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: 6, padding: '7px 10px', fontSize: 12, color: 'var(--text-primary)', outline: 'none', boxSizing: 'border-box' }}
+                          />
+                        </div>
+                      </div>
+
+                      {/* AI Description */}
+                      <div style={{ marginBottom: 16 }}>
+                        <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 5, textTransform: 'uppercase', letterSpacing: '0.05em' }}>AI Description</div>
+                        <textarea
+                          value={previewEdits.ai_description}
+                          onChange={e => setPreviewEdits(p => p ? { ...p, ai_description: e.target.value } : p)}
+                          rows={4}
+                          placeholder="Describe this media for the AI..."
+                          style={{
+                            width: '100%', background: 'var(--bg-elevated)',
+                            border: '1px solid var(--border)', borderRadius: 6,
+                            padding: '7px 10px', fontSize: 12, color: 'var(--text-primary)',
+                            resize: 'vertical', boxSizing: 'border-box', outline: 'none',
+                          }}
+                        />
+                      </div>
+
+                      {/* Album info (read only) */}
+                      <div style={{ marginBottom: 16, padding: '8px 10px', background: 'var(--bg-elevated)', borderRadius: 6 }}>
+                        <div style={{ fontSize: 10, color: 'var(--text-muted)', marginBottom: 2 }}>ALBUM</div>
+                        <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{previewItem.album_title || '—'}</div>
+                      </div>
+
+                      <button
+                        onClick={async () => {
+                          if (!previewItem?.id || previewSaving) return
+                          setPreviewSaving(true)
+                          await supabase.from('creator_vault_media').update({
+                            content_category: previewEdits.content_category,
+                            ai_description: previewEdits.ai_description,
+                            price_min: Number(previewEdits.price_min) || 0,
+                            price_max: Number(previewEdits.price_max) || 0,
+                          }).eq('id', previewItem.id)
+                          // Update local state
+                          setVaultAlbums(prev => {
+                            const next: Record<string, any[]> = {}
+                            Object.entries(prev).forEach(([album, items]) => {
+                              next[album] = items.map(m => m.id === previewItem.id
+                                ? { ...m, ...previewEdits, price_min: Number(previewEdits.price_min) || 0, price_max: Number(previewEdits.price_max) || 0 }
+                                : m
+                              )
+                            })
+                            return next
+                          })
+                          setPreviewSaving(false)
+                          setPreviewItem(null)
+                          setPreviewEdits(null)
+                        }}
+                        disabled={previewSaving}
+                        style={{
+                          width: '100%', padding: '8px', borderRadius: 6,
+                          background: 'rgba(200,200,200,0.1)', border: '1px solid var(--silver)',
+                          color: 'var(--silver)', fontSize: 13, cursor: previewSaving ? 'not-allowed' : 'pointer',
+                          opacity: previewSaving ? 0.6 : 1,
+                        }}
+                      >
+                        {previewSaving ? 'Saving...' : 'Save Changes'}
+                      </button>
+                    </div>
                   </div>
                 </div>
               )}
