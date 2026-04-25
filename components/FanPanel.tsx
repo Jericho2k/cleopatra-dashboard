@@ -43,6 +43,8 @@ interface PPVOffer {
 
 export default function FanPanel({ fan, creatorId, onInsertMessage, onHistoryLoaded, showToast }: FanPanelProps) {
   const [activeTab, setActiveTab] = useState<Tab>('profile')
+  const [showMemberNote, setShowMemberNote] = useState(true)
+  const [showModelNote, setShowModelNote] = useState(false)
   const [salesLog, setSalesLog] = useState<{ date: string; item: string; amount: number; chatter: string }[]>([])
   const [notSoldLog, setNotSoldLog] = useState<{ date: string; item: string; amount: number; reason: string; chatter: string }[]>([])
   const [newSale, setNewSale] = useState({ item: '', amount: '', chatter: '' })
@@ -369,8 +371,76 @@ export default function FanPanel({ fan, creatorId, onInsertMessage, onHistoryLoa
         {activeTab === 'profile' && (
           <div>
             <div style={LABEL_STYLE}>NOTES</div>
-            <div style={{ ...CARD_STYLE, color: 'var(--text-secondary)', fontSize: 13, lineHeight: 1.5, marginBottom: 20, minHeight: 60 }}>
+            <div style={{ ...CARD_STYLE, color: 'var(--text-secondary)', fontSize: 13, lineHeight: 1.5, marginBottom: 12, minHeight: 60 }}>
               {fan.notes?.trim() ? fan.notes : 'No notes yet.'}
+            </div>
+
+            {/* Member note */}
+            <div style={{ marginBottom: 12 }}>
+              <button
+                type="button"
+                onClick={() => setShowMemberNote(v => !v)}
+                style={{
+                  width: '100%', display: 'flex', justifyContent: 'space-between',
+                  alignItems: 'center', background: 'rgba(100,160,255,0.06)',
+                  border: '1px solid rgba(100,160,255,0.2)', borderRadius: 8,
+                  padding: '8px 12px', cursor: 'pointer', marginBottom: showMemberNote ? 8 : 0,
+                }}
+              >
+                <span style={{ fontSize: 11, color: 'rgba(100,180,255,0.9)', fontWeight: 600, letterSpacing: '0.06em' }}>
+                  👤 MEMBER
+                </span>
+                <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                  {showMemberNote ? '▲ hide' : '▼ show'}
+                </span>
+              </button>
+              {showMemberNote && (
+                <div style={{ ...CARD_STYLE, borderColor: 'rgba(100,160,255,0.2)' }}>
+                  {(fan as any).member_note?.trim() ? (
+                    <pre style={{ fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.7, margin: 0, whiteSpace: 'pre-wrap', fontFamily: 'inherit' }}>
+                      {(fan as any).member_note}
+                    </pre>
+                  ) : (
+                    <div style={{ fontSize: 12, color: 'var(--text-muted)', fontStyle: 'italic' }}>
+                      Not enough conversation yet. Will auto-fill after 10 fan messages.
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Model note */}
+            <div style={{ marginBottom: 20 }}>
+              <button
+                type="button"
+                onClick={() => setShowModelNote(v => !v)}
+                style={{
+                  width: '100%', display: 'flex', justifyContent: 'space-between',
+                  alignItems: 'center', background: 'rgba(255,180,100,0.06)',
+                  border: '1px solid rgba(255,180,100,0.2)', borderRadius: 8,
+                  padding: '8px 12px', cursor: 'pointer', marginBottom: showModelNote ? 8 : 0,
+                }}
+              >
+                <span style={{ fontSize: 11, color: 'rgba(255,190,80,0.9)', fontWeight: 600, letterSpacing: '0.06em' }}>
+                  🎭 MODEL LEGEND
+                </span>
+                <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                  {showModelNote ? '▲ hide' : '▼ show'}
+                </span>
+              </button>
+              {showModelNote && (
+                <div style={{ ...CARD_STYLE, borderColor: 'rgba(255,180,100,0.2)' }}>
+                  {(fan as any).model_note?.trim() ? (
+                    <pre style={{ fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.7, margin: 0, whiteSpace: 'pre-wrap', fontFamily: 'inherit' }}>
+                      {(fan as any).model_note}
+                    </pre>
+                  ) : (
+                    <div style={{ fontSize: 12, color: 'var(--text-muted)', fontStyle: 'italic' }}>
+                      No legend tracked yet. Will auto-fill as the creator shares personal details.
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
 
             {aiSummary && (

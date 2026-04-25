@@ -18,6 +18,8 @@ export interface Fan {
   last_active: string | null
   preferences: string[]
   notes: string
+  member_note?: string
+  model_note?: string
   age: string
   payday: string
   hobbies: string
