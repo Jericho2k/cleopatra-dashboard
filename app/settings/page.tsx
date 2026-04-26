@@ -4,9 +4,9 @@ import React, { useState, useEffect } from 'react'
 import { Eye, EyeOff } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 
-type Section = 'Creator Persona' | 'Blocked Words' | 'PPV Offers' | 'Storylines' | 'Re-engagement' | 'Vault'
+type Section = 'Creator Persona' | 'Blocked Words' | 'PPV Offers' | 'Storylines' | 'Re-engagement' | 'Vault' | 'Sleep Hours'
 
-const SECTIONS: Section[] = ['Creator Persona', 'Blocked Words', 'PPV Offers', 'Storylines', 'Re-engagement', 'Vault']
+const SECTIONS: Section[] = ['Creator Persona', 'Blocked Words', 'PPV Offers', 'Storylines', 'Re-engagement', 'Vault', 'Sleep Hours']
 const PROXY_COUNTRIES = [
   { code: 'US', label: '🇺🇸 United States' },
   { code: 'CA', label: '🇨🇦 Canada' },
@@ -384,8 +384,6 @@ export default function SettingsPage() {
     setPersonaSaving(true)
     await supabase.from('creators').update({
       persona,
-      sleep_hours_start: sleepHours.start,
-      sleep_hours_end: sleepHours.end,
     }).eq('id', selectedCreatorId)
     setPersonaSaving(false)
     setPersonaSaved(true)
@@ -623,45 +621,6 @@ export default function SettingsPage() {
                     fontSize: 13, resize: 'vertical', boxSizing: 'border-box', outline: 'none',
                   }}
                 />
-              </div>
-
-              <div style={{ marginBottom: 16 }}>
-                <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                  AI Sleep Hours (UTC)
-                </div>
-                <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 8 }}>
-                  AI will not auto-reply during these hours. Default: 00:00–07:00 UTC.
-                </div>
-                <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
-                  <div>
-                    <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 4 }}>From</div>
-                    <select
-                      value={sleepHours.start}
-                      onChange={e => setSleepHours(p => ({ ...p, start: Number(e.target.value) }))}
-                      style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: 6, color: 'var(--text-primary)', padding: '6px 10px', fontSize: 13 }}
-                    >
-                      {Array.from({ length: 24 }, (_, i) => (
-                        <option key={i} value={i}>{String(i).padStart(2, '0')}:00</option>
-                      ))}
-                    </select>
-                  </div>
-                  <div style={{ color: 'var(--text-muted)', paddingTop: 18 }}>→</div>
-                  <div>
-                    <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 4 }}>To</div>
-                    <select
-                      value={sleepHours.end}
-                      onChange={e => setSleepHours(p => ({ ...p, end: Number(e.target.value) }))}
-                      style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: 6, color: 'var(--text-primary)', padding: '6px 10px', fontSize: 13 }}
-                    >
-                      {Array.from({ length: 24 }, (_, i) => (
-                        <option key={i} value={i}>{String(i).padStart(2, '0')}:00</option>
-                      ))}
-                    </select>
-                  </div>
-                  <div style={{ paddingTop: 18, fontSize: 12, color: 'var(--text-muted)' }}>
-                    ({sleepHours.start === sleepHours.end ? 'no sleep hours' : `${sleepHours.end - sleepHours.start > 0 ? sleepHours.end - sleepHours.start : 24 + sleepHours.end - sleepHours.start}h window`})
-                  </div>
-                </div>
               </div>
 
               <button
@@ -1003,6 +962,74 @@ export default function SettingsPage() {
               <button
                 type="button"
                 onClick={saveReengagement}
+                style={{
+                  padding: '8px 20px', background: 'rgba(200,200,200,0.1)',
+                  border: '1px solid var(--silver)', borderRadius: 6,
+                  color: 'var(--silver)', fontSize: 13, cursor: 'pointer',
+                }}
+              >
+                Save
+              </button>
+            </div>
+          )}
+
+          {/* Sleep Hours */}
+          {activeSection === 'Sleep Hours' && (
+            <div>
+              <div style={{ marginBottom: 24 }}>
+                <div style={{ fontSize: 18, fontWeight: 600, marginBottom: 4 }}>Sleep Hours</div>
+                <div style={{ fontSize: 13, color: 'var(--text-muted)' }}>
+                  AI will not auto-reply during these hours. Times are in UTC.
+                </div>
+              </div>
+
+              <div style={{ marginBottom: 24 }}>
+                <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Quiet window</div>
+                <div style={{ display: 'flex', gap: 12, alignItems: 'center', marginBottom: 12 }}>
+                  <div>
+                    <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 4 }}>From</div>
+                    <select
+                      value={sleepHours.start}
+                      onChange={e => setSleepHours(p => ({ ...p, start: Number(e.target.value) }))}
+                      style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: 6, color: 'var(--text-primary)', padding: '8px 12px', fontSize: 13 }}
+                    >
+                      {Array.from({ length: 24 }, (_, i) => (
+                        <option key={i} value={i}>{String(i).padStart(2, '0')}:00</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div style={{ color: 'var(--text-muted)', paddingTop: 20 }}>→</div>
+                  <div>
+                    <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 4 }}>To</div>
+                    <select
+                      value={sleepHours.end}
+                      onChange={e => setSleepHours(p => ({ ...p, end: Number(e.target.value) }))}
+                      style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: 6, color: 'var(--text-primary)', padding: '8px 12px', fontSize: 13 }}
+                    >
+                      {Array.from({ length: 24 }, (_, i) => (
+                        <option key={i} value={i}>{String(i).padStart(2, '0')}:00</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+                <div style={{ fontSize: 12, color: 'var(--text-muted)', padding: '8px 12px', background: 'var(--bg-elevated)', borderRadius: 6, border: '1px solid var(--border)' }}>
+                  {sleepHours.start === sleepHours.end
+                    ? '⚡ No sleep hours set — AI replies 24/7'
+                    : `🌙 AI will be quiet for ${sleepHours.end - sleepHours.start > 0 ? sleepHours.end - sleepHours.start : 24 + sleepHours.end - sleepHours.start} hours (${String(sleepHours.start).padStart(2, '0')}:00 → ${String(sleepHours.end).padStart(2, '0')}:00 UTC)`
+                  }
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={async () => {
+                  if (!selectedCreatorId) return
+                  await supabase.from('creators').update({
+                    sleep_hours_start: sleepHours.start,
+                    sleep_hours_end: sleepHours.end,
+                  }).eq('id', selectedCreatorId)
+                  showToast('Sleep hours saved')
+                }}
                 style={{
                   padding: '8px 20px', background: 'rgba(200,200,200,0.1)',
                   border: '1px solid var(--silver)', borderRadius: 6,
