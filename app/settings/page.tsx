@@ -319,7 +319,7 @@ export default function SettingsPage() {
     while (true) {
       const { data, error } = await supabase
         .from('creator_vault_media')
-        .select('id, filename, url, album_title, mimetype, ai_description, thumbnail_url, media_type, title, price, is_active')
+      .select('id, filename, url, album_title, mimetype, ai_description, thumbnail_url, media_type, title, price, is_active, content_category, price_min, price_max, scene_id, scene_location, scene_outfit, scene_lighting, explicitness_level, good_for, tags')
         .eq('creator_id', creatorId)
         .order('album_title')
         .range(from, from + pageSize - 1)
