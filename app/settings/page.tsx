@@ -53,7 +53,7 @@ export default function SettingsPage() {
   const [vaultAlbums, setVaultAlbums] = useState<Record<string, any[]>>({})
   const [selectedAlbum, setSelectedAlbum] = useState<string | null>(null)
   const [previewItem, setPreviewItem] = useState<any>(null)
-  const [previewEdits, setPreviewEdits] = useState<{ content_category: string; ai_description: string; price_min: string; price_max: string } | null>(null)
+  const [previewEdits, setPreviewEdits] = useState<{ content_category: string; ai_description: string; price_min: string; price_max: string; scene_location: string; scene_outfit: string; scene_lighting: string; scene_id: string } | null>(null)
   const [previewSaving, setPreviewSaving] = useState(false)
   const [syncingVault, setSyncingVault] = useState(false)
   const [vaultProgress, setVaultProgress] = useState<{ synced: number; total: number; album: string } | null>(null)
@@ -1125,6 +1125,10 @@ export default function SettingsPage() {
                             ai_description: item.ai_description || '',
                             price_min: String(item.price_min || ''),
                             price_max: String(item.price_max || ''),
+                            scene_location: item.scene_location || '',
+                            scene_outfit: item.scene_outfit || '',
+                            scene_lighting: item.scene_lighting || '',
+                            scene_id: item.scene_id || '',
                           })
                         }}
                         style={{ cursor: 'pointer', position: 'relative' }}
@@ -1271,16 +1275,34 @@ export default function SettingsPage() {
                         />
                       </div>
 
-                      {/* Scene info */}
-                      {(previewItem.scene_location || previewItem.scene_outfit || previewItem.scene_id) && (
-                        <div style={{ marginBottom: 14, padding: '8px 10px', background: 'var(--bg-elevated)', borderRadius: 6 }}>
-                          <div style={{ fontSize: 10, color: 'var(--text-muted)', marginBottom: 6 }}>SCENE</div>
-                          {previewItem.scene_id && <div style={{ fontSize: 11, color: 'var(--purple)', marginBottom: 3 }}>🎬 {previewItem.scene_id}</div>}
-                          {previewItem.scene_location && <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginBottom: 2 }}>📍 {previewItem.scene_location}</div>}
-                          {previewItem.scene_outfit && <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginBottom: 2 }}>👗 {previewItem.scene_outfit}</div>}
-                          {previewItem.scene_lighting && <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>💡 {previewItem.scene_lighting}</div>}
-                        </div>
-                      )}
+                      {/* Scene fields */}
+                      <div style={{ marginBottom: 14 }}>
+                        <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 5, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Scene</div>
+                        <input
+                          placeholder="📍 Location (e.g. bedroom, bathroom)"
+                          value={previewEdits.scene_location}
+                          onChange={e => setPreviewEdits(p => p ? { ...p, scene_location: e.target.value } : p)}
+                          style={{ width: '100%', background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: 6, padding: '7px 10px', fontSize: 12, color: 'var(--text-primary)', outline: 'none', boxSizing: 'border-box', marginBottom: 6 }}
+                        />
+                        <input
+                          placeholder="👗 Outfit (e.g. red lingerie, naked, towel)"
+                          value={previewEdits.scene_outfit}
+                          onChange={e => setPreviewEdits(p => p ? { ...p, scene_outfit: e.target.value } : p)}
+                          style={{ width: '100%', background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: 6, padding: '7px 10px', fontSize: 12, color: 'var(--text-primary)', outline: 'none', boxSizing: 'border-box', marginBottom: 6 }}
+                        />
+                        <input
+                          placeholder="💡 Lighting (e.g. dim, natural, neon)"
+                          value={previewEdits.scene_lighting}
+                          onChange={e => setPreviewEdits(p => p ? { ...p, scene_lighting: e.target.value } : p)}
+                          style={{ width: '100%', background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: 6, padding: '7px 10px', fontSize: 12, color: 'var(--text-primary)', outline: 'none', boxSizing: 'border-box', marginBottom: 6 }}
+                        />
+                        <input
+                          placeholder="🎬 Scene ID (e.g. bathroom-red-lingerie)"
+                          value={previewEdits.scene_id}
+                          onChange={e => setPreviewEdits(p => p ? { ...p, scene_id: e.target.value } : p)}
+                          style={{ width: '100%', background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: 6, padding: '7px 10px', fontSize: 12, color: 'var(--text-primary)', outline: 'none', boxSizing: 'border-box' }}
+                        />
+                      </div>
 
                       {/* Album info (read only) */}
                       <div style={{ marginBottom: 14, padding: '8px 10px', background: 'var(--bg-elevated)', borderRadius: 6 }}>
@@ -1305,6 +1327,10 @@ export default function SettingsPage() {
                                 ...prev,
                                 content_category: data.item.content_category || prev.content_category,
                                 ai_description: data.item.ai_description || prev.ai_description,
+                                scene_location: data.item.scene_location || prev.scene_location,
+                                scene_outfit: data.item.scene_outfit || prev.scene_outfit,
+                                scene_lighting: data.item.scene_lighting || prev.scene_lighting,
+                                scene_id: data.item.scene_id || prev.scene_id,
                               } : prev)
                               setVaultAlbums(prev => {
                                 const next: Record<string, any[]> = {}
@@ -1338,6 +1364,10 @@ export default function SettingsPage() {
                             ai_description: previewEdits.ai_description,
                             price_min: Number(previewEdits.price_min) || 0,
                             price_max: Number(previewEdits.price_max) || 0,
+                            scene_location: previewEdits.scene_location,
+                            scene_outfit: previewEdits.scene_outfit,
+                            scene_lighting: previewEdits.scene_lighting,
+                            scene_id: previewEdits.scene_id,
                           }).eq('id', previewItem.id)
                           // Update local state
                           setVaultAlbums(prev => {
@@ -1350,6 +1380,7 @@ export default function SettingsPage() {
                             })
                             return next
                           })
+                          setPreviewItem((prev: any) => ({ ...prev, ...previewEdits }))
                           setPreviewSaving(false)
                           setPreviewItem(null)
                           setPreviewEdits(null)
