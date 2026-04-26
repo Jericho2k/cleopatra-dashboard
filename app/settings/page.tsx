@@ -1271,11 +1271,63 @@ export default function SettingsPage() {
                         />
                       </div>
 
+                      {/* Scene info */}
+                      {(previewItem.scene_location || previewItem.scene_outfit || previewItem.scene_id) && (
+                        <div style={{ marginBottom: 14, padding: '8px 10px', background: 'var(--bg-elevated)', borderRadius: 6 }}>
+                          <div style={{ fontSize: 10, color: 'var(--text-muted)', marginBottom: 6 }}>SCENE</div>
+                          {previewItem.scene_id && <div style={{ fontSize: 11, color: 'var(--purple)', marginBottom: 3 }}>🎬 {previewItem.scene_id}</div>}
+                          {previewItem.scene_location && <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginBottom: 2 }}>📍 {previewItem.scene_location}</div>}
+                          {previewItem.scene_outfit && <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginBottom: 2 }}>👗 {previewItem.scene_outfit}</div>}
+                          {previewItem.scene_lighting && <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>💡 {previewItem.scene_lighting}</div>}
+                        </div>
+                      )}
+
                       {/* Album info (read only) */}
-                      <div style={{ marginBottom: 16, padding: '8px 10px', background: 'var(--bg-elevated)', borderRadius: 6 }}>
+                      <div style={{ marginBottom: 14, padding: '8px 10px', background: 'var(--bg-elevated)', borderRadius: 6 }}>
                         <div style={{ fontSize: 10, color: 'var(--text-muted)', marginBottom: 2 }}>ALBUM</div>
                         <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{previewItem.album_title || '—'}</div>
                       </div>
+
+                      {/* Re-categorize button */}
+                      <button
+                        onClick={async () => {
+                          if (!previewItem?.id || previewSaving) return
+                          setPreviewSaving(true)
+                          try {
+                            const res = await fetch(
+                              `${process.env.NEXT_PUBLIC_API_URL}/recategorize-item/${previewItem.id}`,
+                              { method: 'POST' }
+                            )
+                            const data = await res.json()
+                            if (data.status === 'ok' && data.item) {
+                              setPreviewItem((prev: any) => ({ ...prev, ...data.item }))
+                              setPreviewEdits((prev: any) => prev ? {
+                                ...prev,
+                                content_category: data.item.content_category || prev.content_category,
+                                ai_description: data.item.ai_description || prev.ai_description,
+                              } : prev)
+                              setVaultAlbums(prev => {
+                                const next: Record<string, any[]> = {}
+                                Object.entries(prev).forEach(([album, items]) => {
+                                  next[album] = (items as any[]).map(m => m.id === previewItem.id ? { ...m, ...data.item } : m)
+                                })
+                                return next
+                              })
+                            }
+                          } finally {
+                            setPreviewSaving(false)
+                          }
+                        }}
+                        disabled={previewSaving}
+                        style={{
+                          width: '100%', padding: '6px', borderRadius: 6, marginBottom: 8,
+                          background: 'rgba(155,143,212,0.1)', border: '1px solid rgba(155,143,212,0.3)',
+                          color: 'var(--purple)', fontSize: 12, cursor: previewSaving ? 'not-allowed' : 'pointer',
+                          opacity: previewSaving ? 0.6 : 1,
+                        }}
+                      >
+                        {previewSaving ? 'Analyzing...' : '✦ Re-analyze with AI'}
+                      </button>
 
                       <button
                         onClick={async () => {
