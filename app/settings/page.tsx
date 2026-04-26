@@ -48,6 +48,7 @@ export default function SettingsPage() {
     emoji_style: '',
     welcome_message: '',
   })
+  const [sleepHours, setSleepHours] = useState({ start: 0, end: 7 })
   const [personaSaving, setPersonaSaving] = useState(false)
   const [personaSaved, setPersonaSaved] = useState(false)
   const [vaultAlbums, setVaultAlbums] = useState<Record<string, any[]>>({})
@@ -260,7 +261,7 @@ export default function SettingsPage() {
   const loadPersona = (creatorId: string) => {
     return supabase
       .from('creators')
-      .select('persona')
+      .select('persona, sleep_hours_start, sleep_hours_end')
       .eq('id', creatorId)
       .single()
       .then(({ data }) => {
@@ -274,6 +275,10 @@ export default function SettingsPage() {
           emoji_style: '',
           welcome_message: '',
           ...(data?.persona ?? {}),
+        })
+        setSleepHours({
+          start: data?.sleep_hours_start ?? 0,
+          end: data?.sleep_hours_end ?? 7,
         })
       })
   }
@@ -377,7 +382,11 @@ export default function SettingsPage() {
   const savePersona = async () => {
     if (!selectedCreatorId) return
     setPersonaSaving(true)
-    await supabase.from('creators').update({ persona }).eq('id', selectedCreatorId)
+    await supabase.from('creators').update({
+      persona,
+      sleep_hours_start: sleepHours.start,
+      sleep_hours_end: sleepHours.end,
+    }).eq('id', selectedCreatorId)
     setPersonaSaving(false)
     setPersonaSaved(true)
     setTimeout(() => setPersonaSaved(false), 2000)
@@ -614,6 +623,45 @@ export default function SettingsPage() {
                     fontSize: 13, resize: 'vertical', boxSizing: 'border-box', outline: 'none',
                   }}
                 />
+              </div>
+
+              <div style={{ marginBottom: 16 }}>
+                <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                  AI Sleep Hours (UTC)
+                </div>
+                <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 8 }}>
+                  AI will not auto-reply during these hours. Default: 00:00–07:00 UTC.
+                </div>
+                <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+                  <div>
+                    <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 4 }}>From</div>
+                    <select
+                      value={sleepHours.start}
+                      onChange={e => setSleepHours(p => ({ ...p, start: Number(e.target.value) }))}
+                      style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: 6, color: 'var(--text-primary)', padding: '6px 10px', fontSize: 13 }}
+                    >
+                      {Array.from({ length: 24 }, (_, i) => (
+                        <option key={i} value={i}>{String(i).padStart(2, '0')}:00</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div style={{ color: 'var(--text-muted)', paddingTop: 18 }}>→</div>
+                  <div>
+                    <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 4 }}>To</div>
+                    <select
+                      value={sleepHours.end}
+                      onChange={e => setSleepHours(p => ({ ...p, end: Number(e.target.value) }))}
+                      style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: 6, color: 'var(--text-primary)', padding: '6px 10px', fontSize: 13 }}
+                    >
+                      {Array.from({ length: 24 }, (_, i) => (
+                        <option key={i} value={i}>{String(i).padStart(2, '0')}:00</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div style={{ paddingTop: 18, fontSize: 12, color: 'var(--text-muted)' }}>
+                    ({sleepHours.start === sleepHours.end ? 'no sleep hours' : `${sleepHours.end - sleepHours.start > 0 ? sleepHours.end - sleepHours.start : 24 + sleepHours.end - sleepHours.start}h window`})
+                  </div>
+                </div>
               </div>
 
               <button
