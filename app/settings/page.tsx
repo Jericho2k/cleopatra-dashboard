@@ -71,6 +71,7 @@ export default function SettingsPage() {
   const [uploadDragOver, setUploadDragOver] = useState(false)
   const [syncing, setSyncing] = useState(false)
   const [syncingChats, setSyncingChats] = useState(false)
+  const [autoModeNewFans, setAutoModeNewFans] = useState(false)
   const [showAddCreator, setShowAddCreator] = useState(false)
   const [connectStep, setConnectStep] = useState<'credentials' | '2fa' | 'done'>('credentials')
   const [twofaToken, setTwofaToken] = useState('')
@@ -261,7 +262,7 @@ export default function SettingsPage() {
   const loadPersona = (creatorId: string) => {
     return supabase
       .from('creators')
-      .select('persona, sleep_hours_start, sleep_hours_end')
+      .select('persona, sleep_hours_start, sleep_hours_end, auto_mode_new_fans')
       .eq('id', creatorId)
       .single()
       .then(({ data }) => {
@@ -280,6 +281,7 @@ export default function SettingsPage() {
           start: data?.sleep_hours_start ?? 0,
           end: data?.sleep_hours_end ?? 7,
         })
+        setAutoModeNewFans(data?.auto_mode_new_fans ?? false)
       })
   }
 
@@ -504,6 +506,27 @@ export default function SettingsPage() {
               }}
             >
               {syncingChats ? 'Syncing...' : '↻ Sync Chats'}
+            </button>
+          </div>
+          {/* Auto mode for new fans toggle */}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 10, marginBottom: 2 }}>
+            <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>Auto mode for new fans</div>
+            <button
+              type="button"
+              onClick={async () => {
+                if (!selectedCreatorId) return
+                const newVal = !autoModeNewFans
+                setAutoModeNewFans(newVal)
+                await supabase.from('creators').update({ auto_mode_new_fans: newVal }).eq('id', selectedCreatorId)
+              }}
+              style={{
+                padding: '2px 10px', borderRadius: 4, cursor: 'pointer', fontSize: 11,
+                background: autoModeNewFans ? 'rgba(76,175,130,0.15)' : 'transparent',
+                border: autoModeNewFans ? '1px solid var(--green)' : '1px solid var(--border)',
+                color: autoModeNewFans ? 'var(--green)' : 'var(--text-muted)',
+              }}
+            >
+              {autoModeNewFans ? 'On' : 'Off'}
             </button>
           </div>
           <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
