@@ -389,9 +389,13 @@ export default function Page() {
     if (!activeTab?.activeFan) return
   const fanId = activeTab.activeFan.id
 
+  console.log('[messages] fan clicked:', fanId)
+  console.log('[messages] cache state:', messagesCache.current[fanId])
+
   // Only use cache if it has been explicitly set (not undefined)
   // undefined = never fetched, [] = fetched but empty (valid)
   if (messagesCache.current[fanId] !== undefined) {
+    console.log('[messages] returning from cache:', messagesCache.current[fanId].length, 'msgs')
     updateTab(activeTab.id, { messages: messagesCache.current[fanId], messagesLoading: false })
       return
     }
@@ -405,12 +409,14 @@ export default function Page() {
     .order('sent_at', { ascending: false })
     .limit(50)
     .then(({ data, error }) => {
+      console.log('[messages] query result - data:', data?.length, 'error:', error)
       if (error) {
         console.error('[messages] fetch error:', error)
         updateTab(activeTab.id, { messagesLoading: false })
         return
       }
       const msgs = (data ?? []).reverse().map(rowToMessage)
+      console.log('[messages] setting', msgs.length, 'messages')
       messagesCache.current[fanId] = msgs
       updateTab(activeTab.id, { messages: msgs, messagesLoading: false })
       })
