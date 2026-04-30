@@ -344,29 +344,52 @@ export default function Page() {
 
   useEffect(() => {
     if (!activeTab) return
-  if (activeTab.conversations.length > 0) return
+    if (activeTab.conversations.length > 0) return
     const cached = conversationsCache.current[activeTab.creatorId]
     if (cached && cached.length > 0) {
-    updateTab(activeTab.id, { conversations: cached })
+      updateTab(activeTab.id, { conversations: cached })
       return
     }
+
+    // Restore from localStorage for instant paint
+    try {
+      const raw = localStorage.getItem(`convos_${activeTab.creatorId}`)
+      if (raw) {
+        const { data, ts } = JSON.parse(raw)
+        const fiveMinutes = 5 * 60 * 1000
+        if (Date.now() - ts < fiveMinutes && data?.length > 0) {
+          conversationsCache.current[activeTab.creatorId] = data
+          updateTab(activeTab.id, { conversations: data })
+          return
+        }
+      }
+    } catch {}
+
     async function load() {
-    const { data } = await supabase
-      .from('fan_conversation_summaries')
-      .select('*')
-      .eq('creator_id', activeTab!.creatorId)
-      .order('last_message_time', { ascending: false, nullsFirst: false })
+      const { data } = await supabase
+        .from('fan_conversation_summaries')
+        .select('*')
+        .eq('creator_id', activeTab!.creatorId)
+        .order('last_message_time', { ascending: false, nullsFirst: false })
 
-    const summaries: ConversationSummary[] = (data ?? []).map((row: any) => ({
-      fan: rowToFan(row),
-      last_message: row.last_message ?? '',
-      last_message_time: row.last_message_time ?? new Date(0).toISOString(),
-      unread: false,
-      unread_count: 0,
-    }))
+      const summaries: ConversationSummary[] = (data ?? []).map((row: any) => ({
+        fan: rowToFan(row),
+        last_message: row.last_message ?? '',
+        last_message_time: row.last_message_time ?? new Date(0).toISOString(),
+        unread: false,
+        unread_count: 0,
+      }))
 
-    conversationsCache.current[activeTab!.creatorId] = summaries
-    updateTab(activeTab!.id, { conversations: summaries })
+      conversationsCache.current[activeTab!.creatorId] = summaries
+      updateTab(activeTab!.id, { conversations: summaries })
+
+      // Persist to localStorage so next visit is instant
+      try {
+        localStorage.setItem(
+          `convos_${activeTab!.creatorId}`,
+          JSON.stringify({ data: summaries, ts: Date.now() })
+        )
+      } catch {}
     }
     load()
   }, [activeTabId, activeTab?.conversations.length])
@@ -376,6 +399,7 @@ export default function Page() {
       const ce = e as CustomEvent<{ creatorId?: string }>
       const creatorId = ce.detail?.creatorId ?? activeTab?.creatorId
       if (creatorId) delete conversationsCache.current[creatorId]
+      try { if (creatorId) localStorage.removeItem(`convos_${creatorId}`) } catch {}
       setTabs(prev => prev.map(tab => {
         if (tab.creatorId !== creatorId) return tab
         return { ...tab, conversations: [] }
