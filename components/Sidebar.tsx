@@ -5,6 +5,7 @@ import type { Fan, ConversationSummary, FanList } from '../types'
 
 export interface SidebarProps {
   conversations: ConversationSummary[]
+  conversationsLoading?: boolean
   activeFanId: string | null
   onSelectFan: (fan: Fan) => void
   creators: {id: string, name: string}[]
@@ -48,7 +49,7 @@ type ListModal = {
 }
 
 export default function Sidebar({
-  conversations, activeFanId, onSelectFan,
+  conversations, conversationsLoading, activeFanId, onSelectFan,
   creators, activeCreatorId, onCreatorChange,
   fanLists, activeListId, onSelectList,
   onCreateList, onUpdateList, onDeleteList,
@@ -578,6 +579,19 @@ export default function Sidebar({
             padding: '0 8px 16px',
           }}
         >
+          {conversations.length === 0 && conversationsLoading && (
+            <li style={{ padding: '8px 4px', display: 'flex', flexDirection: 'column', gap: 6 }}>
+              {[...Array(8)].map((_, i) => (
+                <div key={i} style={{
+                  height: 56,
+                  borderRadius: 8,
+                  background: 'var(--bg-elevated)',
+                  opacity: 1 - i * 0.1,
+                  animation: 'pulse 1.5s ease-in-out infinite',
+                }} />
+              ))}
+            </li>
+          )}
           {(() => {
             const filtered = conversations.filter((c) => {
               if (activeListId && !fanLists.find(l => l.id === activeListId)?.member_fan_ids.includes(c.fan.id)) return false
