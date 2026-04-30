@@ -5,6 +5,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import type { Fan, Message, ConversationSummary, FanList } from '../types'
+import { warmBackend } from '../lib/api'
 import Sidebar from '../components/Sidebar'
 import ConversationView from '../components/ConversationView'
 import FanPanel from '../components/FanPanel'
@@ -73,6 +74,10 @@ export default function Page() {
   const activeTabIdRef = useRef(activeTabId)
   const conversationsCache = useRef<Record<string, ConversationSummary[]>>({})
   const messagesCache = useRef<Record<string, Message[]>>({})
+  useEffect(() => {
+    warmBackend()
+  }, [])
+
   useEffect(() => {
     activeTabIdRef.current = activeTabId
   }, [activeTabId])
@@ -272,7 +277,7 @@ export default function Page() {
     async function load() {
       const { data: fansData } = await supabase
         .from('fans')
-        .select('*')
+        .select('id, creator_id, display_name, auto_mode, platform_fan_id, fansly_group_id, total_spent, spend_tier, last_active, avatar_url')
         .eq('creator_id', activeTab!.creatorId)
       const fans = (fansData ?? []).map(rowToFan)
       const summaries = await Promise.all(fans.map(async (fan) => {
@@ -329,9 +334,10 @@ export default function Page() {
       .select('*')
       .eq('fan_id', activeTab.activeFan.id)
       .eq('creator_id', activeTab.creatorId)
-      .order('sent_at', { ascending: true })
+      .order('sent_at', { ascending: false })
+      .limit(50)
       .then(({ data }) => {
-        const msgs = (data ?? []).map(rowToMessage)
+        const msgs = (data ?? []).reverse().map(rowToMessage)
         messagesCache.current[activeTab.activeFan!.id] = msgs
         updateTab(activeTab.id, {
           messages: msgs,
@@ -753,9 +759,10 @@ export default function Page() {
               .select('*')
               .eq('fan_id', activeTab.activeFan.id)
               .eq('creator_id', activeTab.creatorId)
-              .order('sent_at', { ascending: true })
+              .order('sent_at', { ascending: false })
+              .limit(50)
             if (data) {
-              updateTab(activeTab.id, { messages: data.map(rowToMessage) })
+              updateTab(activeTab.id, { messages: data.reverse().map(rowToMessage) })
             }
           }}
         />
