@@ -45,6 +45,11 @@ input, button, textarea {
   font-family: var(--font-body);
 }
 
+@keyframes pulse {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 0.8; }
+}
+
 .silver-text {
   background: linear-gradient(135deg, var(--silver) 0%, var(--silver-bright) 50%, var(--silver-dim) 100%);
   -webkit-background-clip: text;

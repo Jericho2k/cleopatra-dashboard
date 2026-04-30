@@ -68,6 +68,7 @@ export default function Page() {
   const [fanLists, setFanLists] = useState<FanList[]>([])
   const [activeListId, setActiveListId] = useState<string | null>(null)
   const [syncingChats, setSyncingChats] = useState(false)
+  const [conversationsLoading, setConversationsLoading] = useState(false)
 
   const activeTab = tabs.find(t => t.id === activeTabId) ?? null
 
@@ -179,30 +180,105 @@ export default function Page() {
   useEffect(() => {
     let alive = true
     ;(async () => {
-      const list = await loadCreators()
-      if (!alive) return
-      if (list.length > 0) {
-        const first = list[0]
-        const newTab: Tab = {
-          id: `tab-${Date.now()}`,
-          creatorId: first.id,
-          creatorName: first.name,
-          activeFan: null,
-          messages: [],
-          conversations: [],
-          messagesLoading: false,
-          unreadCounts: {},
-          pendingMessage: '',
-          autoMode: first.autoMode,
-        }
-        setTabs([newTab])
-        setActiveTabId(newTab.id)
-        loadFanLists(first.id)
+      const { data: { session } } = await supabase.auth.getSession()
+      const user = session?.user
+      if (!user || !alive) { setAuthLoading(false); return }
+
+      const { data } = await supabase
+        .from('chatter_creators')
+        .select('creator_id, creators(id, platform_username, auto_mode)')
+        .eq('chatter_id', user.id)
+
+      const list = (data ?? []).map((r: any) => ({
+        id: r.creator_id,
+        name: r.creators?.platform_username ?? r.creator_id,
+        autoMode: r.creators?.auto_mode ?? false,
+      }))
+      setCreators(list.map(({ id, name }) => ({ id, name })))
+
+      if (!alive || list.length === 0) { setAuthLoading(false); return }
+
+      const first = list[0]
+      const tabId = `tab-${Date.now()}`
+      const baseTab: Tab = {
+        id: tabId,
+        creatorId: first.id,
+        creatorName: first.name,
+        activeFan: null,
+        messages: [],
+        conversations: [],
+        messagesLoading: false,
+        unreadCounts: {},
+        pendingMessage: '',
+        autoMode: first.autoMode,
       }
-      setAuthLoading(false)
+
+      // Restore stale cache immediately for faster first paint.
+      try {
+        const cached = localStorage.getItem(`conversations_${first.id}`)
+        if (cached) {
+          const parsed = JSON.parse(cached) as { data: ConversationSummary[]; ts: number }
+          if (Date.now() - parsed.ts < 5 * 60 * 1000 && Array.isArray(parsed.data)) {
+            conversationsCache.current[first.id] = parsed.data
+            setTabs([{ ...baseTab, conversations: parsed.data }])
+            setActiveTabId(tabId)
+          }
+        }
+      } catch {}
+
+      if (!conversationsCache.current[first.id]) {
+        setTabs([baseTab])
+        setActiveTabId(tabId)
+      }
+
+      setConversationsLoading(true)
+      try {
+        const [conversationsResult, fanListsResult] = await Promise.all([
+          supabase
+            .from('fan_conversation_summaries')
+            .select('*')
+            .eq('creator_id', first.id)
+            .order('last_message_time', { ascending: false, nullsFirst: false }),
+          supabase
+            .from('fan_lists')
+            .select('*, fan_list_members(fan_id)')
+            .eq('creator_id', first.id),
+        ])
+
+        if (!alive) return
+
+        const conversations: ConversationSummary[] = (conversationsResult.data ?? []).map((row: any) => ({
+          fan: rowToFan(row),
+          last_message: row.last_message ?? '',
+          last_message_time: row.last_message_time ?? new Date(0).toISOString(),
+          unread: false,
+          unread_count: 0,
+        }))
+
+        conversationsCache.current[first.id] = conversations
+        try {
+          localStorage.setItem(
+            `conversations_${first.id}`,
+            JSON.stringify({ data: conversations, ts: Date.now() })
+          )
+        } catch {}
+
+        setFanLists((fanListsResult.data ?? []).map((l: any) => ({
+          ...l,
+          member_fan_ids: (l.fan_list_members ?? []).map((m: any) => m.fan_id),
+        })))
+
+        setTabs([{ ...baseTab, conversations }])
+        setActiveTabId(tabId)
+      } finally {
+        if (alive) {
+          setConversationsLoading(false)
+          setAuthLoading(false)
+        }
+      }
     })()
     return () => { alive = false }
-  }, [loadCreators])
+  }, [])
 
   async function loadFanLists(creatorId: string) {
     const { data: lists } = await supabase
@@ -268,12 +344,17 @@ export default function Page() {
 
   useEffect(() => {
     if (!activeTab) return
-    if (activeTab.conversations.length > 0) return
+    if (activeTab.conversations.length > 0) {
+      setConversationsLoading(false)
+      return
+    }
     const cached = conversationsCache.current[activeTab.creatorId]
     if (cached && cached.length > 0) {
       updateTab(activeTab.id, { conversations: cached })
+      setConversationsLoading(false)
       return
     }
+    setConversationsLoading(true)
     async function load() {
       const { data: fansData } = await supabase
         .from('fans')
@@ -303,6 +384,7 @@ export default function Page() {
       )
       conversationsCache.current[activeTab!.creatorId] = sorted
       updateTab(activeTab!.id, { conversations: sorted })
+      setConversationsLoading(false)
     }
     load()
   }, [activeTabId, activeTab?.conversations.length])
@@ -657,6 +739,7 @@ export default function Page() {
         <div style={{ height: '100%', overflow: 'hidden' }}>
           <Sidebar
             conversations={activeTab?.conversations ?? []}
+            conversationsLoading={conversationsLoading}
             activeFanId={activeTab?.activeFan?.id ?? null}
             onSelectFan={(fan) => {
               if (!activeTab) return
