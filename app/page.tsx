@@ -344,47 +344,29 @@ export default function Page() {
 
   useEffect(() => {
     if (!activeTab) return
-    if (activeTab.conversations.length > 0) {
-      setConversationsLoading(false)
-      return
-    }
+  if (activeTab.conversations.length > 0) return
     const cached = conversationsCache.current[activeTab.creatorId]
     if (cached && cached.length > 0) {
-      updateTab(activeTab.id, { conversations: cached })
-      setConversationsLoading(false)
+    updateTab(activeTab.id, { conversations: cached })
       return
     }
-    setConversationsLoading(true)
     async function load() {
-      const { data: fansData } = await supabase
-        .from('fans')
-        .select('id, creator_id, display_name, auto_mode, platform_fan_id, fansly_group_id, total_spent, spend_tier, last_active, avatar_url')
-        .eq('creator_id', activeTab!.creatorId)
-      const fans = (fansData ?? []).map(rowToFan)
-      const summaries = await Promise.all(fans.map(async (fan) => {
-        const { data: msgData } = await supabase
-          .from('messages')
-          .select('*')
-          .eq('fan_id', fan.id)
-          .eq('creator_id', activeTab!.creatorId)
-          .order('sent_at', { ascending: false })
-          .limit(1)
-          .maybeSingle()
-        const last = msgData ? rowToMessage(msgData) : null
-        return {
-          fan,
-          last_message: last?.content ?? '',
-          last_message_time: last?.sent_at ?? new Date(0).toISOString(),
-          unread: false,
-          unread_count: 0,
-        }
-      }))
-      const sorted = summaries.sort((a, b) =>
-        new Date(b.last_message_time).getTime() - new Date(a.last_message_time).getTime()
-      )
-      conversationsCache.current[activeTab!.creatorId] = sorted
-      updateTab(activeTab!.id, { conversations: sorted })
-      setConversationsLoading(false)
+    const { data } = await supabase
+      .from('fan_conversation_summaries')
+      .select('*')
+      .eq('creator_id', activeTab!.creatorId)
+      .order('last_message_time', { ascending: false, nullsFirst: false })
+
+    const summaries: ConversationSummary[] = (data ?? []).map((row: any) => ({
+      fan: rowToFan(row),
+      last_message: row.last_message ?? '',
+      last_message_time: row.last_message_time ?? new Date(0).toISOString(),
+      unread: false,
+      unread_count: 0,
+    }))
+
+    conversationsCache.current[activeTab!.creatorId] = summaries
+    updateTab(activeTab!.id, { conversations: summaries })
     }
     load()
   }, [activeTabId, activeTab?.conversations.length])
@@ -405,26 +387,32 @@ export default function Page() {
 
   useEffect(() => {
     if (!activeTab?.activeFan) return
-    const cachedMsgs = messagesCache.current[activeTab.activeFan.id]
-    if (cachedMsgs && cachedMsgs.length > 0) {
-      updateTab(activeTab.id, { messages: cachedMsgs, messagesLoading: false })
+  const fanId = activeTab.activeFan.id
+
+  // Only use cache if it has been explicitly set (not undefined)
+  // undefined = never fetched, [] = fetched but empty (valid)
+  if (messagesCache.current[fanId] !== undefined) {
+    updateTab(activeTab.id, { messages: messagesCache.current[fanId], messagesLoading: false })
       return
     }
+
     updateTab(activeTab.id, { messagesLoading: true })
     supabase
       .from('messages')
       .select('*')
-      .eq('fan_id', activeTab.activeFan.id)
+    .eq('fan_id', fanId)
       .eq('creator_id', activeTab.creatorId)
-      .order('sent_at', { ascending: false })
-      .limit(50)
-      .then(({ data }) => {
-        const msgs = (data ?? []).reverse().map(rowToMessage)
-        messagesCache.current[activeTab.activeFan!.id] = msgs
-        updateTab(activeTab.id, {
-          messages: msgs,
-          messagesLoading: false,
-        })
+    .order('sent_at', { ascending: false })
+    .limit(50)
+    .then(({ data, error }) => {
+      if (error) {
+        console.error('[messages] fetch error:', error)
+        updateTab(activeTab.id, { messagesLoading: false })
+        return
+      }
+      const msgs = (data ?? []).reverse().map(rowToMessage)
+      messagesCache.current[fanId] = msgs
+      updateTab(activeTab.id, { messages: msgs, messagesLoading: false })
       })
   }, [activeTab?.activeFan?.id, activeTabId])
 
