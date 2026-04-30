@@ -26,10 +26,10 @@ type Tab = {
 //Latest adjustment
 function rowToFan(row: Record<string, unknown>): Fan {
   return {
-    id: row.id as string,
+    id: (row.fan_id ?? row.id) as string,
     display_name: row.display_name as string,
-    total_spent: Number(row.total_spent),
-    spend_tier: row.spend_tier as Fan['spend_tier'],
+    total_spent: Number(row.total_spent ?? 0),
+    spend_tier: (row.spend_tier as Fan['spend_tier']) ?? 'cold',
     last_active: (row.last_active as string) ?? null,
     preferences: Array.isArray(row.preferences) ? (row.preferences as string[]) : [],
     notes: (row.notes as string) ?? '',
