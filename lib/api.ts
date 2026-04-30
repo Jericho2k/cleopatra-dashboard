@@ -2,6 +2,10 @@ import { supabase } from './supabase'
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL
 
+export async function warmBackend() {
+  fetch(`${process.env.NEXT_PUBLIC_API_URL}/health`).catch(() => {})
+}
+
 // 2. Send a selected reply back to the backend (apifansly) to save and deliver
 export async function sendReply(
   fanId: string,
