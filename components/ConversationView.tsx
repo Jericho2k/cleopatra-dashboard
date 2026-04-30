@@ -46,6 +46,12 @@ export default function ConversationView({
   const [showScripts, setShowScripts] = useState(false)
   const [blockedWords, setBlockedWords] = useState<string[]>([])
   const [queuedMessages, setQueuedMessages] = useState<string[]>([])
+  // media_id -> { url, thumbnail_url, mimetype } resolved from vault
+  const [ppvMediaMap, setPpvMediaMap] = useState<Record<string, {
+    url: string | null
+    thumbnail_url: string | null
+    mimetype: string | null
+  }>>({})
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
@@ -116,6 +122,35 @@ export default function ConversationView({
         if (data) setBlockedWords(data.map((w) => w.word))
       })
   }, [creatorId])
+
+  useEffect(() => {
+    if (!creatorId || messages.length === 0) return
+
+    // Collect media_ids that haven't been resolved yet
+    const unresolved = messages
+      .filter(m => m.media_context?.ppv?.media_id)
+      .map(m => m.media_context!.ppv!.media_id as string)
+      .filter(id => !(id in ppvMediaMap))
+
+    if (unresolved.length === 0) return
+
+    const uniqueIds = [...new Set(unresolved)]
+
+    Promise.all(
+      uniqueIds.map(mediaId =>
+        fetch(`${process.env.NEXT_PUBLIC_API_URL}/vault-media-url/${creatorId}/${mediaId}`)
+          .then(r => r.json())
+          .then(data => ({ mediaId, data }))
+          .catch(() => ({ mediaId, data: { url: null, thumbnail_url: null, mimetype: null } }))
+      )
+    ).then(results => {
+      const updates: typeof ppvMediaMap = {}
+      for (const { mediaId, data } of results) {
+        updates[mediaId] = data
+      }
+      setPpvMediaMap(prev => ({ ...prev, ...updates }))
+    })
+  }, [messages, creatorId])
 
   const getBlockedMatches = (text: string): string[] => {
     const lower = text.toLowerCase()
@@ -354,23 +389,66 @@ export default function ConversationView({
                   ))}
                 </div>
               )}
-              {msg.media_context?.ppv && (
-                <div style={{
-                  marginTop: 8, padding: '10px 12px',
-                  background: 'rgba(155,143,212,0.1)',
-                  border: '1px solid rgba(155,143,212,0.3)',
-                  borderRadius: 8,
-                }}>
-                  <div style={{ fontSize: 12, color: 'var(--purple)', fontWeight: 600 }}>
-                    💎 PPV Sent — ${msg.media_context.ppv.price}
-                  </div>
-                  {msg.media_context.ppv.title && (
-                    <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
-                      {msg.media_context.ppv.title}
+              {msg.media_context?.ppv && (() => {
+                const ppv = msg.media_context!.ppv!
+                const mediaId = ppv.media_id as string | undefined
+                const resolved = mediaId ? ppvMediaMap[mediaId] : undefined
+                const thumbSrc = resolved?.thumbnail_url ?? resolved?.url ?? null
+                const isVideo = resolved?.mimetype?.startsWith('video') ?? false
+
+                return (
+                  <div style={{
+                    marginTop: 8,
+                    background: 'rgba(155,143,212,0.1)',
+                    border: '1px solid rgba(155,143,212,0.3)',
+                    borderRadius: 8,
+                    overflow: 'hidden',
+                  }}>
+                    {thumbSrc && (
+                      <div style={{ position: 'relative', lineHeight: 0 }}>
+                        <img
+                          src={thumbSrc}
+                          alt="PPV preview"
+                          style={{
+                            width: '100%',
+                            maxWidth: 220,
+                            display: 'block',
+                            filter: 'blur(6px)',
+                            transform: 'scale(1.05)', // hide blur edge artifacts
+                            borderRadius: 0,
+                          }}
+                          onError={e => {
+                            (e.target as HTMLImageElement).style.display = 'none'
+                          }}
+                        />
+                        {/* Lock overlay */}
+                        <div style={{
+                          position: 'absolute', inset: 0,
+                          display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          background: 'rgba(0,0,0,0.25)',
+                        }}>
+                          <span style={{ fontSize: 22 }}>{isVideo ? '🎬' : '🔒'}</span>
+                        </div>
+                      </div>
+                    )}
+                    <div style={{ padding: '8px 12px' }}>
+                      <div style={{ fontSize: 12, color: 'var(--purple)', fontWeight: 600 }}>
+                        💎 PPV Sent — ${ppv.price}
+                      </div>
+                      {ppv.title && (
+                        <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
+                          {ppv.title}
+                        </div>
+                      )}
+                      {mediaId && !resolved && (
+                        <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2, opacity: 0.6 }}>
+                          Loading preview…
+                        </div>
+                      )}
                     </div>
-                  )}
-                </div>
-              )}
+                  </div>
+                )
+              })()}
               {(msg as any).attachments?.map((att: any, i: number) => (
                 att.type === 'ppv' ? (
                   <div key={i} style={{
