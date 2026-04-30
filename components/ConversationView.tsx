@@ -17,6 +17,8 @@ export interface ConversationViewProps {
   /** Creator-level auto (hides suggestions when on, independent of fan override). */
   creatorAutoMode?: boolean
   onToggleAutoMode?: () => void
+  hasMoreMessages?: boolean
+  onLoadMore?: () => void | Promise<void>
 }
 
 function getInitials(displayName: string): string {
@@ -35,6 +37,8 @@ export default function ConversationView({
   onClearPending,
   creatorAutoMode,
   onToggleAutoMode,
+  hasMoreMessages,
+  onLoadMore,
 }: ConversationViewProps) {
   const [suggestions, setSuggestions] = useState<string[]>(['', '', ''])
   const [suggestionsOpen, setSuggestionsOpen] = useState(true)
@@ -53,6 +57,10 @@ export default function ConversationView({
     mimetype: string | null
   }>>({})
   const messagesEndRef = useRef<HTMLDivElement>(null)
+  const scrollContainerRef = useRef<HTMLDivElement>(null)
+  const isLoadingMore = useRef(false)
+  const prevMessagesLenRef = useRef(0)
+  const prevLastMessageIdRef = useRef<string | undefined>(undefined)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
   const lastMessage = messages[messages.length - 1]
@@ -91,8 +99,60 @@ export default function ConversationView({
   }, [fan?.id, creatorId])
 
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'instant' })
+    prevMessagesLenRef.current = 0
+    prevLastMessageIdRef.current = undefined
+  }, [fan?.id])
+
+  useEffect(() => {
+    if (messages.length === 0) {
+      prevMessagesLenRef.current = 0
+      prevLastMessageIdRef.current = undefined
+      return
+    }
+    const lastId = messages[messages.length - 1]?.id
+    const prevLen = prevMessagesLenRef.current
+    const prevLastId = prevLastMessageIdRef.current
+    const grew = messages.length > prevLen
+    prevMessagesLenRef.current = messages.length
+    prevLastMessageIdRef.current = lastId
+
+    // Scroll to bottom only when newest message changed (not when prepending history).
+    if (grew && lastId !== prevLastId) {
+      messagesEndRef.current?.scrollIntoView({ behavior: 'instant' })
+    }
   }, [messages])
+
+  useEffect(() => {
+    const el = scrollContainerRef.current
+    if (!el || !fan) return
+
+    const handleScroll = () => {
+      if (el.scrollTop > 100) return
+      if (isLoadingMore.current) return
+      if (!hasMoreMessages) return
+
+      isLoadingMore.current = true
+      const prevScrollHeight = el.scrollHeight
+
+      void (async () => {
+        try {
+          await Promise.resolve(onLoadMore?.())
+        } finally {
+          requestAnimationFrame(() => {
+            requestAnimationFrame(() => {
+              if (scrollContainerRef.current === el) {
+                el.scrollTop = el.scrollHeight - prevScrollHeight
+              }
+              isLoadingMore.current = false
+            })
+          })
+        }
+      })()
+    }
+
+    el.addEventListener('scroll', handleScroll)
+    return () => el.removeEventListener('scroll', handleScroll)
+  }, [hasMoreMessages, onLoadMore, fan?.id])
 
   useEffect(() => {
     if (!pendingMessage) return
@@ -299,6 +359,7 @@ export default function ConversationView({
 
       {/* Messages */}
       <div
+        ref={scrollContainerRef}
         style={{
           position: 'relative',
           flex: 1,
@@ -309,6 +370,16 @@ export default function ConversationView({
           gap: 12,
         }}
       >
+        {hasMoreMessages && (
+          <div style={{
+            textAlign: 'center',
+            padding: '8px 0',
+            fontSize: 12,
+            color: 'var(--text-muted)',
+          }}>
+            Scroll up to load more
+          </div>
+        )}
         {messagesLoading && (
           <div style={{
             position: 'absolute',

@@ -21,6 +21,8 @@ type Tab = {
   unreadCounts: Record<string, number>
   pendingMessage: string
   autoMode: boolean
+  hasMoreMessages: boolean
+  oldestMessageTime: string | null
 }
 
 //Latest adjustment
@@ -75,6 +77,7 @@ export default function Page() {
   const activeTabIdRef = useRef(activeTabId)
   const conversationsCache = useRef<Record<string, ConversationSummary[]>>({})
   const messagesCache = useRef<Record<string, Message[]>>({})
+  const messagesPaginationCache = useRef<Record<string, { hasMoreMessages: boolean; oldestMessageTime: string | null }>>({})
   useEffect(() => {
     warmBackend()
   }, [])
@@ -101,6 +104,8 @@ export default function Page() {
       unreadCounts: {},
       pendingMessage: '',
       autoMode: false,
+      hasMoreMessages: false,
+      oldestMessageTime: null,
     }
     setTabs(prev => [...prev, newTab])
     setActiveTabId(newTab.id)
@@ -211,6 +216,8 @@ export default function Page() {
         unreadCounts: {},
         pendingMessage: '',
         autoMode: first.autoMode,
+        hasMoreMessages: false,
+        oldestMessageTime: null,
       }
 
       // Restore stale cache immediately for faster first paint.
@@ -411,16 +418,17 @@ export default function Page() {
 
   useEffect(() => {
     if (!activeTab?.activeFan) return
-  const fanId = activeTab.activeFan.id
+    const fanId = activeTab.activeFan.id
 
-  console.log('[messages] fan clicked:', fanId)
-  console.log('[messages] cache state:', messagesCache.current[fanId])
-
-  // Only use cache if it has been explicitly set (not undefined)
-  // undefined = never fetched, [] = fetched but empty (valid)
-  if (messagesCache.current[fanId] !== undefined) {
-    console.log('[messages] returning from cache:', messagesCache.current[fanId].length, 'msgs')
-    updateTab(activeTab.id, { messages: messagesCache.current[fanId], messagesLoading: false })
+    if (messagesCache.current[fanId] !== undefined) {
+      const cached = messagesCache.current[fanId]
+      const pag = messagesPaginationCache.current[fanId]
+      updateTab(activeTab.id, {
+        messages: cached,
+        messagesLoading: false,
+        hasMoreMessages: pag?.hasMoreMessages ?? ((cached?.length ?? 0) >= 50),
+        oldestMessageTime: pag?.oldestMessageTime ?? cached[0]?.sent_at ?? null,
+      })
       return
     }
 
@@ -428,23 +436,61 @@ export default function Page() {
     supabase
       .from('messages')
       .select('*')
-    .eq('fan_id', fanId)
+      .eq('fan_id', fanId)
       .eq('creator_id', activeTab.creatorId)
-    .order('sent_at', { ascending: false })
-    .limit(50)
-    .then(({ data, error }) => {
-      console.log('[messages] query result - data:', data?.length, 'error:', error)
-      if (error) {
-        console.error('[messages] fetch error:', error)
-        updateTab(activeTab.id, { messagesLoading: false })
-        return
-      }
-      const msgs = (data ?? []).reverse().map(rowToMessage)
-      console.log('[messages] setting', msgs.length, 'messages')
-      messagesCache.current[fanId] = msgs
-      updateTab(activeTab.id, { messages: msgs, messagesLoading: false })
+      .order('sent_at', { ascending: false })
+      .limit(50)
+      .then(({ data, error }) => {
+        if (error) {
+          console.error('[messages] fetch error:', error)
+          updateTab(activeTab.id, { messagesLoading: false })
+          return
+        }
+        const msgs = (data ?? []).reverse().map(rowToMessage)
+        messagesCache.current[fanId] = msgs
+        const hasMore = (data ?? []).length === 50
+        const oldest = msgs[0]?.sent_at ?? null
+        messagesPaginationCache.current[fanId] = { hasMoreMessages: hasMore, oldestMessageTime: oldest }
+        updateTab(activeTab.id, {
+          messages: msgs,
+          messagesLoading: false,
+          hasMoreMessages: hasMore,
+          oldestMessageTime: oldest,
+        })
       })
   }, [activeTab?.activeFan?.id, activeTabId])
+
+  const loadMoreMessages = useCallback(async () => {
+    const tabId = activeTabIdRef.current
+    const tab = tabs.find(t => t.id === tabId)
+    if (!tab?.activeFan || !tab.hasMoreMessages || !tab.oldestMessageTime) return
+
+    const fanId = tab.activeFan.id
+
+    const { data, error } = await supabase
+      .from('messages')
+      .select('*')
+      .eq('fan_id', fanId)
+      .eq('creator_id', tab.creatorId)
+      .order('sent_at', { ascending: false })
+      .lt('sent_at', tab.oldestMessageTime)
+      .limit(50)
+
+    if (error || !data) return
+
+    const olderMsgs = data.reverse().map(rowToMessage)
+    const combined = [...olderMsgs, ...tab.messages]
+
+    messagesCache.current[fanId] = combined
+    const hasMore = data.length === 50
+    const oldest = olderMsgs[0]?.sent_at ?? tab.oldestMessageTime
+    messagesPaginationCache.current[fanId] = { hasMoreMessages: hasMore, oldestMessageTime: oldest }
+    updateTab(tab.id, {
+      messages: combined,
+      hasMoreMessages: hasMore,
+      oldestMessageTime: oldest,
+    })
+  }, [tabs])
 
   useEffect(() => {
     const channel = supabase
@@ -779,6 +825,8 @@ export default function Page() {
                 activeFan: null,
                 messages: [],
                 conversations: [],
+                hasMoreMessages: false,
+                oldestMessageTime: null,
               })
               loadFanLists(id)
             }}
@@ -839,6 +887,8 @@ export default function Page() {
             onClearPending={() => activeTab && updateTab(activeTab.id, { pendingMessage: '' })}
             creatorAutoMode={activeTab?.autoMode ?? false}
             onToggleAutoMode={() => activeTab?.activeFan && toggleFanAutoMode(activeTab.id, activeTab.activeFan.id)}
+            hasMoreMessages={activeTab?.hasMoreMessages ?? false}
+            onLoadMore={loadMoreMessages}
           />
         </div>
         <div style={{ height: '100%', overflow: 'hidden' }}>
@@ -848,22 +898,29 @@ export default function Page() {
           onInsertMessage={insertMessage}
           onHistoryLoaded={async () => {
             if (!activeTab?.activeFan) return
-            
-            // Clear cache for this fan
-            if (messagesCache.current) {
-              delete messagesCache.current[activeTab.activeFan.id]
-            }
-            
-            // Reload messages from DB without clearing first
+
+            const fanId = activeTab.activeFan.id
+            delete messagesCache.current[fanId]
+            delete messagesPaginationCache.current[fanId]
+
             const { data } = await supabase
               .from('messages')
               .select('*')
-              .eq('fan_id', activeTab.activeFan.id)
+              .eq('fan_id', fanId)
               .eq('creator_id', activeTab.creatorId)
               .order('sent_at', { ascending: false })
               .limit(50)
             if (data) {
-              updateTab(activeTab.id, { messages: data.reverse().map(rowToMessage) })
+              const msgs = data.reverse().map(rowToMessage)
+              messagesCache.current[fanId] = msgs
+              const hasMore = data.length === 50
+              const oldest = msgs[0]?.sent_at ?? null
+              messagesPaginationCache.current[fanId] = { hasMoreMessages: hasMore, oldestMessageTime: oldest }
+              updateTab(activeTab.id, {
+                messages: msgs,
+                hasMoreMessages: hasMore,
+                oldestMessageTime: oldest,
+              })
             }
           }}
         />
