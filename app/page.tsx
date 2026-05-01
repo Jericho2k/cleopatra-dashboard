@@ -501,27 +501,55 @@ export default function Page() {
         table: 'messages',
       }, (payload) => {
         const msg = rowToMessage(payload.new as Record<string, unknown>)
-        setTabs(prev => prev.map(tab => {
-          if (tab.creatorId !== msg.creator_id) return tab
-          const isActiveTab = tab.id === activeTabIdRef.current
-          const isActiveFan = tab.activeFan?.id === msg.fan_id
 
-          if (tab.messages.some(m => m.id === msg.id)) return tab
+        setTabs(prev => {
+          const next = prev.map(tab => {
+            if (tab.creatorId !== msg.creator_id) return tab
+            const isActiveTab = tab.id === activeTabIdRef.current
+            const isActiveFan = tab.activeFan?.id === msg.fan_id
 
-          return {
-            ...tab,
-            messages: isActiveTab && isActiveFan
-              ? [...tab.messages, msg]
-              : tab.messages,
-            conversations: tab.conversations
+            if (tab.messages.some(m => m.id === msg.id)) return tab
+
+            const currentCached = messagesCache.current[msg.fan_id]
+            if (currentCached !== undefined && !currentCached.some(m => m.id === msg.id)) {
+              messagesCache.current[msg.fan_id] = [...currentCached, msg]
+            }
+
+            const updatedConversations = tab.conversations
               .map(c => c.fan.id === msg.fan_id
-                ? { ...c, last_message: msg.content, last_message_time: msg.sent_at,
-                    unread: !isActiveFan, unread_count: isActiveFan ? 0 : (c.unread_count ?? 0) + 1 }
+                ? {
+                    ...c,
+                    last_message: msg.content,
+                    last_message_time: msg.sent_at,
+                    unread: !isActiveFan,
+                    unread_count: isActiveFan ? 0 : (c.unread_count ?? 0) + 1,
+                  }
                 : c
               )
-              .sort((a, b) => new Date(b.last_message_time).getTime() - new Date(a.last_message_time).getTime()),
-          }
-        }))
+              .sort((a, b) => new Date(b.last_message_time).getTime() - new Date(a.last_message_time).getTime())
+
+            try {
+              const cacheKey = `convos_${tab.creatorId}`
+              const raw = localStorage.getItem(cacheKey)
+              if (raw) {
+                const parsed = JSON.parse(raw)
+                localStorage.setItem(cacheKey, JSON.stringify({
+                  ...parsed,
+                  data: updatedConversations,
+                }))
+              }
+            } catch {}
+
+            return {
+              ...tab,
+              messages: isActiveTab && isActiveFan
+                ? [...tab.messages, msg]
+                : tab.messages,
+              conversations: updatedConversations,
+            }
+          })
+          return next
+        })
       })
 
     if (activeTab?.creatorId) {
