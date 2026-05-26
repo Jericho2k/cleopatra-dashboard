@@ -539,7 +539,17 @@ export default function ConversationView({
                 ) : att.thumbnail_url ? (
                   <div
                     key={i}
-                    onClick={() => window.open(att.thumbnail_url, '_blank')}
+                    onClick={async () => {
+                      try {
+                        const res = await fetch(
+                          `${process.env.NEXT_PUBLIC_API_URL}/vault-media-url/${creatorId}/${att.media_id}`
+                        )
+                        const data = await res.json()
+                        if (data.url) window.open(data.url, '_blank')
+                      } catch (e) {
+                        console.error('Failed to get media URL', e)
+                      }
+                    }}
                     style={{
                       cursor: 'pointer',
                       marginTop: 6,
