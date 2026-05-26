@@ -50,6 +50,7 @@ export default function ConversationView({
   const [showScripts, setShowScripts] = useState(false)
   const [blockedWords, setBlockedWords] = useState<string[]>([])
   const [queuedMessages, setQueuedMessages] = useState<string[]>([])
+  const [mediaPreview, setMediaPreview] = useState<{ url: string; isVideo: boolean } | null>(null)
   // media_id -> { url, thumbnail_url, mimetype } resolved from vault
   const [ppvMediaMap, setPpvMediaMap] = useState<Record<string, {
     url: string | null
@@ -298,6 +299,7 @@ export default function ConversationView({
   const buttonBorder = fanAutoMode === true ? '1px solid rgba(76,175,130,0.4)' : fanAutoMode === false ? '1px solid rgba(255,80,80,0.3)' : '1px solid var(--border)'
 
   return (
+    <>
     <div
       style={{
         display: 'flex',
@@ -545,7 +547,10 @@ export default function ConversationView({
                           `${process.env.NEXT_PUBLIC_API_URL}/vault-media-url/${creatorId}/${att.media_id}`
                         )
                         const data = await res.json()
-                        if (data.url) window.open(data.url, '_blank')
+                        if (data.url) {
+                          const isVideo = data.mimetype?.startsWith('video') || att.media_id?.includes('video')
+                          setMediaPreview({ url: data.url, isVideo })
+                        }
                       } catch (e) {
                         console.error('Failed to get media URL', e)
                       }
@@ -817,5 +822,41 @@ export default function ConversationView({
         />
       </div>
     </div>
+    {mediaPreview && (
+      <div
+        onClick={() => setMediaPreview(null)}
+        style={{
+          position: 'fixed', inset: 0, zIndex: 1000,
+          background: 'rgba(0,0,0,0.9)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+        }}
+      >
+        <div onClick={e => e.stopPropagation()}>
+          {mediaPreview.isVideo ? (
+            <video
+              src={mediaPreview.url}
+              controls
+              autoPlay
+              style={{ maxHeight: '85vh', maxWidth: '85vw', borderRadius: 8 }}
+            />
+          ) : (
+            <img
+              src={mediaPreview.url}
+              style={{ maxHeight: '85vh', maxWidth: '85vw', objectFit: 'contain', borderRadius: 8 }}
+            />
+          )}
+        </div>
+        <button
+          onClick={() => setMediaPreview(null)}
+          style={{
+            position: 'fixed', top: 20, right: 20,
+            background: 'rgba(255,255,255,0.1)', border: 'none',
+            color: 'white', borderRadius: '50%', width: 36, height: 36,
+            fontSize: 18, cursor: 'pointer',
+          }}
+        >×</button>
+      </div>
+    )}
+    </>
   )
 }
