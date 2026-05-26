@@ -60,6 +60,12 @@ export default function FanPanel({ fan, creatorId, onInsertMessage, onHistoryLoa
   const [aiSummary, setAiSummary] = useState<any>(null)
   const [showAiProfile, setShowAiProfile] = useState(false)
 
+  const openMediaPreview = async (mediaId: string, cid: string) => {
+    const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/vault-media-url/${cid}/${mediaId}`)
+    const data = await res.json()
+    if (data.url) window.open(data.url, '_blank')
+  }
+
   useEffect(() => {
     if (!fan?.id) return
     void supabase
@@ -826,6 +832,18 @@ export default function FanPanel({ fan, creatorId, onInsertMessage, onHistoryLoa
                     <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-primary)' }}>{s.item}</div>
                     <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>{s.date} · {s.chatter}</div>
                     <div style={{ fontSize: 11, color: 'rgba(255,120,120,0.8)', marginTop: 2 }}>{s.reason}</div>
+                    {s.item?.includes('PPV media') && s.item.split(' ')[2] && (
+                      <button
+                        onClick={() => openMediaPreview(s.item.split(' ')[2], creatorId)}
+                        style={{
+                          fontSize: 11, color: 'var(--purple)',
+                          background: 'none', border: 'none',
+                          cursor: 'pointer', padding: 0, marginTop: 4,
+                        }}
+                      >
+                        👁 Preview media
+                      </button>
+                    )}
                   </div>
                   <span style={{ fontFamily: 'var(--font-display)', fontSize: 15, fontWeight: 700, color: 'var(--text-muted)', flexShrink: 0, marginLeft: 8 }}>
                     ${s.amount}

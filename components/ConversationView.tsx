@@ -476,7 +476,13 @@ export default function ConversationView({
                     overflow: 'hidden',
                   }}>
                     {thumbSrc && (
-                      <div style={{ position: 'relative', lineHeight: 0 }}>
+                      <div
+                        style={{ position: 'relative', lineHeight: 0, cursor: 'pointer' }}
+                        onClick={() => {
+                          const target = resolved?.url ?? thumbSrc
+                          if (target) window.open(target, '_blank')
+                        }}
+                      >
                         <img
                           src={thumbSrc}
                           alt="PPV preview"
@@ -484,15 +490,12 @@ export default function ConversationView({
                             width: '100%',
                             maxWidth: 220,
                             display: 'block',
-                            filter: 'blur(6px)',
-                            transform: 'scale(1.05)', // hide blur edge artifacts
                             borderRadius: 0,
                           }}
                           onError={e => {
                             (e.target as HTMLImageElement).style.display = 'none'
                           }}
                         />
-                        {/* Lock overlay */}
                         <div style={{
                           position: 'absolute', inset: 0,
                           display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -534,11 +537,43 @@ export default function ConversationView({
                     <div style={{ color: 'var(--text-muted)' }}>{att.title}</div>
                   </div>
                 ) : att.thumbnail_url ? (
-                  <img key={i} src={att.thumbnail_url} alt="" style={{
-                    marginTop: 8, maxWidth: 200, borderRadius: 8,
-                    border: '1px solid var(--border)',
-                    display: 'block',
-                  }} />
+                  <div
+                    key={i}
+                    onClick={() => window.open(att.thumbnail_url, '_blank')}
+                    style={{
+                      cursor: 'pointer',
+                      marginTop: 6,
+                      borderRadius: 8,
+                      overflow: 'hidden',
+                      border: '1px solid var(--border)',
+                      position: 'relative',
+                      maxWidth: 220,
+                    }}
+                  >
+                    <img
+                      src={att.thumbnail_url}
+                      style={{
+                        width: '100%',
+                        display: 'block',
+                        borderRadius: 8,
+                      }}
+                      onError={(e) => {
+                        (e.target as HTMLImageElement).style.display = 'none'
+                      }}
+                    />
+                    <div style={{
+                      position: 'absolute', bottom: 0, left: 0, right: 0,
+                      padding: '4px 8px',
+                      background: 'rgba(0,0,0,0.6)',
+                      fontSize: 11,
+                      color: '#fff',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 4,
+                    }}>
+                      💎 ${att.price} · click to preview
+                    </div>
+                  </div>
                 ) : null
               ))}
             </div>
