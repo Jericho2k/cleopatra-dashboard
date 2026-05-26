@@ -50,7 +50,7 @@ export default function ConversationView({
   const [showScripts, setShowScripts] = useState(false)
   const [blockedWords, setBlockedWords] = useState<string[]>([])
   const [queuedMessages, setQueuedMessages] = useState<string[]>([])
-  const [mediaPreview, setMediaPreview] = useState<{ url: string; isVideo: boolean } | null>(null)
+  const [mediaPreview, setMediaPreview] = useState<{ url: string; mimetype: string; filename: string } | null>(null)
   // media_id -> { url, thumbnail_url, mimetype } resolved from vault
   const [ppvMediaMap, setPpvMediaMap] = useState<Record<string, {
     url: string | null
@@ -480,9 +480,15 @@ export default function ConversationView({
                     {thumbSrc && (
                       <div
                         style={{ position: 'relative', lineHeight: 0, cursor: 'pointer' }}
-                        onClick={() => {
-                          const target = resolved?.url ?? thumbSrc
-                          if (target) window.open(target, '_blank')
+                        onClick={async () => {
+                          const mediaId = msg.media_context?.ppv?.media_id
+                          if (!mediaId) return
+                          const { data } = await supabase
+                            .from('creator_vault_media')
+                            .select('url, mimetype, filename')
+                            .eq('fansly_media_id', mediaId)
+                            .single()
+                          if (data?.url) setMediaPreview(data)
                         }}
                       >
                         <img
@@ -548,8 +554,7 @@ export default function ConversationView({
                         )
                         const data = await res.json()
                         if (data.url) {
-                          const isVideo = data.mimetype?.startsWith('video') || att.media_id?.includes('video')
-                          setMediaPreview({ url: data.url, isVideo })
+                          setMediaPreview({ url: data.url, mimetype: data.mimetype ?? '', filename: data.filename ?? '' })
                         }
                       } catch (e) {
                         console.error('Failed to get media URL', e)
@@ -827,34 +832,28 @@ export default function ConversationView({
         onClick={() => setMediaPreview(null)}
         style={{
           position: 'fixed', inset: 0, zIndex: 1000,
-          background: 'rgba(0,0,0,0.9)',
+          background: 'rgba(0,0,0,0.85)',
           display: 'flex', alignItems: 'center', justifyContent: 'center',
+          padding: 24,
         }}
       >
-        <div onClick={e => e.stopPropagation()}>
-          {mediaPreview.isVideo ? (
+        <div onClick={e => e.stopPropagation()} style={{ flexShrink: 0, maxWidth: '80vw' }}>
+          {mediaPreview.mimetype?.startsWith('video') ? (
             <video
               src={mediaPreview.url}
               controls
-              autoPlay
-              style={{ maxHeight: '85vh', maxWidth: '85vw', borderRadius: 8 }}
+              style={{ maxHeight: '80vh', maxWidth: '80vw', borderRadius: 8, background: '#000' }}
             />
           ) : (
             <img
               src={mediaPreview.url}
-              style={{ maxHeight: '85vh', maxWidth: '85vw', objectFit: 'contain', borderRadius: 8 }}
+              style={{ maxHeight: '80vh', maxWidth: '80vw', objectFit: 'contain', borderRadius: 8 }}
             />
           )}
+          <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', marginTop: 6, textAlign: 'center' }}>
+            {mediaPreview.filename}
+          </div>
         </div>
-        <button
-          onClick={() => setMediaPreview(null)}
-          style={{
-            position: 'fixed', top: 20, right: 20,
-            background: 'rgba(255,255,255,0.1)', border: 'none',
-            color: 'white', borderRadius: '50%', width: 36, height: 36,
-            fontSize: 18, cursor: 'pointer',
-          }}
-        >×</button>
       </div>
     )}
     </>
