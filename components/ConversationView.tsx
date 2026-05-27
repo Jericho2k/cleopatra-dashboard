@@ -533,16 +533,60 @@ export default function ConversationView({
               })()}
               {(msg as any).attachments?.map((att: any, i: number) => (
                 att.type === 'ppv' ? (
-                  <div key={i} style={{
-                    marginTop: 8, padding: '10px 12px',
-                    background: 'rgba(155,143,212,0.15)',
-                    border: '1px solid rgba(155,143,212,0.3)',
-                    borderRadius: 8, fontSize: 12,
-                  }}>
-                    <div style={{ color: 'var(--purple)', fontWeight: 600, marginBottom: 4 }}>
-                      💎 PPV Sent — ${att.price}
-                    </div>
-                    <div style={{ color: 'var(--text-muted)' }}>{att.title}</div>
+                  <div key={i} style={{ marginTop: 8 }}>
+                    {att.thumbnail_url ? (
+                      <div style={{
+                        position: 'relative', width: 200, borderRadius: 10, overflow: 'hidden',
+                        border: '1px solid rgba(155,143,212,0.35)',
+                      }}>
+                        <img
+                          src={att.thumbnail_url}
+                          alt=""
+                          style={{
+                            width: '100%', display: 'block',
+                            filter: 'blur(10px)',
+                            transform: 'scale(1.05)',
+                          }}
+                        />
+                        <div style={{
+                          position: 'absolute', inset: 0,
+                          background: 'rgba(0,0,0,0.45)',
+                          display: 'flex', flexDirection: 'column',
+                          alignItems: 'center', justifyContent: 'center', gap: 6,
+                        }}>
+                          <div style={{ fontSize: 22 }}>
+                            {att.mimetype?.startsWith('video') ? '▶' : '🔒'}
+                          </div>
+                          <div style={{
+                            fontSize: 13, fontWeight: 700, color: 'var(--purple)',
+                          }}>
+                            💎 ${att.price}
+                          </div>
+                          {att.title && (
+                            <div style={{
+                              fontSize: 10, color: 'rgba(255,255,255,0.7)',
+                              textAlign: 'center', padding: '0 8px',
+                              maxWidth: 180, overflow: 'hidden',
+                              textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                            }}>
+                              {att.title}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    ) : (
+                      <div style={{
+                        padding: '10px 12px',
+                        background: 'rgba(155,143,212,0.15)',
+                        border: '1px solid rgba(155,143,212,0.3)',
+                        borderRadius: 8, fontSize: 12,
+                      }}>
+                        <div style={{ color: 'var(--purple)', fontWeight: 600, marginBottom: 4 }}>
+                          💎 PPV Sent — ${att.price}
+                        </div>
+                        <div style={{ color: 'var(--text-muted)' }}>{att.title}</div>
+                      </div>
+                    )}
                   </div>
                 ) : att.thumbnail_url ? (
                   <div
