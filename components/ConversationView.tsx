@@ -189,8 +189,14 @@ export default function ConversationView({
 
     // Collect media_ids that haven't been resolved yet
     const unresolved = messages
-      .filter(m => m.media_context?.ppv?.media_id)
-      .map(m => m.media_context!.ppv!.media_id as string)
+      .flatMap(m => {
+        const ppv = m.media_context?.ppv
+        if (!ppv) return []
+        const ids = (ppv as any).media_ids?.length
+          ? ((ppv as any).media_ids as string[])
+          : (ppv.media_id ? [ppv.media_id as string] : [])
+        return ids
+      })
       .filter(id => !(id in ppvMediaMap))
 
     if (unresolved.length === 0) return
@@ -464,69 +470,40 @@ export default function ConversationView({
               )}
               {msg.media_context?.ppv && (() => {
                 const ppv = msg.media_context!.ppv!
-                const mediaId = ppv.media_id as string | undefined
-                const resolved = mediaId ? ppvMediaMap[mediaId] : undefined
-                const thumbSrc = resolved?.thumbnail_url ?? resolved?.url ?? null
-                const isVideo = resolved?.mimetype?.startsWith('video') ?? false
+                const mediaIds: string[] = ((ppv as any).media_ids?.length ? (ppv as any).media_ids
+                                            : ppv.media_id ? [ppv.media_id] : []) as string[]
 
                 return (
-                  <div style={{
-                    marginTop: 8,
-                    background: 'rgba(155,143,212,0.1)',
-                    border: '1px solid rgba(155,143,212,0.3)',
-                    borderRadius: 8,
-                    overflow: 'hidden',
-                  }}>
-                    {thumbSrc && (
-                      <div
-                        style={{ position: 'relative', lineHeight: 0, cursor: 'pointer' }}
-                        onClick={async () => {
-                          const mediaId = msg.media_context?.ppv?.media_id
-                          if (!mediaId) return
-                          const { data } = await supabase
-                            .from('creator_vault_media')
-                            .select('url, mimetype, filename')
-                            .eq('fansly_media_id', mediaId)
-                            .single()
-                          if (data?.url) setMediaPreview(data)
-                        }}
-                      >
-                        <img
-                          src={thumbSrc}
-                          alt="PPV preview"
-                          style={{
-                            width: '100%',
-                            maxWidth: 220,
-                            display: 'block',
-                            borderRadius: 0,
-                          }}
-                          onError={e => {
-                            (e.target as HTMLImageElement).style.display = 'none'
-                          }}
-                        />
-                        <div style={{
-                          position: 'absolute', inset: 0,
-                          display: 'flex', alignItems: 'center', justifyContent: 'center',
-                          background: 'rgba(0,0,0,0.25)',
-                        }}>
-                          <span style={{ fontSize: 22 }}>{isVideo ? '🎬' : '🔒'}</span>
-                        </div>
+                  <div style={{ marginTop: 8, background: 'rgba(155,143,212,0.1)', border: '1px solid rgba(155,143,212,0.3)', borderRadius: 8, overflow: 'hidden' }}>
+                    {mediaIds.length > 0 && (
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 2, lineHeight: 0 }}>
+                        {mediaIds.map((mid) => {
+                          const resolved = ppvMediaMap[mid]
+                          const thumbSrc = resolved?.thumbnail_url ?? resolved?.url ?? null
+                          const isVideo = resolved?.mimetype?.startsWith('video') ?? false
+                          const w = mediaIds.length > 1 ? '32.7%' : '100%'
+                          if (!thumbSrc) return (
+                            <div key={mid} style={{ width: w, maxWidth: 220, aspectRatio: '3/4', background: 'rgba(255,255,255,0.05)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, color: 'var(--text-muted)' }}>…</div>
+                          )
+                          return (
+                            <div key={mid} style={{ position: 'relative', cursor: 'pointer', width: w, maxWidth: 220 }}
+                              onClick={async () => {
+                                const { data } = await supabase.from('creator_vault_media').select('url, mimetype, filename').eq('fansly_media_id', mid).single()
+                                if (data?.url) setMediaPreview(data as any)
+                              }}>
+                              <img src={thumbSrc} alt="PPV preview" style={{ width: '100%', display: 'block' }} onError={e => { (e.target as HTMLImageElement).style.display = 'none' }} />
+                              <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.25)' }}>
+                                <span style={{ fontSize: 18 }}>{isVideo ? '🎬' : '🔒'}</span>
+                              </div>
+                            </div>
+                          )
+                        })}
                       </div>
                     )}
                     <div style={{ padding: '8px 12px' }}>
                       <div style={{ fontSize: 12, color: 'var(--purple)', fontWeight: 600 }}>
-                        💎 PPV Sent — ${ppv.price}
+                        💎 PPV Sent — ${ppv.price}{mediaIds.length > 1 ? ` · ${mediaIds.length} pcs` : ''}
                       </div>
-                      {ppv.title && (
-                        <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
-                          {ppv.title}
-                        </div>
-                      )}
-                      {mediaId && !resolved && (
-                        <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2, opacity: 0.6 }}>
-                          Loading preview…
-                        </div>
-                      )}
                     </div>
                   </div>
                 )
