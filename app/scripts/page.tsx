@@ -10,7 +10,7 @@ type VaultSet = {
   location: string | null; outfit: string | null
   explicit_min: number | null; explicit_max: number | null
   media_ids: string[]; preview_media_id: string | null
-  suggested_price: number | null
+  suggested_price: number | null; tags: string[] | null
   status: 'draft' | 'approved' | 'archived'; source: 'ai' | 'manual'
 }
 type Thumb = { thumbnail_url: string | null; url: string | null; mimetype: string | null }
@@ -194,6 +194,13 @@ export default function SetsPage() {
               </label>
               <button onClick={() => openPicker(s.id)} style={{ marginLeft: 'auto', padding: '4px 10px', borderRadius: 6, border: '1px solid var(--border)', background: 'transparent', color: 'var(--text-muted)', fontSize: 12, cursor: 'pointer' }}>+ Add photos</button>
             </div>
+            {s.tags && s.tags.length > 0 && (
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginBottom: 10 }}>
+                {s.tags.map(t => (
+                  <span key={t} style={{ fontSize: 10, padding: '2px 7px', borderRadius: 999, background: 'rgba(155,143,212,0.12)', color: '#9b8fd4' }}>{t}</span>
+                ))}
+              </div>
+            )}
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 12 }}>
               {s.media_ids.map(mid => {
                 const t = thumbs[mid]; const src = t?.thumbnail_url ?? t?.url ?? null
