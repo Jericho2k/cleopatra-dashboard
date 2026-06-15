@@ -136,7 +136,7 @@ export default function SetsPage() {
   const pickerVault = vault.filter(v => albumFilter === 'all' || (v.album_title || 'Uncategorized') === albumFilter)
 
   return (
-    <div style={{ padding: 32, maxWidth: 900, margin: '0 auto' }}>
+    <div style={{ height: '100vh', overflowY: 'auto', boxSizing: 'border-box', padding: 32, maxWidth: 900, margin: '0 auto' }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
         <div style={{ fontSize: 22, fontWeight: 700 }}>Sets</div>
         <select value={creatorId ?? ''} onChange={e => setCreatorId(e.target.value)}
