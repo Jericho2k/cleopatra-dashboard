@@ -1,401 +1,173 @@
 'use client'
 
-import React, { useState, useEffect } from 'react'
+import React, { useEffect, useState } from 'react'
 import { supabase } from '../../lib/supabase'
 
-type Script = { id: string; title: string; content: string; category: string }
-type StorylineStep = { id?: string; step_number: number; content: string }
-type Storyline = { id: string; name: string; category: string; steps: StorylineStep[] }
+const API = process.env.NEXT_PUBLIC_API_URL
 
-const CATEGORIES = ['greeting', 'upsell', 'reengagement', 'custom']
-const INPUT = {
-  background: 'var(--bg-elevated)', border: '1px solid var(--border-subtle)',
-  borderRadius: 6, padding: '8px 12px', color: 'var(--text-primary)',
-  fontSize: 13, boxSizing: 'border-box' as const, width: '100%', outline: 'none',
+type VaultSet = {
+  id: string; creator_id: string; title: string
+  location: string | null; outfit: string | null
+  explicit_min: number | null; explicit_max: number | null
+  media_ids: string[]; preview_media_id: string | null
+  suggested_price: number | null
+  status: 'draft' | 'approved' | 'archived'; source: 'ai' | 'manual'
 }
-const CARD = {
-  background: 'var(--bg-surface)', border: '1px solid var(--border)',
-  borderRadius: 12, padding: 20, marginBottom: 16,
-}
-const LABEL = {
-  fontSize: 11, textTransform: 'uppercase' as const,
-  letterSpacing: '0.06em', color: 'var(--text-muted)', marginBottom: 8,
-}
+type Thumb = { thumbnail_url: string | null; url: string | null; mimetype: string | null }
 
-export default function ScriptsPage() {
-  const [creatorId, setCreatorId] = useState('')
-  const [activeView, setActiveView] = useState<'scripts' | 'storylines'>('storylines')
-
-  // Scripts state
-  const [scripts, setScripts] = useState<Script[]>([])
-  const [newTitle, setNewTitle] = useState('')
-  const [newContent, setNewContent] = useState('')
-  const [newCategory, setNewCategory] = useState('custom')
-  const [editingScript, setEditingScript] = useState<Script | null>(null)
-
-  // Storylines state
-  const [storylines, setStorylines] = useState<Storyline[]>([])
-  const [showNewStoryline, setShowNewStoryline] = useState(false)
-  const [newStorylineName, setNewStorylineName] = useState('')
-  const [newStorylineCategory, setNewStorylineCategory] = useState('upsell')
-  const [newSteps, setNewSteps] = useState<string[]>([''])
-  const [expandedStoryline, setExpandedStoryline] = useState<string | null>(null)
-  const [editingStoryline, setEditingStoryline] = useState<Storyline | null>(null)
+export default function SetsPage() {
+  const [creators, setCreators] = useState<{ id: string; name: string }[]>([])
+  const [creatorId, setCreatorId] = useState<string | null>(null)
+  const [sets, setSets] = useState<VaultSet[]>([])
+  const [loading, setLoading] = useState(false)
+  const [generating, setGenerating] = useState(false)
+  const [filter, setFilter] = useState<'all' | 'draft' | 'approved'>('all')
+  const [thumbs, setThumbs] = useState<Record<string, Thumb>>({})
+  const [preview, setPreview] = useState<{ url: string; isVideo: boolean } | null>(null)
 
   useEffect(() => {
-    supabase.auth.getUser().then(({ data: { user } }) => {
-      if (!user) return
-      supabase.from('chatter_creators').select('creator_id').eq('chatter_id', user.id).limit(1).single()
-        .then(({ data }) => { if (data) setCreatorId((data as any).creator_id) })
+    supabase.from('creators').select('id, name').then(({ data }) => {
+      const list = (data ?? []).map((c: any) => ({ id: c.id, name: c.name }))
+      setCreators(list); setCreatorId(prev => prev ?? list[0]?.id ?? null)
     })
   }, [])
 
+  async function loadSets(cid: string) {
+    setLoading(true)
+    const { data } = await supabase.from('vault_sets').select('*').eq('creator_id', cid)
+      .order('status', { ascending: true }).order('explicit_max', { ascending: false })
+    setSets((data ?? []) as VaultSet[]); setLoading(false)
+  }
+  useEffect(() => { if (creatorId) loadSets(creatorId) }, [creatorId])
+
   useEffect(() => {
     if (!creatorId) return
-    loadScripts()
-    loadStorylines()
-  }, [creatorId])
+    const ids = [...new Set(sets.flatMap(s => s.media_ids))].filter(id => !(id in thumbs))
+    if (!ids.length) return
+    Promise.all(ids.map(mid =>
+      fetch(`${API}/vault-media-url/${creatorId}/${mid}`).then(r => r.json())
+        .then(d => ({ mid, d })).catch(() => ({ mid, d: { thumbnail_url: null, url: null, mimetype: null } }))
+    )).then(res => setThumbs(prev => { const n = { ...prev }; for (const { mid, d } of res) n[mid] = d; return n }))
+  }, [sets, creatorId])
 
-  async function loadScripts() {
-    const { data } = await supabase.from('scripts').select('*').eq('creator_id', creatorId).order('category')
-    if (data) setScripts(data)
+  async function generate() {
+    if (!creatorId) return
+    setGenerating(true)
+    try { await fetch(`${API}/generate-sets/${creatorId}`, { method: 'POST' }); await loadSets(creatorId) }
+    finally { setGenerating(false) }
+  }
+  async function patchSet(id: string, patch: Partial<VaultSet>) {
+    setSets(prev => prev.map(s => (s.id === id ? { ...s, ...patch } : s)))
+    await supabase.from('vault_sets').update(patch).eq('id', id)
+  }
+  async function removeMedia(s: VaultSet, mid: string) {
+    const media_ids = s.media_ids.filter(x => x !== mid)
+    const preview_media_id = s.preview_media_id === mid ? (media_ids[0] ?? null) : s.preview_media_id
+    await patchSet(s.id, { media_ids, preview_media_id })
+  }
+  async function del(id: string) {
+    setSets(prev => prev.filter(s => s.id !== id)); await supabase.from('vault_sets').delete().eq('id', id)
+  }
+  async function openFull(mid: string) {
+    const t = thumbs[mid]
+    if (t?.url) return setPreview({ url: t.url, isVideo: !!t.mimetype?.startsWith('video') })
+    const r = await fetch(`${API}/vault-media-url/${creatorId}/${mid}`).then(r => r.json())
+    if (r?.url) setPreview({ url: r.url, isVideo: !!r.mimetype?.startsWith('video') })
   }
 
-  async function loadStorylines() {
-    const { data } = await supabase
-      .from('storylines')
-      .select('id, name, category, storyline_steps(id, step_number, content)')
-      .eq('creator_id', creatorId)
-      .order('created_at')
-    if (data) {
-      setStorylines(data.map((sl: any) => ({
-        ...sl,
-        steps: [...(sl.storyline_steps ?? [])].sort((a: any, b: any) => a.step_number - b.step_number),
-      })))
-    }
-  }
-
-  async function addScript() {
-    if (!newTitle.trim() || !newContent.trim()) return
-    const { data } = await supabase.from('scripts')
-      .insert({ creator_id: creatorId, title: newTitle.trim(), content: newContent.trim(), category: newCategory })
-      .select().single()
-    if (data) { setScripts(prev => [...prev, data]); setNewTitle(''); setNewContent('') }
-  }
-
-  async function saveEditScript() {
-    if (!editingScript) return
-    await supabase.from('scripts').update({ title: editingScript.title, content: editingScript.content, category: editingScript.category }).eq('id', editingScript.id)
-    setScripts(prev => prev.map(s => s.id === editingScript.id ? editingScript : s))
-    setEditingScript(null)
-  }
-
-  async function deleteScript(id: string) {
-    await supabase.from('scripts').delete().eq('id', id)
-    setScripts(prev => prev.filter(s => s.id !== id))
-  }
-
-  async function addStoryline() {
-    if (!newStorylineName.trim()) return
-    const validSteps = newSteps.filter(s => s.trim())
-    if (validSteps.length === 0) return
-
-    const { data: sl } = await supabase.from('storylines')
-      .insert({ creator_id: creatorId, name: newStorylineName.trim(), category: newStorylineCategory })
-      .select().single()
-    if (!sl) return
-
-    await supabase.from('storyline_steps').insert(
-      validSteps.map((content, i) => ({ storyline_id: sl.id, step_number: i, content: content.trim() }))
-    )
-
-    setNewStorylineName('')
-    setNewSteps([''])
-    setShowNewStoryline(false)
-    loadStorylines()
-  }
-
-  async function saveEditStoryline() {
-    if (!editingStoryline) return
-    await supabase.from('storylines').update({ name: editingStoryline.name, category: editingStoryline.category }).eq('id', editingStoryline.id)
-    await supabase.from('storyline_steps').delete().eq('storyline_id', editingStoryline.id)
-    await supabase.from('storyline_steps').insert(
-      editingStoryline.steps.map((s, i) => ({ storyline_id: editingStoryline.id, step_number: i, content: s.content.trim() }))
-    )
-    setEditingStoryline(null)
-    loadStorylines()
-  }
-
-  async function deleteStoryline(id: string) {
-    await supabase.from('storylines').delete().eq('id', id)
-    setStorylines(prev => prev.filter(s => s.id !== id))
-  }
+  const shown = sets.filter(s => (filter === 'all' ? true : s.status === filter))
+  const counts = { all: sets.length, draft: sets.filter(s => s.status === 'draft').length, approved: sets.filter(s => s.status === 'approved').length }
 
   return (
-    <div style={{ height: '100vh', overflowY: 'auto', background: 'var(--bg-base)', padding: 32, color: 'var(--text-primary)', fontFamily: 'var(--font-body)' }}>
-      <div style={{ maxWidth: 760, margin: '0 auto' }}>
-
-        {/* Header */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 32 }}>
-          <div>
-            <div style={{ fontFamily: 'var(--font-display)', fontSize: 24, fontWeight: 700, marginBottom: 4 }}>
-              <span className="silver-text">Scripts</span>
-            </div>
-            <div style={{ fontSize: 13, color: 'var(--text-muted)' }}>Manage quick-reply scripts and multi-step storylines</div>
-          </div>
-          <div style={{ display: 'flex', gap: 8 }}>
-            {(['storylines', 'scripts'] as const).map(v => (
-              <button key={v} type="button" onClick={() => setActiveView(v)} style={{
-                padding: '6px 14px', borderRadius: 6, cursor: 'pointer', fontSize: 12,
-                textTransform: 'uppercase', letterSpacing: '0.04em',
-                border: activeView === v ? '1px solid var(--silver)' : '1px solid var(--border)',
-                background: activeView === v ? 'rgba(200,200,200,0.1)' : 'transparent',
-                color: activeView === v ? 'var(--silver)' : 'var(--text-muted)',
-              }}>{v}</button>
-            ))}
-          </div>
-        </div>
-
-        {/* STORYLINES VIEW */}
-        {activeView === 'storylines' && (
-          <div>
-            <button type="button" onClick={() => setShowNewStoryline(v => !v)} style={{
-              width: '100%', padding: '12px', borderRadius: 10, marginBottom: 20,
-              border: '1px dashed var(--border)', background: 'transparent',
-              color: 'var(--text-muted)', fontSize: 13, cursor: 'pointer',
-              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
-            }}>
-              <span style={{ fontSize: 18 }}>+</span> New Storyline
-            </button>
-
-            {/* New storyline form */}
-            {showNewStoryline && (
-              <div style={{ ...CARD, borderColor: 'var(--silver)', marginBottom: 24 }}>
-                <div style={LABEL}>New Storyline</div>
-                <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
-                  <input value={newStorylineName} onChange={e => setNewStorylineName(e.target.value)}
-                    placeholder="Storyline name (e.g. Custom Video Upsell)"
-                    style={{ ...INPUT, flex: 1 }} />
-                  <select value={newStorylineCategory} onChange={e => setNewStorylineCategory(e.target.value)}
-                    style={{ ...INPUT, width: 'auto', padding: '8px 10px' }}>
-                    {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
-                  </select>
-                </div>
-
-                <div style={LABEL}>Steps (in order)</div>
-                {newSteps.map((step, i) => (
-                  <div key={i} style={{ display: 'flex', gap: 8, marginBottom: 8, alignItems: 'flex-start' }}>
-                    <div style={{
-                      width: 24, height: 24, borderRadius: '50%', background: 'var(--bg-elevated)',
-                      border: '1px solid var(--border)', display: 'flex', alignItems: 'center',
-                      justifyContent: 'center', fontSize: 10, color: 'var(--text-muted)',
-                      flexShrink: 0, marginTop: 8,
-                    }}>{i + 1}</div>
-                    <textarea value={step} onChange={e => setNewSteps(prev => prev.map((s, j) => j === i ? e.target.value : s))}
-                      placeholder={`Step ${i + 1} message...`} rows={2}
-                      style={{ ...INPUT, resize: 'none', flex: 1 }} />
-                    {newSteps.length > 1 && (
-                      <button type="button" onClick={() => setNewSteps(prev => prev.filter((_, j) => j !== i))}
-                        style={{ background: 'none', border: 'none', color: 'var(--text-faint)', cursor: 'pointer', fontSize: 18, marginTop: 6 }}>×</button>
-                    )}
-                  </div>
-                ))}
-                <button type="button" onClick={() => setNewSteps(prev => [...prev, ''])}
-                  style={{ background: 'none', border: '1px dashed var(--border)', borderRadius: 6, color: 'var(--text-muted)', fontSize: 12, cursor: 'pointer', padding: '5px 12px', marginBottom: 12 }}>
-                  + Add step
-                </button>
-                <div style={{ display: 'flex', gap: 8 }}>
-                  <button type="button" onClick={addStoryline} style={{
-                    padding: '7px 16px', background: 'rgba(200,200,200,0.1)', border: '1px solid var(--silver)',
-                    borderRadius: 6, color: 'var(--silver)', fontSize: 13, cursor: 'pointer',
-                  }}>Save Storyline</button>
-                  <button type="button" onClick={() => setShowNewStoryline(false)} style={{
-                    padding: '7px 16px', background: 'transparent', border: '1px solid var(--border)',
-                    borderRadius: 6, color: 'var(--text-muted)', fontSize: 13, cursor: 'pointer',
-                  }}>Cancel</button>
-                </div>
-              </div>
-            )}
-
-            {/* Storyline list */}
-            {CATEGORIES.map(cat => {
-              const catSL = storylines.filter(s => s.category === cat)
-              if (catSL.length === 0) return null
-              return (
-                <div key={cat} style={{ marginBottom: 24 }}>
-                  <div style={LABEL}>{cat}</div>
-                  {catSL.map(sl => (
-                    <div key={sl.id} style={CARD}>
-                      {editingStoryline?.id === sl.id ? (
-                        // Edit mode
-                        <div>
-                          <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
-                            <input value={editingStoryline.name} onChange={e => setEditingStoryline(prev => prev ? { ...prev, name: e.target.value } : null)}
-                              style={{ ...INPUT, flex: 1 }} />
-                            <select value={editingStoryline.category} onChange={e => setEditingStoryline(prev => prev ? { ...prev, category: e.target.value } : null)}
-                              style={{ ...INPUT, width: 'auto', padding: '8px 10px' }}>
-                              {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
-                            </select>
-                          </div>
-                          {editingStoryline.steps.map((step, i) => (
-                            <div key={i} style={{ display: 'flex', gap: 8, marginBottom: 8, alignItems: 'flex-start' }}>
-                              <div style={{
-                                width: 24, height: 24, borderRadius: '50%', background: 'var(--bg-elevated)',
-                                border: '1px solid var(--border)', display: 'flex', alignItems: 'center',
-                                justifyContent: 'center', fontSize: 10, color: 'var(--text-muted)',
-                                flexShrink: 0, marginTop: 8,
-                              }}>{i + 1}</div>
-                              <textarea value={step.content}
-                                onChange={e => setEditingStoryline(prev => prev ? {
-                                  ...prev, steps: prev.steps.map((s, j) => j === i ? { ...s, content: e.target.value } : s)
-                                } : null)}
-                                rows={2} style={{ ...INPUT, resize: 'none', flex: 1 }} />
-                              {editingStoryline.steps.length > 1 && (
-                                <button type="button" onClick={() => setEditingStoryline(prev => prev ? { ...prev, steps: prev.steps.filter((_, j) => j !== i) } : null)}
-                                  style={{ background: 'none', border: 'none', color: 'var(--text-faint)', cursor: 'pointer', fontSize: 18, marginTop: 6 }}>×</button>
-                              )}
-                            </div>
-                          ))}
-                          <button type="button" onClick={() => setEditingStoryline(prev => prev ? { ...prev, steps: [...prev.steps, { step_number: prev.steps.length, content: '' }] } : null)}
-                            style={{ background: 'none', border: '1px dashed var(--border)', borderRadius: 6, color: 'var(--text-muted)', fontSize: 12, cursor: 'pointer', padding: '5px 12px', marginBottom: 12 }}>
-                            + Add step
-                          </button>
-                          <div style={{ display: 'flex', gap: 8 }}>
-                            <button type="button" onClick={saveEditStoryline} style={{
-                              padding: '6px 14px', background: 'rgba(200,200,200,0.1)', border: '1px solid var(--silver)',
-                              borderRadius: 6, color: 'var(--silver)', fontSize: 12, cursor: 'pointer',
-                            }}>Save</button>
-                            <button type="button" onClick={() => setEditingStoryline(null)} style={{
-                              padding: '6px 14px', background: 'transparent', border: '1px solid var(--border)',
-                              borderRadius: 6, color: 'var(--text-muted)', fontSize: 12, cursor: 'pointer',
-                            }}>Cancel</button>
-                          </div>
-                        </div>
-                      ) : (
-                        // View mode
-                        <div>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-                            <div>
-                              <div style={{ fontWeight: 600, fontSize: 14, color: 'var(--text-primary)' }}>{sl.name}</div>
-                              <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>{sl.steps.length} steps</div>
-                            </div>
-                            <div style={{ display: 'flex', gap: 6 }}>
-                              <button type="button" onClick={() => setExpandedStoryline(expandedStoryline === sl.id ? null : sl.id)}
-                                style={{ background: 'none', border: '1px solid var(--border)', borderRadius: 6, color: 'var(--text-muted)', cursor: 'pointer', fontSize: 11, padding: '4px 10px' }}>
-                                {expandedStoryline === sl.id ? '▲ Hide' : '▼ Preview'}
-                              </button>
-                              <button type="button" onClick={() => setEditingStoryline(sl)}
-                                style={{ background: 'none', border: '1px solid var(--border)', borderRadius: 6, color: 'var(--text-muted)', cursor: 'pointer', fontSize: 11, padding: '4px 10px' }}>
-                                Edit
-                              </button>
-                              <button type="button" onClick={() => deleteStoryline(sl.id)}
-                                style={{ background: 'none', border: 'none', color: 'var(--text-faint)', cursor: 'pointer', fontSize: 16 }}>×</button>
-                            </div>
-                          </div>
-
-                          {expandedStoryline === sl.id && (
-                            <div style={{ borderTop: '1px solid var(--border-subtle)', paddingTop: 12 }}>
-                              {sl.steps.map((step, i) => (
-                                <div key={step.id ?? i} style={{ display: 'flex', gap: 10, marginBottom: 10 }}>
-                                  <div style={{
-                                    width: 22, height: 22, borderRadius: '50%', flexShrink: 0,
-                                    background: 'var(--bg-elevated)', border: '1px solid var(--border)',
-                                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                    fontSize: 10, color: 'var(--text-muted)', marginTop: 2,
-                                  }}>{i + 1}</div>
-                                  <div style={{ fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.5, flex: 1, padding: '4px 0' }}>
-                                    {step.content}
-                                  </div>
-                                </div>
-                              ))}
-                            </div>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              )
-            })}
-          </div>
-        )}
-
-        {/* SCRIPTS VIEW */}
-        {activeView === 'scripts' && (
-          <div>
-            {/* Add new script */}
-            <div style={CARD}>
-              <div style={LABEL}>Add Quick-Reply Script</div>
-              <input value={newTitle} onChange={e => setNewTitle(e.target.value)}
-                placeholder="Title (e.g. Warm greeting)"
-                style={{ ...INPUT, marginBottom: 8 }} />
-              <textarea value={newContent} onChange={e => setNewContent(e.target.value)}
-                placeholder="Message content..." rows={3}
-                style={{ ...INPUT, resize: 'none', marginBottom: 8 }} />
-              <div style={{ display: 'flex', gap: 8 }}>
-                <select value={newCategory} onChange={e => setNewCategory(e.target.value)}
-                  style={{ ...INPUT, width: 'auto', padding: '7px 12px' }}>
-                  {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
-                </select>
-                <button type="button" onClick={addScript} style={{
-                  padding: '7px 16px', background: 'rgba(200,200,200,0.1)',
-                  border: '1px solid var(--silver)', borderRadius: 6,
-                  color: 'var(--silver)', fontSize: 13, cursor: 'pointer',
-                }}>Add</button>
-              </div>
-            </div>
-
-            {/* Script list */}
-            {CATEGORIES.map(cat => {
-              const catScripts = scripts.filter(s => s.category === cat)
-              if (catScripts.length === 0) return null
-              return (
-                <div key={cat} style={{ marginBottom: 24 }}>
-                  <div style={LABEL}>{cat}</div>
-                  {catScripts.map(script => (
-                    <div key={script.id} style={{ ...CARD, padding: '12px 16px' }}>
-                      {editingScript?.id === script.id ? (
-                        <div>
-                          <input value={editingScript.title} onChange={e => setEditingScript(prev => prev ? { ...prev, title: e.target.value } : null)}
-                            style={{ ...INPUT, marginBottom: 8 }} />
-                          <textarea value={editingScript.content} onChange={e => setEditingScript(prev => prev ? { ...prev, content: e.target.value } : null)}
-                            rows={3} style={{ ...INPUT, resize: 'none', marginBottom: 8 }} />
-                          <div style={{ display: 'flex', gap: 6 }}>
-                            <button type="button" onClick={saveEditScript} style={{
-                              padding: '5px 12px', background: 'rgba(200,200,200,0.1)', border: '1px solid var(--silver)',
-                              borderRadius: 6, color: 'var(--silver)', fontSize: 12, cursor: 'pointer',
-                            }}>Save</button>
-                            <button type="button" onClick={() => setEditingScript(null)} style={{
-                              padding: '5px 12px', background: 'transparent', border: '1px solid var(--border)',
-                              borderRadius: 6, color: 'var(--text-muted)', fontSize: 12, cursor: 'pointer',
-                            }}>Cancel</button>
-                          </div>
-                        </div>
-                      ) : (
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
-                          <div>
-                            <div style={{ fontWeight: 500, fontSize: 13, marginBottom: 4 }}>{script.title}</div>
-                            <div style={{ fontSize: 12, color: 'var(--text-muted)', lineHeight: 1.4 }}>{script.content}</div>
-                          </div>
-                          <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
-                            <button type="button" onClick={() => setEditingScript(script)}
-                              style={{ background: 'none', border: '1px solid var(--border)', borderRadius: 6, color: 'var(--text-muted)', cursor: 'pointer', fontSize: 11, padding: '3px 8px' }}>
-                              Edit
-                            </button>
-                            <button type="button" onClick={() => deleteScript(script.id)}
-                              style={{ background: 'none', border: 'none', color: 'var(--text-faint)', cursor: 'pointer', fontSize: 16 }}>×</button>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              )
-            })}
-          </div>
-        )}
-
+    <div style={{ padding: 32, maxWidth: 900, margin: '0 auto' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+        <div style={{ fontSize: 22, fontWeight: 700 }}>Sets</div>
+        <select value={creatorId ?? ''} onChange={e => setCreatorId(e.target.value)}
+          style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border)', color: 'var(--text-primary)', borderRadius: 6, padding: '6px 10px', fontSize: 13 }}>
+          {creators.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+        </select>
       </div>
+      <div style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 20 }}>
+        Curate consistent photo sets the AI can send. Only <b>approved</b> sets are sellable in auto-mode.
+      </div>
+
+      <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 20 }}>
+        <button onClick={generate} disabled={generating || !creatorId}
+          style={{ padding: '8px 14px', borderRadius: 8, border: '1px solid var(--silver)', background: 'rgba(200,200,200,0.1)', color: 'var(--silver)', fontSize: 13, cursor: 'pointer' }}>
+          {generating ? 'Generating…' : '✦ Generate sets from vault'}
+        </button>
+        <div style={{ flex: 1 }} />
+        {(['all', 'draft', 'approved'] as const).map(f => (
+          <button key={f} onClick={() => setFilter(f)} style={{
+            padding: '6px 12px', borderRadius: 999, fontSize: 12, cursor: 'pointer',
+            border: filter === f ? '1px solid var(--silver)' : '1px solid var(--border)',
+            background: filter === f ? 'rgba(200,200,200,0.1)' : 'transparent',
+            color: filter === f ? 'var(--silver)' : 'var(--text-muted)',
+          }}>{f[0].toUpperCase() + f.slice(1)} ({counts[f]})</button>
+        ))}
+      </div>
+
+      {loading ? <div style={{ color: 'var(--text-muted)' }}>Loading…</div>
+        : shown.length === 0 ? <div style={{ color: 'var(--text-muted)', fontSize: 13 }}>No sets yet — hit “Generate sets from vault.”</div>
+        : shown.map(s => (
+          <div key={s.id} style={{ border: '1px solid var(--border)', borderRadius: 10, padding: 14, marginBottom: 14, background: 'var(--bg-elevated)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
+              <input value={s.title}
+                onChange={e => setSets(prev => prev.map(x => x.id === s.id ? { ...x, title: e.target.value } : x))}
+                onBlur={e => patchSet(s.id, { title: e.target.value })}
+                style={{ flex: 1, background: 'transparent', border: 'none', color: 'var(--text-primary)', fontSize: 15, fontWeight: 600 }} />
+              <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 999,
+                background: s.status === 'approved' ? 'rgba(76,175,130,0.15)' : 'rgba(200,200,200,0.1)',
+                color: s.status === 'approved' ? 'var(--green)' : 'var(--text-muted)' }}>
+                {s.status}{s.source === 'manual' ? ' · manual' : ''}
+              </span>
+            </div>
+            <div style={{ display: 'flex', gap: 16, alignItems: 'center', marginBottom: 10, fontSize: 12, color: 'var(--text-muted)' }}>
+              <span>{s.media_ids.length} pcs</span>
+              <span>explicit {s.explicit_min}–{s.explicit_max}</span>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                $<input type="number" defaultValue={s.suggested_price ?? 0}
+                  onBlur={e => patchSet(s.id, { suggested_price: Number(e.target.value) })}
+                  style={{ width: 64, background: 'var(--bg-base)', border: '1px solid var(--border)', color: 'var(--text-primary)', borderRadius: 6, padding: '4px 6px', fontSize: 12 }} />
+              </label>
+            </div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 12 }}>
+              {s.media_ids.map(mid => {
+                const t = thumbs[mid]; const src = t?.thumbnail_url ?? t?.url ?? null
+                const isPreview = s.preview_media_id === mid
+                return (
+                  <div key={mid} style={{ position: 'relative', width: 78, height: 100, borderRadius: 6, overflow: 'hidden',
+                    border: isPreview ? '2px solid var(--silver)' : '1px solid var(--border)', background: 'var(--bg-base)' }}>
+                    {src ? <img src={src} alt="" onClick={() => openFull(mid)}
+                        style={{ width: '100%', height: '100%', objectFit: 'cover', cursor: 'pointer', display: 'block' }}
+                        onError={e => { (e.target as HTMLImageElement).style.display = 'none' }} />
+                      : <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-faint)' }}>🎬</div>}
+                    <button title="Preview image" onClick={() => patchSet(s.id, { preview_media_id: mid })}
+                      style={{ position: 'absolute', left: 2, top: 2, border: 'none', borderRadius: 4, cursor: 'pointer',
+                        background: isPreview ? 'var(--silver)' : 'rgba(0,0,0,0.5)', color: isPreview ? '#000' : '#fff', fontSize: 10, padding: '1px 4px' }}>★</button>
+                    <button title="Remove" onClick={() => removeMedia(s, mid)}
+                      style={{ position: 'absolute', right: 2, top: 2, border: 'none', borderRadius: 4, cursor: 'pointer',
+                        background: 'rgba(0,0,0,0.6)', color: '#fff', fontSize: 11, lineHeight: 1, padding: '2px 5px' }}>×</button>
+                  </div>
+                )
+              })}
+            </div>
+            <div style={{ display: 'flex', gap: 8 }}>
+              {s.status === 'approved'
+                ? <button onClick={() => patchSet(s.id, { status: 'draft' })} style={{ padding: '6px 12px', borderRadius: 6, border: '1px solid var(--border)', background: 'transparent', color: 'var(--text-muted)', fontSize: 12, cursor: 'pointer' }}>Unapprove</button>
+                : <button onClick={() => patchSet(s.id, { status: 'approved' })} disabled={s.media_ids.length < 2} style={{ padding: '6px 12px', borderRadius: 6, border: '1px solid var(--green)', background: 'rgba(76,175,130,0.15)', color: 'var(--green)', fontSize: 12, cursor: 'pointer', opacity: s.media_ids.length < 2 ? 0.5 : 1 }}>Approve</button>}
+              <div style={{ flex: 1 }} />
+              <button onClick={() => del(s.id)} style={{ padding: '6px 12px', borderRadius: 6, border: 'none', background: 'transparent', color: 'var(--text-faint)', fontSize: 12, cursor: 'pointer' }}>Delete</button>
+            </div>
+          </div>
+        ))}
+
+      {preview && (
+        <div onClick={() => setPreview(null)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.85)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, cursor: 'zoom-out' }}>
+          {preview.isVideo ? <video src={preview.url} controls autoPlay style={{ maxWidth: '90vw', maxHeight: '90vh' }} />
+            : <img src={preview.url} alt="" style={{ maxWidth: '90vw', maxHeight: '90vh', objectFit: 'contain' }} />}
+        </div>
+      )}
     </div>
   )
 }
