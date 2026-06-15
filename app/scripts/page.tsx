@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useMemo, useState } from 'react'
 import { supabase } from '../../lib/supabase'
 
 const API = process.env.NEXT_PUBLIC_API_URL
@@ -14,6 +14,7 @@ type VaultSet = {
   status: 'draft' | 'approved' | 'archived'; source: 'ai' | 'manual'
 }
 type Thumb = { thumbnail_url: string | null; url: string | null; mimetype: string | null }
+type VaultMedia = { fansly_media_id: string; thumbnail_url: string | null; url: string | null; mimetype: string | null; explicitness_level: number | null; album_title: string | null }
 
 export default function SetsPage() {
   const [creators, setCreators] = useState<{ id: string; name: string }[]>([])
@@ -24,12 +25,28 @@ export default function SetsPage() {
   const [filter, setFilter] = useState<'all' | 'draft' | 'approved'>('all')
   const [thumbs, setThumbs] = useState<Record<string, Thumb>>({})
   const [preview, setPreview] = useState<{ url: string; isVideo: boolean } | null>(null)
+  // manual picker
+  const [vault, setVault] = useState<VaultMedia[]>([])
+  const [vaultLoading, setVaultLoading] = useState(false)
+  const [picker, setPicker] = useState<{ setId: string } | null>(null)
+  const [selected, setSelected] = useState<Set<string>>(new Set())
+  const [albumFilter, setAlbumFilter] = useState<string>('all')
 
+  // creators — matches app/page.tsx (chatter_creators scoped to the user)
   useEffect(() => {
-    supabase.from('creators').select('id, name').then(({ data }) => {
-      const list = (data ?? []).map((c: any) => ({ id: c.id, name: c.name }))
-      setCreators(list); setCreatorId(prev => prev ?? list[0]?.id ?? null)
-    })
+    (async () => {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) return
+      const { data } = await supabase
+        .from('chatter_creators')
+        .select('creator_id, creators(id, platform_username)')
+        .eq('chatter_id', user.id)
+      const list = (data ?? []).map((r: any) => ({
+        id: r.creator_id, name: r.creators?.platform_username ?? r.creator_id,
+      }))
+      setCreators(list)
+      setCreatorId(prev => prev ?? list[0]?.id ?? null)
+    })()
   }, [])
 
   async function loadSets(cid: string) {
@@ -75,15 +92,56 @@ export default function SetsPage() {
     if (r?.url) setPreview({ url: r.url, isVideo: !!r.mimetype?.startsWith('video') })
   }
 
+  // manual create
+  async function newSet() {
+    if (!creatorId) return
+    const { data } = await supabase.from('vault_sets').insert({
+      creator_id: creatorId, title: 'New set', media_ids: [], status: 'draft',
+      source: 'manual', suggested_price: 30,
+    }).select().single()
+    if (data) { setSets(prev => [data as VaultSet, ...prev]); openPicker((data as VaultSet).id) }
+  }
+
+  async function loadVault(cid: string) {
+    if (vault.length) return
+    setVaultLoading(true)
+    const all: VaultMedia[] = []; let from = 0
+    while (true) {
+      const { data } = await supabase.from('creator_vault_media')
+        .select('fansly_media_id, thumbnail_url, url, mimetype, explicitness_level, album_title')
+        .eq('creator_id', cid).order('album_title').range(from, from + 999)
+      if (data) all.push(...(data as VaultMedia[]))
+      if (!data || data.length < 1000) break
+      from += 1000
+    }
+    setVault(all); setVaultLoading(false)
+  }
+  function openPicker(setId: string) { setSelected(new Set()); setAlbumFilter('all'); setPicker({ setId }); if (creatorId) loadVault(creatorId) }
+
+  const vaultMap = useMemo(() => Object.fromEntries(vault.map(v => [v.fansly_media_id, v])), [vault])
+  const albums = useMemo(() => ['all', ...Array.from(new Set(vault.map(v => v.album_title || 'Uncategorized')))], [vault])
+
+  async function addSelected() {
+    if (!picker) return
+    const s = sets.find(x => x.id === picker.setId); if (!s) return
+    const merged = [...new Set([...s.media_ids, ...Array.from(selected)])]
+    const levels = merged.map(id => vaultMap[id]?.explicitness_level).filter((x): x is number => typeof x === 'number')
+    const patch: Partial<VaultSet> = { media_ids: merged, preview_media_id: s.preview_media_id ?? merged[0] ?? null }
+    if (levels.length) { patch.explicit_min = Math.min(...levels); patch.explicit_max = Math.max(...levels) }
+    await patchSet(s.id, patch); setPicker(null); setSelected(new Set())
+  }
+
   const shown = sets.filter(s => (filter === 'all' ? true : s.status === filter))
   const counts = { all: sets.length, draft: sets.filter(s => s.status === 'draft').length, approved: sets.filter(s => s.status === 'approved').length }
+  const pickerVault = vault.filter(v => albumFilter === 'all' || (v.album_title || 'Uncategorized') === albumFilter)
 
   return (
     <div style={{ padding: 32, maxWidth: 900, margin: '0 auto' }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
         <div style={{ fontSize: 22, fontWeight: 700 }}>Sets</div>
         <select value={creatorId ?? ''} onChange={e => setCreatorId(e.target.value)}
-          style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border)', color: 'var(--text-primary)', borderRadius: 6, padding: '6px 10px', fontSize: 13 }}>
+          style={{ minWidth: 180, background: 'var(--bg-elevated)', border: '1px solid var(--border)', color: 'var(--text-primary)', borderRadius: 6, padding: '6px 10px', fontSize: 13 }}>
+          {creators.length === 0 && <option value="">No creators</option>}
           {creators.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
         </select>
       </div>
@@ -95,6 +153,10 @@ export default function SetsPage() {
         <button onClick={generate} disabled={generating || !creatorId}
           style={{ padding: '8px 14px', borderRadius: 8, border: '1px solid var(--silver)', background: 'rgba(200,200,200,0.1)', color: 'var(--silver)', fontSize: 13, cursor: 'pointer' }}>
           {generating ? 'Generating…' : '✦ Generate sets from vault'}
+        </button>
+        <button onClick={newSet} disabled={!creatorId}
+          style={{ padding: '8px 14px', borderRadius: 8, border: '1px dashed var(--border)', background: 'transparent', color: 'var(--text-muted)', fontSize: 13, cursor: 'pointer' }}>
+          + New set
         </button>
         <div style={{ flex: 1 }} />
         {(['all', 'draft', 'approved'] as const).map(f => (
@@ -108,7 +170,7 @@ export default function SetsPage() {
       </div>
 
       {loading ? <div style={{ color: 'var(--text-muted)' }}>Loading…</div>
-        : shown.length === 0 ? <div style={{ color: 'var(--text-muted)', fontSize: 13 }}>No sets yet — hit “Generate sets from vault.”</div>
+        : shown.length === 0 ? <div style={{ color: 'var(--text-muted)', fontSize: 13 }}>No sets yet — generate from vault, or “+ New set” to build one by hand.</div>
         : shown.map(s => (
           <div key={s.id} style={{ border: '1px solid var(--border)', borderRadius: 10, padding: 14, marginBottom: 14, background: 'var(--bg-elevated)' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
@@ -124,12 +186,13 @@ export default function SetsPage() {
             </div>
             <div style={{ display: 'flex', gap: 16, alignItems: 'center', marginBottom: 10, fontSize: 12, color: 'var(--text-muted)' }}>
               <span>{s.media_ids.length} pcs</span>
-              <span>explicit {s.explicit_min}–{s.explicit_max}</span>
+              <span>explicit {s.explicit_min ?? '–'}–{s.explicit_max ?? '–'}</span>
               <label style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
                 $<input type="number" defaultValue={s.suggested_price ?? 0}
                   onBlur={e => patchSet(s.id, { suggested_price: Number(e.target.value) })}
                   style={{ width: 64, background: 'var(--bg-base)', border: '1px solid var(--border)', color: 'var(--text-primary)', borderRadius: 6, padding: '4px 6px', fontSize: 12 }} />
               </label>
+              <button onClick={() => openPicker(s.id)} style={{ marginLeft: 'auto', padding: '4px 10px', borderRadius: 6, border: '1px solid var(--border)', background: 'transparent', color: 'var(--text-muted)', fontSize: 12, cursor: 'pointer' }}>+ Add photos</button>
             </div>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 12 }}>
               {s.media_ids.map(mid => {
@@ -166,6 +229,40 @@ export default function SetsPage() {
         <div onClick={() => setPreview(null)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.85)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, cursor: 'zoom-out' }}>
           {preview.isVideo ? <video src={preview.url} controls autoPlay style={{ maxWidth: '90vw', maxHeight: '90vh' }} />
             : <img src={preview.url} alt="" style={{ maxWidth: '90vw', maxHeight: '90vh', objectFit: 'contain' }} />}
+        </div>
+      )}
+
+      {picker && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', zIndex: 1100, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: 12, width: 'min(880px, 92vw)', maxHeight: '86vh', display: 'flex', flexDirection: 'column' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: 16, borderBottom: '1px solid var(--border)' }}>
+              <div style={{ fontWeight: 600 }}>Add to set</div>
+              <select value={albumFilter} onChange={e => setAlbumFilter(e.target.value)}
+                style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border)', color: 'var(--text-primary)', borderRadius: 6, padding: '5px 8px', fontSize: 12 }}>
+                {albums.map(a => <option key={a} value={a}>{a}</option>)}
+              </select>
+              <div style={{ flex: 1 }} />
+              <button onClick={addSelected} disabled={selected.size === 0}
+                style={{ padding: '6px 14px', borderRadius: 6, border: '1px solid var(--green)', background: 'rgba(76,175,130,0.15)', color: 'var(--green)', fontSize: 13, cursor: 'pointer', opacity: selected.size ? 1 : 0.5 }}>Add {selected.size || ''}</button>
+              <button onClick={() => setPicker(null)} style={{ padding: '6px 12px', borderRadius: 6, border: '1px solid var(--border)', background: 'transparent', color: 'var(--text-muted)', fontSize: 13, cursor: 'pointer' }}>Cancel</button>
+            </div>
+            <div style={{ padding: 16, overflow: 'auto', display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(96px, 1fr))', gap: 8 }}>
+              {vaultLoading ? <div style={{ color: 'var(--text-muted)' }}>Loading vault…</div>
+                : pickerVault.map(v => {
+                  const sel = selected.has(v.fansly_media_id)
+                  const isVid = v.mimetype?.startsWith('video')
+                  return (
+                    <div key={v.fansly_media_id} onClick={() => setSelected(prev => { const n = new Set(prev); n.has(v.fansly_media_id) ? n.delete(v.fansly_media_id) : n.add(v.fansly_media_id); return n })}
+                      style={{ position: 'relative', aspectRatio: '3/4', borderRadius: 6, overflow: 'hidden', cursor: 'pointer', border: sel ? '2px solid var(--green)' : '1px solid var(--border)' }}>
+                      {v.thumbnail_url ? <img src={v.thumbnail_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                        : <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--bg-base)', color: 'var(--text-faint)' }}>{isVid ? '🎬' : '?'}</div>}
+                      {isVid && <span style={{ position: 'absolute', left: 4, bottom: 4, fontSize: 12 }}>🎬</span>}
+                      {sel && <span style={{ position: 'absolute', right: 4, top: 4, background: 'var(--green)', color: '#000', borderRadius: 999, fontSize: 11, padding: '0 5px' }}>✓</span>}
+                    </div>
+                  )
+                })}
+            </div>
+          </div>
         </div>
       )}
     </div>
