@@ -61,10 +61,23 @@ export default function SetsPage() {
     if (!creatorId) return
     const ids = [...new Set(sets.flatMap(s => s.media_ids))].filter(id => !(id in thumbs))
     if (!ids.length) return
-    Promise.all(ids.map(mid =>
-      fetch(`${API}/vault-media-url/${creatorId}/${mid}`).then(r => r.json())
-        .then(d => ({ mid, d })).catch(() => ({ mid, d: { thumbnail_url: null, url: null, mimetype: null } }))
-    )).then(res => setThumbs(prev => { const n = { ...prev }; for (const { mid, d } of res) n[mid] = d; return n }))
+    let cancelled = false
+    ;(async () => {
+      const updates: Record<string, Thumb> = {}
+      for (let i = 0; i < ids.length; i += 200) {
+        const chunk = ids.slice(i, i + 200)
+        const { data } = await supabase
+          .from('creator_vault_media')
+          .select('fansly_media_id, thumbnail_url, url, mimetype')
+          .eq('creator_id', creatorId)
+          .in('fansly_media_id', chunk)
+        for (const row of (data ?? []) as any[]) {
+          updates[row.fansly_media_id] = { thumbnail_url: row.thumbnail_url, url: row.url, mimetype: row.mimetype }
+        }
+      }
+      if (!cancelled) setThumbs(prev => ({ ...prev, ...updates }))
+    })()
+    return () => { cancelled = true }
   }, [sets, creatorId])
 
   async function generate() {
@@ -88,8 +101,9 @@ export default function SetsPage() {
   async function openFull(mid: string) {
     const t = thumbs[mid]
     if (t?.url) return setPreview({ url: t.url, isVideo: !!t.mimetype?.startsWith('video') })
-    const r = await fetch(`${API}/vault-media-url/${creatorId}/${mid}`).then(r => r.json())
-    if (r?.url) setPreview({ url: r.url, isVideo: !!r.mimetype?.startsWith('video') })
+    const { data } = await supabase.from('creator_vault_media')
+      .select('url, mimetype').eq('creator_id', creatorId).eq('fansly_media_id', mid).single()
+    if (data?.url) setPreview({ url: data.url, isVideo: !!data.mimetype?.startsWith('video') })
   }
 
   // manual create
