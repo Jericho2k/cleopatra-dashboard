@@ -280,14 +280,14 @@ export default function SetsPage() {
                 style={{ padding: '6px 14px', borderRadius: 6, border: '1px solid var(--green)', background: 'rgba(76,175,130,0.15)', color: 'var(--green)', fontSize: 13, cursor: 'pointer', opacity: selected.size ? 1 : 0.5 }}>Add {selected.size || ''}</button>
               <button onClick={() => setPicker(null)} style={{ padding: '6px 12px', borderRadius: 6, border: '1px solid var(--border)', background: 'transparent', color: 'var(--text-muted)', fontSize: 13, cursor: 'pointer' }}>Cancel</button>
             </div>
-            <div style={{ padding: 16, overflow: 'auto', display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(96px, 1fr))', gap: 8 }}>
+            <div style={{ flex: 1, minHeight: 0, padding: 16, overflowY: 'auto', display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(96px, 1fr))', gridAutoRows: 'min-content', alignContent: 'start', gap: 8 }}>
               {vaultLoading ? <div style={{ color: 'var(--text-muted)' }}>Loading vault…</div>
                 : pickerVault.map(v => {
                   const sel = selected.has(v.fansly_media_id)
                   const isVid = v.mimetype?.startsWith('video')
                   return (
                     <div key={v.fansly_media_id} onClick={() => setSelected(prev => { const n = new Set(prev); n.has(v.fansly_media_id) ? n.delete(v.fansly_media_id) : n.add(v.fansly_media_id); return n })}
-                      style={{ position: 'relative', aspectRatio: '3/4', borderRadius: 6, overflow: 'hidden', cursor: 'pointer', border: sel ? '2px solid var(--green)' : '1px solid var(--border)' }}>
+                      style={{ position: 'relative', height: 128, borderRadius: 6, overflow: 'hidden', cursor: 'pointer', border: sel ? '2px solid var(--green)' : '1px solid var(--border)' }}>
                       {v.thumbnail_url ? <img src={v.thumbnail_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                         : <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--bg-base)', color: 'var(--text-faint)' }}>{isVid ? '🎬' : '?'}</div>}
                       {isVid && <span style={{ position: 'absolute', left: 4, bottom: 4, fontSize: 12 }}>🎬</span>}

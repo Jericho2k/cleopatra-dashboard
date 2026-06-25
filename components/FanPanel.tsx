@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from 'react'
 import type { Fan } from '../types'
 import { supabase } from '../lib/supabase'
-import { User, FileText, Lock } from 'lucide-react'
+import { User } from 'lucide-react'
 
 export interface FanPanelProps {
   fan: Fan | null
@@ -13,35 +13,9 @@ export interface FanPanelProps {
   showToast?: (message: string) => void
 }
 
-type Tab = 'profile' | 'scripts' | 'ppv' | 'sales'
+type Tab = 'profile' | 'sales'
 
-interface StorylineStep {
-  id: string
-  step_number: number
-  content: string
-}
-
-interface Storyline {
-  id: string
-  name: string
-  category: string
-  steps: StorylineStep[]
-  currentStep: number
-  completed: boolean
-  progressId: string | null
-}
-
-interface PPVOffer {
-  id: string
-  title: string
-  description: string
-  price: number
-  sent: boolean
-  purchased: boolean
-  sendId: string | null
-}
-
-export default function FanPanel({ fan, creatorId, onInsertMessage, onHistoryLoaded, showToast }: FanPanelProps) {
+export default function FanPanel({ fan, creatorId, onHistoryLoaded, showToast }: FanPanelProps) {
   const [activeTab, setActiveTab] = useState<Tab>('profile')
   const [showMemberNote, setShowMemberNote] = useState(true)
   const [showModelNote, setShowModelNote] = useState(false)
@@ -51,12 +25,9 @@ export default function FanPanel({ fan, creatorId, onInsertMessage, onHistoryLoa
   const [newNotSold, setNewNotSold] = useState({ item: '', amount: '', reason: '', chatter: '' })
   const [salesLoading, setSalesLoading] = useState(false)
   const [loadingHistory, setLoadingHistory] = useState(false)
-  const [storylines, setStorylines] = useState<Storyline[]>([])
-  const [ppvOffers, setPPVOffers] = useState<PPVOffer[]>([])
   const [details, setDetails] = useState({
     age: '', payday: '', hobbies: '', relationship_status: '',
   })
-  const [expandedStoryline, setExpandedStoryline] = useState<string | null>(null)
   const [aiSummary, setAiSummary] = useState<any>(null)
   const [showAiProfile, setShowAiProfile] = useState(false)
   const [mediaPreview, setMediaPreview] = useState<{ url: string; isVideo: boolean } | null>(null)
@@ -125,122 +96,7 @@ export default function FanPanel({ fan, creatorId, onInsertMessage, onHistoryLoa
     return () => { supabase.removeChannel(channel) }
   }, [fan?.id])
 
-  useEffect(() => {
-    if (!fan || !creatorId) return
-    loadScripts()
-    loadPPV()
-  }, [fan?.id, creatorId])
 
-  async function loadScripts() {
-    if (!fan) return
-    const { data: slData } = await supabase
-      .from('storylines')
-      .select('id, name, category, storyline_steps(id, step_number, content)')
-      .eq('creator_id', creatorId)
-      .order('created_at')
-
-    const { data: progressData } = await supabase
-      .from('fan_storyline_progress')
-      .select('*')
-      .eq('fan_id', fan.id)
-
-    const progressMap: Record<string, any> = {}
-    ;(progressData ?? []).forEach(p => { progressMap[p.storyline_id] = p })
-
-    const result: Storyline[] = (slData ?? []).map((sl: any) => {
-      const progress = progressMap[sl.id]
-      const steps = [...(sl.storyline_steps ?? [])].sort((a: any, b: any) => a.step_number - b.step_number)
-      return {
-        id: sl.id,
-        name: sl.name,
-        category: sl.category,
-        steps,
-        currentStep: progress?.current_step ?? 0,
-        completed: progress?.completed ?? false,
-        progressId: progress?.id ?? null,
-      }
-    })
-    setStorylines(result)
-  }
-
-  async function loadPPV() {
-    if (!fan) return
-    const { data: offers } = await supabase
-      .from('ppv_offers')
-      .select('*')
-      .eq('creator_id', creatorId)
-      .order('created_at')
-
-    const { data: sends } = await supabase
-      .from('fan_ppv_sends')
-      .select('*')
-      .eq('fan_id', fan.id)
-
-    const sendMap: Record<string, any> = {}
-    ;(sends ?? []).forEach(s => { sendMap[s.ppv_offer_id] = s })
-
-    const result: PPVOffer[] = (offers ?? []).map((o: any) => {
-      const send = sendMap[o.id]
-      return {
-        id: o.id,
-        title: o.title,
-        description: o.description,
-        price: o.price,
-        sent: !!send,
-        purchased: send?.purchased ?? false,
-        sendId: send?.id ?? null,
-      }
-    })
-    setPPVOffers(result)
-  }
-
-  async function markStepSent(storyline: Storyline) {
-    if (!fan) return
-    const nextStep = storyline.currentStep + 1
-    const completed = nextStep >= storyline.steps.length
-
-    if (storyline.progressId) {
-      await supabase
-        .from('fan_storyline_progress')
-        .update({ current_step: nextStep, completed, updated_at: new Date().toISOString() })
-        .eq('id', storyline.progressId)
-    } else {
-      await supabase
-        .from('fan_storyline_progress')
-        .insert({
-          fan_id: fan.id,
-          creator_id: creatorId,
-          storyline_id: storyline.id,
-          current_step: nextStep,
-          completed,
-        })
-    }
-    loadScripts()
-  }
-
-  async function resetStoryline(storyline: Storyline) {
-    if (!fan || !storyline.progressId) return
-    await supabase
-      .from('fan_storyline_progress')
-      .update({ current_step: 0, completed: false, updated_at: new Date().toISOString() })
-      .eq('id', storyline.progressId)
-    loadScripts()
-  }
-
-  async function markPPVSent(offer: PPVOffer) {
-    if (!fan) return
-    if (offer.sendId) {
-      await supabase.from('fan_ppv_sends').update({ purchased: !offer.purchased }).eq('id', offer.sendId)
-    } else {
-      await supabase.from('fan_ppv_sends').insert({
-        fan_id: fan.id,
-        creator_id: creatorId,
-        ppv_offer_id: offer.id,
-        purchased: false,
-      })
-    }
-    loadPPV()
-  }
 
   async function handleDetailBlur(field: string, value: string) {
     if (!fan) return
@@ -299,8 +155,6 @@ export default function FanPanel({ fan, creatorId, onInsertMessage, onHistoryLoa
 
   const tabs: { id: Tab; label: string; icon: React.ReactNode }[] = [
     { id: 'profile', label: 'Profile', icon: <User size={14} /> },
-    { id: 'scripts', label: 'Scripts', icon: <FileText size={14} /> },
-    { id: 'ppv', label: 'PPV', icon: <Lock size={14} /> },
     { id: 'sales', label: 'Sales', icon: <span style={{ fontSize: 12 }}>$</span> },
   ]
 
@@ -376,7 +230,7 @@ export default function FanPanel({ fan, creatorId, onInsertMessage, onHistoryLoa
       </div>
 
       {/* Tab content */}
-      <div style={{ flex: 1, overflow: 'auto', padding: 16, paddingBottom: 20 }}>
+      <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: 16, paddingBottom: 48 }}>
 
         {/* PROFILE TAB */}
         {activeTab === 'profile' && (
@@ -562,189 +416,6 @@ export default function FanPanel({ fan, creatorId, onInsertMessage, onHistoryLoa
                 </span>
               )) : <span style={{ color: 'var(--text-muted)', fontSize: 13 }}>None yet.</span>}
             </div>
-          </div>
-        )}
-
-        {/* SCRIPTS TAB */}
-        {activeTab === 'scripts' && (
-          <div>
-            {storylines.length === 0 ? (
-              <div style={{ color: 'var(--text-muted)', fontSize: 13 }}>No storylines yet.</div>
-            ) : storylines.map(sl => {
-              const currentStepData = sl.steps[sl.currentStep]
-              const progress = sl.completed ? 100 : Math.round((sl.currentStep / sl.steps.length) * 100)
-              return (
-                <div key={sl.id} style={{ ...CARD_STYLE, marginBottom: 12 }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                    <div>
-                      <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-primary)' }}>{sl.name}</div>
-                      <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 2, textTransform: 'uppercase' }}>{sl.category}</div>
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          setExpandedStoryline(expandedStoryline === sl.id ? null : sl.id)
-                        }}
-                        style={{
-                          background: 'none', border: 'none', color: 'var(--text-muted)',
-                          cursor: 'pointer', fontSize: 11, padding: '2px 6px',
-                        }}
-                      >
-                        {expandedStoryline === sl.id ? '▲ hide' : '▼ all steps'}
-                      </button>
-                    </div>
-                    <span style={{
-                      fontSize: 10, padding: '2px 8px', borderRadius: 999,
-                      background: sl.completed ? 'rgba(76, 175, 130, 0.15)' : 'rgba(200,200,200,0.1)',
-                      color: sl.completed ? 'var(--green)' : 'var(--text-muted)',
-                      border: `1px solid ${sl.completed ? 'rgba(76,175,130,0.3)' : 'var(--border)'}`,
-                    }}>
-                      {sl.completed ? '✓ Done' : `${sl.currentStep}/${sl.steps.length}`}
-                    </span>
-                  </div>
-
-                  {/* Progress bar */}
-                  <div style={{ height: 3, background: 'var(--bg-hover)', borderRadius: 2, marginBottom: 10, overflow: 'hidden' }}>
-                    <div style={{ width: `${progress}%`, height: '100%', background: sl.completed ? 'var(--green)' : 'var(--silver)', borderRadius: 2, transition: 'width 0.3s ease' }} />
-                  </div>
-
-                  {/* All steps expanded */}
-                  {expandedStoryline === sl.id && (
-                    <div style={{ marginBottom: 10 }}>
-                      {sl.steps.map((step, i) => (
-                        <div key={step.id} style={{
-                          display: 'flex', gap: 8, marginBottom: 6, alignItems: 'flex-start',
-                          opacity: i < sl.currentStep ? 0.4 : 1,
-                        }}>
-                          <div style={{
-                            width: 20, height: 20, borderRadius: '50%', flexShrink: 0,
-                            display: 'flex', alignItems: 'center', justifyContent: 'center',
-                            fontSize: 9, fontWeight: 700,
-                            background: i < sl.currentStep ? 'var(--green)'
-                              : i === sl.currentStep ? 'var(--silver)'
-                              : 'var(--bg-hover)',
-                            color: i <= sl.currentStep ? '#000' : 'var(--text-muted)',
-                          }}>
-                            {i < sl.currentStep ? '✓' : i + 1}
-                          </div>
-                          <div style={{
-                            fontSize: 11, color: i === sl.currentStep ? 'var(--text-primary)' : 'var(--text-secondary)',
-                            lineHeight: 1.4, flex: 1,
-                            fontWeight: i === sl.currentStep ? 600 : 400,
-                          }}>
-                            {step.content}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-
-                  {/* Current step */}
-                  {!sl.completed && currentStepData && (
-                    <div style={{ marginBottom: 10 }}>
-                      <div style={{ fontSize: 10, color: 'var(--text-muted)', marginBottom: 4 }}>NEXT MESSAGE</div>
-                      <div style={{ fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.5, padding: '8px 10px', background: 'var(--bg-hover)', borderRadius: 6 }}>
-                        {currentStepData.content}
-                      </div>
-                    </div>
-                  )}
-
-                  <div style={{ display: 'flex', gap: 6 }}>
-                    {!sl.completed && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          if (currentStepData) onInsertMessage?.(currentStepData.content)
-                          markStepSent(sl)
-                        }}
-                        style={{
-                          flex: 1, padding: '6px 10px', borderRadius: 6,
-                          background: 'rgba(200,200,200,0.1)', border: '1px solid var(--silver)',
-                          color: 'var(--silver)', fontSize: 11, cursor: 'pointer',
-                        }}
-                      >
-                        Send →
-                      </button>
-                    )}
-                    {sl.currentStep > 0 && (
-                      <button
-                        type="button"
-                        onClick={() => resetStoryline(sl)}
-                        style={{
-                          padding: '6px 10px', borderRadius: 6,
-                          background: 'transparent', border: '1px solid var(--border)',
-                          color: 'var(--text-muted)', fontSize: 11, cursor: 'pointer',
-                        }}
-                      >
-                        Reset
-                      </button>
-                    )}
-                  </div>
-                </div>
-              )
-            })}
-          </div>
-        )}
-
-        {/* PPV TAB */}
-        {activeTab === 'ppv' && (
-          <div>
-            {ppvOffers.length === 0 ? (
-              <div style={{ color: 'var(--text-muted)', fontSize: 13 }}>No PPV offers yet.</div>
-            ) : ppvOffers.map(offer => (
-              <div key={offer.id} style={{ ...CARD_STYLE, marginBottom: 10, opacity: offer.purchased ? 0.6 : 1 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 6 }}>
-                  <div>
-                    <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-primary)' }}>{offer.title}</div>
-                    <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>{offer.description}</div>
-                  </div>
-                  <span style={{ fontFamily: 'var(--font-display)', fontSize: 16, fontWeight: 700, color: 'var(--green)', flexShrink: 0, marginLeft: 8 }}>
-                    ${offer.price}
-                  </span>
-                </div>
-                <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
-                  {!offer.sent ? (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        onInsertMessage?.(`${offer.title} — $${offer.price}\n${offer.description}`)
-                        markPPVSent(offer)
-                      }}
-                      style={{
-                        flex: 1, padding: '5px 10px', borderRadius: 6,
-                        background: 'rgba(200,200,200,0.1)', border: '1px solid var(--silver)',
-                        color: 'var(--silver)', fontSize: 11, cursor: 'pointer',
-                      }}
-                    >
-                      Send →
-                    </button>
-                  ) : (
-                    <>
-                      <span style={{
-                        flex: 1, padding: '5px 10px', borderRadius: 6, textAlign: 'center',
-                        background: 'rgba(76,175,130,0.1)', border: '1px solid rgba(76,175,130,0.3)',
-                        color: 'var(--green)', fontSize: 11,
-                      }}>
-                        {offer.purchased ? '✓ Purchased' : '✓ Sent'}
-                      </span>
-                      {!offer.purchased && (
-                        <button
-                          type="button"
-                          onClick={() => markPPVSent(offer)}
-                          style={{
-                            padding: '5px 10px', borderRadius: 6,
-                            background: 'rgba(76,175,130,0.1)', border: '1px solid rgba(76,175,130,0.3)',
-                            color: 'var(--green)', fontSize: 11, cursor: 'pointer',
-                          }}
-                        >
-                          Purchased ✓
-                        </button>
-                      )}
-                    </>
-                  )}
-                </div>
-              </div>
-            ))}
           </div>
         )}
 
