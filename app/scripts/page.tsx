@@ -31,6 +31,7 @@ export default function SetsPage() {
   const [picker, setPicker] = useState<{ setId: string } | null>(null)
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [albumFilter, setAlbumFilter] = useState<string>('all')
+  const [pickerLimit, setPickerLimit] = useState<number>(60)
 
   // creators — matches app/page.tsx (chatter_creators scoped to the user)
   useEffect(() => {
@@ -130,7 +131,7 @@ export default function SetsPage() {
     }
     setVault(all); setVaultLoading(false)
   }
-  function openPicker(setId: string) { setSelected(new Set()); setAlbumFilter('all'); setPicker({ setId }); if (creatorId) loadVault(creatorId) }
+  function openPicker(setId: string) { setSelected(new Set()); setAlbumFilter('all'); setPickerLimit(60); setPicker({ setId }); if (creatorId) loadVault(creatorId) }
 
   const vaultMap = useMemo(() => Object.fromEntries(vault.map(v => [v.fansly_media_id, v])), [vault])
   const albums = useMemo(() => ['all', ...Array.from(new Set(vault.map(v => v.album_title || 'Uncategorized')))], [vault])
@@ -147,7 +148,8 @@ export default function SetsPage() {
 
   const shown = sets.filter(s => (filter === 'all' ? true : s.status === filter))
   const counts = { all: sets.length, draft: sets.filter(s => s.status === 'draft').length, approved: sets.filter(s => s.status === 'approved').length }
-  const pickerVault = vault.filter(v => albumFilter === 'all' || (v.album_title || 'Uncategorized') === albumFilter)
+  const pickerVaultAll = vault.filter(v => albumFilter === 'all' || (v.album_title || 'Uncategorized') === albumFilter)
+  const pickerVault = pickerVaultAll.slice(0, pickerLimit)
 
   return (
     <div style={{ height: '100vh', overflowY: 'auto', boxSizing: 'border-box', padding: 32, maxWidth: 900, margin: '0 auto' }}>
@@ -200,7 +202,15 @@ export default function SetsPage() {
             </div>
             <div style={{ display: 'flex', gap: 16, alignItems: 'center', marginBottom: 10, fontSize: 12, color: 'var(--text-muted)' }}>
               <span>{s.media_ids.length} pcs</span>
-              <span>explicit {s.explicit_min ?? '–'}–{s.explicit_max ?? '–'}</span>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                explicit
+                <select value={s.explicit_max ?? ''}
+                  onChange={e => { const v = e.target.value === '' ? null : Number(e.target.value); patchSet(s.id, { explicit_min: v, explicit_max: v }) }}
+                  style={{ background: 'var(--bg-base)', border: '1px solid var(--border)', color: 'var(--text-primary)', borderRadius: 6, padding: '3px 6px', fontSize: 12 }}>
+                  <option value="">–</option>
+                  {[0, 1, 2, 3, 4, 5].map(n => <option key={n} value={n}>{n}</option>)}
+                </select>
+              </label>
               <label style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
                 $<input type="number" defaultValue={s.suggested_price ?? 0}
                   onBlur={e => patchSet(s.id, { suggested_price: Number(e.target.value) })}
@@ -258,10 +268,13 @@ export default function SetsPage() {
           <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: 12, width: 'min(880px, 92vw)', maxHeight: '86vh', display: 'flex', flexDirection: 'column' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: 16, borderBottom: '1px solid var(--border)' }}>
               <div style={{ fontWeight: 600 }}>Add to set</div>
-              <select value={albumFilter} onChange={e => setAlbumFilter(e.target.value)}
+              <select value={albumFilter} onChange={e => { setAlbumFilter(e.target.value); setPickerLimit(60) }}
                 style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border)', color: 'var(--text-primary)', borderRadius: 6, padding: '5px 8px', fontSize: 12 }}>
                 {albums.map(a => <option key={a} value={a}>{a}</option>)}
               </select>
+              <span style={{ fontSize: 11, color: 'var(--text-faint)' }}>
+                {pickerVaultAll.length} items{pickerVaultAll.length > pickerVault.length ? ` · showing ${pickerVault.length}` : ''}
+              </span>
               <div style={{ flex: 1 }} />
               <button onClick={addSelected} disabled={selected.size === 0}
                 style={{ padding: '6px 14px', borderRadius: 6, border: '1px solid var(--green)', background: 'rgba(76,175,130,0.15)', color: 'var(--green)', fontSize: 13, cursor: 'pointer', opacity: selected.size ? 1 : 0.5 }}>Add {selected.size || ''}</button>
@@ -283,6 +296,14 @@ export default function SetsPage() {
                   )
                 })}
             </div>
+            {pickerVaultAll.length > pickerVault.length && (
+              <div style={{ padding: '0 16px 16px', textAlign: 'center' }}>
+                <button onClick={() => setPickerLimit(l => l + 120)}
+                  style={{ padding: '8px 16px', borderRadius: 6, border: '1px solid var(--border)', background: 'transparent', color: 'var(--text-muted)', fontSize: 12, cursor: 'pointer' }}>
+                  Load more ({pickerVaultAll.length - pickerVault.length} left)
+                </button>
+              </div>
+            )}
           </div>
         </div>
       )}

@@ -316,7 +316,13 @@ export default function Sidebar({
         >
           <div style={{ padding: '8px 16px 4px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%' }}>
-              <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>
+              <span style={{
+                fontFamily: 'var(--font-display)',
+                fontSize: 20,
+                fontWeight: 700,
+                letterSpacing: '0.02em',
+                color: 'var(--silver)',
+              }}>
                 Inbox
               </span>
               <div style={{ flex: 1, minWidth: 0, display: 'flex', justifyContent: 'flex-end' }}>

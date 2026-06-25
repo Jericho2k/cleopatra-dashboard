@@ -4,9 +4,9 @@ import React, { useState, useEffect } from 'react'
 import { Eye, EyeOff } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 
-type Section = 'Creator Persona' | 'Blocked Words' | 'PPV Offers' | 'Storylines' | 'Re-engagement' | 'Vault' | 'Sleep Hours'
+type Section = 'Creator Persona' | 'Blocked Words' | 'Re-engagement' | 'Vault' | 'Sleep Hours'
 
-const SECTIONS: Section[] = ['Creator Persona', 'Blocked Words', 'PPV Offers', 'Storylines', 'Re-engagement', 'Vault', 'Sleep Hours']
+const SECTIONS: Section[] = ['Creator Persona', 'Blocked Words', 'Re-engagement', 'Vault', 'Sleep Hours']
 const PROXY_COUNTRIES = [
   { code: 'US', label: '🇺🇸 United States' },
   { code: 'CA', label: '🇨🇦 Canada' },
@@ -70,8 +70,9 @@ export default function SettingsPage() {
   const [uploadNotesMode, setUploadNotesMode] = useState<'manual' | 'ai'>('ai')
   const [uploadDragOver, setUploadDragOver] = useState(false)
   const [syncing, setSyncing] = useState(false)
-  const [syncingChats, setSyncingChats] = useState(false)
   const [autoModeNewFans, setAutoModeNewFans] = useState(false)
+  const [autoAvailable, setAutoAvailable] = useState<boolean | null>(null)
+  const [approvedSetsCount, setApprovedSetsCount] = useState<number>(0)
   const [showAddCreator, setShowAddCreator] = useState(false)
   const [connectStep, setConnectStep] = useState<'credentials' | '2fa' | 'done'>('credentials')
   const [twofaToken, setTwofaToken] = useState('')
@@ -134,20 +135,7 @@ export default function SettingsPage() {
     }
   }
 
-  async function syncChats() {
-    if (!selectedCreatorId) return
-    setSyncingChats(true)
-    try {
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/sync-chats/${selectedCreatorId}`, { method: 'POST' })
-      const data = await res.json()
-      showToast(`Synced ${data.synced ?? 0} chats`)
-      window.dispatchEvent(new CustomEvent('chats-synced', { detail: { creatorId: selectedCreatorId } }))
-    } catch {
-      showToast('Failed to sync chats', 'error')
-    } finally {
-      setSyncingChats(false)
-    }
-  }
+
 
   useEffect(() => {
     fetchCreators()
@@ -370,6 +358,24 @@ export default function SettingsPage() {
     loadVaultMedia(selectedCreatorId)
   }, [selectedCreatorId])
 
+  // Auto-mode availability: gated on at least one approved set existing.
+  useEffect(() => {
+    if (!selectedCreatorId) { setAutoAvailable(null); return }
+    let cancelled = false
+    ;(async () => {
+      const { count } = await supabase
+        .from('vault_sets')
+        .select('id', { count: 'exact', head: true })
+        .eq('creator_id', selectedCreatorId)
+        .eq('status', 'approved')
+      if (cancelled) return
+      const n = count ?? 0
+      setApprovedSetsCount(n)
+      setAutoAvailable(n > 0)
+    })()
+    return () => { cancelled = true }
+  }, [selectedCreatorId])
+
   const updateVaultItem = async (id: string, fields: { title?: string; price?: number; active?: boolean }) => {
     await supabase.from('creator_vault_media').update(fields).eq('id', id)
     setVaultAlbums(prev => {
@@ -493,42 +499,8 @@ export default function SettingsPage() {
                 ))}
               </select>
             )}
-            <button
-              type="button"
-              onClick={syncChats}
-              disabled={syncingChats || !selectedCreatorId}
-              style={{
-                padding: '5px 10px', fontSize: 11,
-                background: 'transparent', border: '1px solid var(--border)',
-                borderRadius: 6, color: 'var(--text-muted)', cursor: syncingChats || !selectedCreatorId ? 'default' : 'pointer',
-                flexShrink: 0, alignSelf: 'stretch',
-                opacity: syncingChats ? 0.6 : 1,
-              }}
-            >
-              {syncingChats ? 'Syncing...' : '↻ Sync Chats'}
-            </button>
           </div>
-          {/* Auto mode for new fans toggle */}
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 10, marginBottom: 2 }}>
-            <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>Auto mode for new fans</div>
-            <button
-              type="button"
-              onClick={async () => {
-                if (!selectedCreatorId) return
-                const newVal = !autoModeNewFans
-                setAutoModeNewFans(newVal)
-                await supabase.from('creators').update({ auto_mode_new_fans: newVal }).eq('id', selectedCreatorId)
-              }}
-              style={{
-                padding: '2px 10px', borderRadius: 4, cursor: 'pointer', fontSize: 11,
-                background: autoModeNewFans ? 'rgba(76,175,130,0.15)' : 'transparent',
-                border: autoModeNewFans ? '1px solid var(--green)' : '1px solid var(--border)',
-                color: autoModeNewFans ? 'var(--green)' : 'var(--text-muted)',
-              }}
-            >
-              {autoModeNewFans ? 'On' : 'Off'}
-            </button>
-          </div>
+          {/* Add / Delete creator */}
           <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
             <button type="button" onClick={() => setShowAddCreator(true)} style={{
               flex: 1, padding: '5px', fontSize: 11,
@@ -540,6 +512,44 @@ export default function SettingsPage() {
               background: 'transparent', border: '1px solid var(--border)',
               borderRadius: 6, color: 'var(--text-muted)', cursor: 'pointer',
             }}>Delete</button>
+          </div>
+
+          {/* Auto-mode availability warning */}
+          {selectedCreatorId && autoAvailable === false && (
+            <a href="/scripts" style={{
+              display: 'block', textDecoration: 'none',
+              marginTop: 10, padding: '8px 10px', borderRadius: 6,
+              background: 'rgba(255,180,60,0.10)', border: '1px solid rgba(255,180,60,0.35)',
+              color: '#e0a83a', fontSize: 11, lineHeight: 1.4, cursor: 'pointer',
+            }}>
+              ⚠ Auto mode is unavailable — no approved sets. Approve at least one set to enable it →
+            </a>
+          )}
+
+          {/* Auto mode for new fans toggle */}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 10, marginBottom: 2 }}>
+            <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>Auto mode for new fans</div>
+            <button
+              type="button"
+              disabled={!autoAvailable}
+              onClick={async () => {
+                if (!selectedCreatorId || !autoAvailable) return
+                const newVal = !autoModeNewFans
+                setAutoModeNewFans(newVal)
+                await supabase.from('creators').update({ auto_mode_new_fans: newVal }).eq('id', selectedCreatorId)
+              }}
+              title={!autoAvailable ? 'No approved sets — approve a set to enable auto mode' : ''}
+              style={{
+                padding: '2px 10px', borderRadius: 4, fontSize: 11,
+                cursor: autoAvailable ? 'pointer' : 'not-allowed',
+                opacity: autoAvailable ? 1 : 0.45,
+                background: (autoAvailable && autoModeNewFans) ? 'rgba(76,175,130,0.15)' : 'transparent',
+                border: (autoAvailable && autoModeNewFans) ? '1px solid var(--green)' : '1px solid var(--border)',
+                color: (autoAvailable && autoModeNewFans) ? 'var(--green)' : 'var(--text-muted)',
+              }}
+            >
+              {!autoAvailable ? 'Unavailable' : autoModeNewFans ? 'On' : 'Off'}
+            </button>
           </div>
         </div>
 
@@ -750,36 +760,6 @@ export default function SettingsPage() {
                   ))}
                 </div>
               )}
-            </div>
-          )}
-
-          {/* PPV Offers */}
-          {activeSection === 'PPV Offers' && (
-            <div>
-              <div style={{ marginBottom: 24 }}>
-                <div style={{ fontSize: 18, fontWeight: 600, marginBottom: 4 }}>PPV Offers</div>
-                <div style={{ fontSize: 13, color: 'var(--text-muted)' }}>
-                  Manage pay-per-view offers available to send to fans.
-                </div>
-              </div>
-              <div style={{ color: 'var(--text-muted)', fontSize: 13 }}>
-                PPV offer management coming soon.
-              </div>
-            </div>
-          )}
-
-          {/* Storylines */}
-          {activeSection === 'Storylines' && (
-            <div>
-              <div style={{ marginBottom: 24 }}>
-                <div style={{ fontSize: 18, fontWeight: 600, marginBottom: 4 }}>Storylines</div>
-                <div style={{ fontSize: 13, color: 'var(--text-muted)' }}>
-                  Manage conversation storylines and message sequences.
-                </div>
-              </div>
-              <div style={{ color: 'var(--text-muted)', fontSize: 13 }}>
-                Storyline management coming soon.
-              </div>
             </div>
           )}
 
