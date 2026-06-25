@@ -139,6 +139,18 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             }
           />
           <NavItem
+            href="/vault"
+            expanded={expanded}
+            label="Vault"
+            icon={
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                <rect x="2" y="2.5" width="12" height="11" rx="1.5" stroke="currentColor" strokeWidth="1.5" />
+                <circle cx="8" cy="8" r="2.25" stroke="currentColor" strokeWidth="1.5" />
+                <path d="M8 8h2.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+              </svg>
+            }
+          />
+          <NavItem
             href="/settings"
             expanded={expanded}
             label="Settings"
