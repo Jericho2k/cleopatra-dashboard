@@ -101,7 +101,14 @@ export default function VaultPage() {
                     setSyncingVault(true)
                     setVaultProgress({ synced: 0, total: 0, album: 'Starting...' })
                     const creatorId = selectedCreatorId
-                    await fetch(`${process.env.NEXT_PUBLIC_API_URL}/sync-vault-start/${creatorId}`, { method: 'POST' })
+                    const startRes = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/sync-vault-start/${creatorId}`, { method: 'POST' })
+                    const startData = await startRes.json().catch(() => ({}))
+                    if (startData.status === 'cooldown') {
+                      setSyncingVault(false)
+                      setVaultProgress(null)
+                      showToast(`Vault was synced recently — next sync available in ${startData.days_remaining} day(s).`, 'error')
+                      return
+                    }
                     const interval = setInterval(async () => {
                       try {
                         const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/sync-vault-status/${creatorId}`)
@@ -149,7 +156,18 @@ export default function VaultPage() {
                   onClick={async () => {
                     if (!selectedCreatorId || categorizingVault) return
                     setCategorizingVault(true)
-                    await fetch(`${process.env.NEXT_PUBLIC_API_URL}/categorize-vault/${selectedCreatorId}`, { method: 'POST' })
+                    const startRes = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/categorize-vault/${selectedCreatorId}`, { method: 'POST' })
+                    const startData = await startRes.json().catch(() => ({}))
+                    if (startData.status === 'nothing_to_categorize') {
+                      setCategorizingVault(false)
+                      showToast('Everything is already categorized — nothing new to process.')
+                      return
+                    }
+                    if (startData.status === 'cooldown') {
+                      setCategorizingVault(false)
+                      showToast(`Categorize ran recently — available again in ${startData.days_remaining} day(s).`, 'error')
+                      return
+                    }
                     const interval = setInterval(async () => {
                       const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/categorize-vault-status/${selectedCreatorId}`)
                       const state = await res.json()
