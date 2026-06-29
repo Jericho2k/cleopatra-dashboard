@@ -28,7 +28,7 @@ function getInitials(displayName: string): string {
   return displayName.slice(0, 2).toUpperCase() || '?'
 }
 
-export default function ConversationView({
+function ConversationView({
   fan,
   creatorId,
   messages,
@@ -882,3 +882,5 @@ export default function ConversationView({
     </>
   )
 }
+
+export default React.memo(ConversationView)

@@ -16,7 +16,7 @@ export interface FanPanelProps {
 
 type Tab = 'profile' | 'sales'
 
-export default function FanPanel({ fan, creatorId, onHistoryLoaded, showToast }: FanPanelProps) {
+function FanPanel({ fan, creatorId, onHistoryLoaded, showToast }: FanPanelProps) {
   const [activeTab, setActiveTab] = useState<Tab>('profile')
   const recoveryTick = useRealtimeRecovery()
   const [showMemberNote, setShowMemberNote] = useState(false)
@@ -631,3 +631,5 @@ export default function FanPanel({ fan, creatorId, onHistoryLoaded, showToast }:
     </>
   )
 }
+
+export default React.memo(FanPanel)
