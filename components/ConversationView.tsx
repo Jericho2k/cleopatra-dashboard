@@ -4,6 +4,7 @@ import React, { useState, useRef, useEffect } from 'react'
 import type { Fan, Message } from '../types'
 import { sendReply, getLatestSuggestions, generateSuggestions } from '../lib/api'
 import { supabase } from '../lib/supabase'
+import { useRealtimeRecovery } from '../lib/realtime-recovery'
 import { ChevronDown } from 'lucide-react'
 
 export interface ConversationViewProps {
@@ -41,6 +42,7 @@ export default function ConversationView({
   onLoadMore,
 }: ConversationViewProps) {
   const [suggestions, setSuggestions] = useState<string[]>(['', '', ''])
+  const recoveryTick = useRealtimeRecovery()
   const [suggestionsOpen, setSuggestionsOpen] = useState(true)
   const [stage, setStage] = useState<string>('WARMING_UP')
   const [loading, setLoading] = useState(false)
@@ -97,7 +99,7 @@ export default function ConversationView({
     return () => {
       supabase.removeChannel(channel)
     }
-  }, [fan?.id, creatorId])
+  }, [fan?.id, creatorId, recoveryTick])
 
   useEffect(() => {
     prevMessagesLenRef.current = 0

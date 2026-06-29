@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from 'react'
 import type { Fan } from '../types'
 import { supabase } from '../lib/supabase'
+import { useRealtimeRecovery } from '../lib/realtime-recovery'
 import { User } from 'lucide-react'
 
 export interface FanPanelProps {
@@ -17,7 +18,8 @@ type Tab = 'profile' | 'sales'
 
 export default function FanPanel({ fan, creatorId, onHistoryLoaded, showToast }: FanPanelProps) {
   const [activeTab, setActiveTab] = useState<Tab>('profile')
-  const [showMemberNote, setShowMemberNote] = useState(true)
+  const recoveryTick = useRealtimeRecovery()
+  const [showMemberNote, setShowMemberNote] = useState(false)
   const [showModelNote, setShowModelNote] = useState(false)
   const [salesLog, setSalesLog] = useState<{ date: string; item: string; amount: number; chatter: string }[]>([])
   const [notSoldLog, setNotSoldLog] = useState<{ date: string; item: string; amount: number; reason: string; chatter: string }[]>([])
@@ -94,7 +96,7 @@ export default function FanPanel({ fan, creatorId, onHistoryLoaded, showToast }:
       })
       .subscribe()
     return () => { supabase.removeChannel(channel) }
-  }, [fan?.id])
+  }, [fan?.id, recoveryTick])
 
 
 

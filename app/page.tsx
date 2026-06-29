@@ -6,6 +6,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import type { Fan, Message, ConversationSummary, FanList } from '../types'
 import { warmBackend } from '../lib/api'
+import { useRealtimeRecovery } from '../lib/realtime-recovery'
 import Sidebar from '../components/Sidebar'
 import ConversationView from '../components/ConversationView'
 import FanPanel from '../components/FanPanel'
@@ -74,13 +75,20 @@ export default function Page() {
 
   const activeTab = tabs.find(t => t.id === activeTabId) ?? null
 
+  const recoveryTick = useRealtimeRecovery()
+
   const activeTabIdRef = useRef(activeTabId)
+  const tabsRef = useRef<Tab[]>([])
   const conversationsCache = useRef<Record<string, ConversationSummary[]>>({})
   const messagesCache = useRef<Record<string, Message[]>>({})
   const messagesPaginationCache = useRef<Record<string, { hasMoreMessages: boolean; oldestMessageTime: string | null }>>({})
   useEffect(() => {
     warmBackend()
   }, [])
+
+  useEffect(() => {
+    tabsRef.current = tabs
+  }, [tabs])
 
   useEffect(() => {
     activeTabIdRef.current = activeTabId
@@ -603,7 +611,46 @@ export default function Page() {
 
     channel.subscribe()
     return () => { supabase.removeChannel(channel) }
-  }, [activeTab?.creatorId])
+  }, [activeTab?.creatorId, recoveryTick])
+
+  // After a realtime reconnect (tab refocus / network restored), the socket only
+  // delivers messages from the resubscribe point onward — anything that landed
+  // while it was dead is missed. Catch the open thread up by appending messages
+  // newer than the last one currently loaded (preserves pagination + scroll, no
+  // dupes). The conversation list keeps itself current via the resubscribed
+  // messages-realtime channel going forward.
+  useEffect(() => {
+    if (recoveryTick === 0) return
+    const tab = tabsRef.current.find(t => t.id === activeTabIdRef.current)
+    const fanId = tab?.activeFan?.id
+    if (!tab || !fanId) return
+    const creatorId = tab.creatorId
+    const newestLoaded = tab.messages[tab.messages.length - 1]?.sent_at ?? null
+
+    let cancelled = false
+    ;(async () => {
+      let query = supabase
+        .from('messages')
+        .select('*')
+        .eq('fan_id', fanId)
+        .eq('creator_id', creatorId)
+        .order('sent_at', { ascending: true })
+      if (newestLoaded) query = query.gt('sent_at', newestLoaded)
+      const { data, error } = await query.limit(200)
+      if (cancelled || error || !data || data.length === 0) return
+
+      setTabs(prev => prev.map(t => {
+        if (t.id !== activeTabIdRef.current || t.activeFan?.id !== fanId) return t
+        const have = new Set(t.messages.map(m => m.id))
+        const missed = data.map(rowToMessage).filter(m => !have.has(m.id))
+        if (missed.length === 0) return t
+        const combined = [...t.messages, ...missed]
+        messagesCache.current[fanId] = combined
+        return { ...t, messages: combined }
+      }))
+    })()
+    return () => { cancelled = true }
+  }, [recoveryTick])
 
   if (authLoading) return (
     <div style={{ height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--bg-base)', color: 'var(--text-muted)', fontFamily: 'var(--font-body)' }}>
