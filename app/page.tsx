@@ -230,7 +230,7 @@ export default function Page() {
 
       // Restore stale cache immediately for faster first paint.
       try {
-        const cached = localStorage.getItem(`conversations_${first.id}`)
+        const cached = localStorage.getItem(`convos_${first.id}`)
         if (cached) {
           const parsed = JSON.parse(cached) as { data: ConversationSummary[]; ts: number }
           if (Date.now() - parsed.ts < 5 * 60 * 1000 && Array.isArray(parsed.data)) {
@@ -273,7 +273,7 @@ export default function Page() {
         conversationsCache.current[first.id] = conversations
         try {
           localStorage.setItem(
-            `conversations_${first.id}`,
+            `convos_${first.id}`,
             JSON.stringify({ data: conversations, ts: Date.now() })
           )
         } catch {}
