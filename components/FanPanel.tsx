@@ -3,7 +3,6 @@
 import React, { useState, useEffect } from 'react'
 import type { Fan } from '../types'
 import { supabase } from '../lib/supabase'
-import { useRealtimeRecovery } from '../lib/realtime-recovery'
 import { User } from 'lucide-react'
 
 export interface FanPanelProps {
@@ -16,11 +15,11 @@ export interface FanPanelProps {
 
 type Tab = 'profile' | 'sales'
 
-function FanPanel({ fan, creatorId, onHistoryLoaded, showToast }: FanPanelProps) {
+export default function FanPanel({ fan, creatorId, onHistoryLoaded, showToast }: FanPanelProps) {
   const [activeTab, setActiveTab] = useState<Tab>('profile')
-  const recoveryTick = useRealtimeRecovery()
-  const [showMemberNote, setShowMemberNote] = useState(false)
+  const [showMemberNote, setShowMemberNote] = useState(true)
   const [showModelNote, setShowModelNote] = useState(false)
+  const [creatorLegend, setCreatorLegend] = useState<string>('')
   const [salesLog, setSalesLog] = useState<{ date: string; item: string; amount: number; chatter: string }[]>([])
   const [notSoldLog, setNotSoldLog] = useState<{ date: string; item: string; amount: number; reason: string; chatter: string }[]>([])
   const [newSale, setNewSale] = useState({ item: '', amount: '', chatter: '' })
@@ -42,6 +41,29 @@ function FanPanel({ fan, creatorId, onHistoryLoaded, showToast }: FanPanelProps)
       setMediaPreview({ url: data.url, isVideo })
     }
   }
+
+  useEffect(() => {
+    if (!creatorId) { setCreatorLegend(''); return }
+    void supabase
+      .from('creators')
+      .select('legend')
+      .eq('id', creatorId)
+      .single()
+      .then(({ data }) => {
+        const legend = (data as any)?.legend
+        if (!legend) { setCreatorLegend(''); return }
+        const labels: [string, string][] = [
+          ['name', 'Name'], ['origin', 'From'], ['age', 'Age'],
+          ['job', 'Job'], ['background', 'Background'],
+        ]
+        const lines = labels
+          .filter(([k]) => (legend[k] ?? '').toString().trim())
+          .map(([k, label]) => `${label}: ${legend[k]}`)
+        const other = Array.isArray(legend.other) ? legend.other.filter((o: string) => (o ?? '').trim()) : []
+        if (other.length) lines.push('Other: ' + other.join('; '))
+        setCreatorLegend(lines.join('\n'))
+      })
+  }, [creatorId])
 
   useEffect(() => {
     if (!fan?.id) return
@@ -96,7 +118,7 @@ function FanPanel({ fan, creatorId, onHistoryLoaded, showToast }: FanPanelProps)
       })
       .subscribe()
     return () => { supabase.removeChannel(channel) }
-  }, [fan?.id, recoveryTick])
+  }, [fan?.id])
 
 
 
@@ -297,9 +319,9 @@ function FanPanel({ fan, creatorId, onHistoryLoaded, showToast }: FanPanelProps)
               </button>
               {showModelNote && (
                 <div style={{ ...CARD_STYLE, borderColor: 'rgba(255,180,100,0.2)' }}>
-                  {(fan as any).model_note?.trim() ? (
+                  {creatorLegend.trim() ? (
                     <pre style={{ fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.7, margin: 0, whiteSpace: 'pre-wrap', fontFamily: 'inherit' }}>
-                      {(fan as any).model_note}
+                      {creatorLegend}
                     </pre>
                   ) : (
                     <div style={{ fontSize: 12, color: 'var(--text-muted)', fontStyle: 'italic' }}>
@@ -631,5 +653,3 @@ function FanPanel({ fan, creatorId, onHistoryLoaded, showToast }: FanPanelProps)
     </>
   )
 }
-
-export default React.memo(FanPanel)
