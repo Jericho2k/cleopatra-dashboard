@@ -15,6 +15,21 @@ export interface FanPanelProps {
 
 type Tab = 'profile' | 'sales'
 
+/** Render the canonical creator legend JSONB into readable multi-line text. */
+function renderLegend(legend: any): string {
+  if (!legend) return ''
+  const labels: [string, string][] = [
+    ['name', 'Name'], ['origin', 'From'], ['age', 'Age'],
+    ['job', 'Job'], ['background', 'Background'],
+  ]
+  const lines = labels
+    .filter(([k]) => (legend[k] ?? '').toString().trim())
+    .map(([k, label]) => `${label}: ${legend[k]}`)
+  const other = Array.isArray(legend.other) ? legend.other.filter((o: string) => (o ?? '').trim()) : []
+  if (other.length) lines.push('Other: ' + other.join('; '))
+  return lines.join('\n')
+}
+
 export default function FanPanel({ fan, creatorId, onHistoryLoaded, showToast }: FanPanelProps) {
   const [activeTab, setActiveTab] = useState<Tab>('profile')
   const [showMemberNote, setShowMemberNote] = useState(true)
@@ -50,19 +65,25 @@ export default function FanPanel({ fan, creatorId, onHistoryLoaded, showToast }:
       .eq('id', creatorId)
       .single()
       .then(({ data }) => {
-        const legend = (data as any)?.legend
-        if (!legend) { setCreatorLegend(''); return }
-        const labels: [string, string][] = [
-          ['name', 'Name'], ['origin', 'From'], ['age', 'Age'],
-          ['job', 'Job'], ['background', 'Background'],
-        ]
-        const lines = labels
-          .filter(([k]) => (legend[k] ?? '').toString().trim())
-          .map(([k, label]) => `${label}: ${legend[k]}`)
-        const other = Array.isArray(legend.other) ? legend.other.filter((o: string) => (o ?? '').trim()) : []
-        if (other.length) lines.push('Other: ' + other.join('; '))
-        setCreatorLegend(lines.join('\n'))
+        setCreatorLegend(renderLegend((data as any)?.legend))
       })
+  }, [creatorId])
+
+  // Live-update the MODEL LEGEND when the canonical creator facts change.
+  useEffect(() => {
+    if (!creatorId) return
+    const channel = supabase
+      .channel(`creator-legend-${creatorId}`)
+      .on('postgres_changes', {
+        event: 'UPDATE',
+        schema: 'public',
+        table: 'creators',
+        filter: `id=eq.${creatorId}`,
+      }, (payload) => {
+        setCreatorLegend(renderLegend((payload.new as any)?.legend))
+      })
+      .subscribe()
+    return () => { supabase.removeChannel(channel) }
   }, [creatorId])
 
   useEffect(() => {
