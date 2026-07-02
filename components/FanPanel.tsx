@@ -108,9 +108,9 @@ export default function FanPanel({ fan, creatorId, onHistoryLoaded, showToast }:
       const summary = fan.ai_summary
       setAiSummary(summary ?? null)
       setDetails({
-        age: (fan as any).age ?? '',
+        age: (fan as any).age || summary?.age || '',
         payday: (fan as any).payday || summary?.payday || '',
-        hobbies: (fan as any).hobbies || '',
+        hobbies: (fan as any).hobbies || summary?.hobbies || '',
         relationship_status: (fan as any).relationship_status || summary?.relationship_status || '',
       })
     }
@@ -131,9 +131,9 @@ export default function FanPanel({ fan, creatorId, onHistoryLoaded, showToast }:
         if (Array.isArray(updated.sales_log)) setSalesLog(updated.sales_log)
         if (Array.isArray(updated.not_sold_log)) setNotSoldLog(updated.not_sold_log)
         setDetails({
-          age: updated.age ?? '',
+          age: updated.age || updated.ai_summary?.age || '',
           payday: updated.payday || updated.ai_summary?.payday || '',
-          hobbies: updated.hobbies || '',
+          hobbies: updated.hobbies || updated.ai_summary?.hobbies || '',
           relationship_status: updated.relationship_status || updated.ai_summary?.relationship_status || '',
         })
       })

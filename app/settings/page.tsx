@@ -4,9 +4,9 @@ import React, { useState, useEffect } from 'react'
 import { Eye, EyeOff } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 
-type Section = 'Creator Persona' | 'Blocked Words' | 'Re-engagement' | 'Sleep Hours'
+type Section = 'Creator Persona' | 'Blocked Words' | 'Re-engagement' | 'Sleep Hours' | 'Limits'
 
-const SECTIONS: Section[] = ['Creator Persona', 'Blocked Words', 'Re-engagement', 'Sleep Hours']
+const SECTIONS: Section[] = ['Creator Persona', 'Blocked Words', 'Re-engagement', 'Sleep Hours', 'Limits']
 const PROXY_COUNTRIES = [
   { code: 'US', label: '🇺🇸 United States' },
   { code: 'CA', label: '🇨🇦 Canada' },
@@ -49,6 +49,9 @@ export default function SettingsPage() {
     welcome_message: '',
   })
   const [sleepHours, setSleepHours] = useState({ start: 0, end: 7 })
+  const [caps, setCaps] = useState<{ enabled: boolean; maxPpv: string; maxSpend: string; maxSets: string }>({
+    enabled: false, maxPpv: '', maxSpend: '', maxSets: '',
+  })
   const [personaSaving, setPersonaSaving] = useState(false)
   const [personaSaved, setPersonaSaved] = useState(false)
   const [syncing, setSyncing] = useState(false)
@@ -232,7 +235,7 @@ export default function SettingsPage() {
   const loadPersona = (creatorId: string) => {
     return supabase
       .from('creators')
-      .select('persona, sleep_hours_start, sleep_hours_end, auto_mode_new_fans')
+      .select('persona, sleep_hours_start, sleep_hours_end, auto_mode_new_fans, caps_enabled, max_ppv_per_fan_per_day, max_spend_per_fan_per_day, max_sets_per_session')
       .eq('id', creatorId)
       .single()
       .then(({ data }) => {
@@ -250,6 +253,12 @@ export default function SettingsPage() {
         setSleepHours({
           start: data?.sleep_hours_start ?? 0,
           end: data?.sleep_hours_end ?? 7,
+        })
+        setCaps({
+          enabled: data?.caps_enabled ?? false,
+          maxPpv: data?.max_ppv_per_fan_per_day != null ? String(data.max_ppv_per_fan_per_day) : '',
+          maxSpend: data?.max_spend_per_fan_per_day != null ? String(data.max_spend_per_fan_per_day) : '',
+          maxSets: data?.max_sets_per_session != null ? String(data.max_sets_per_session) : '',
         })
         setAutoModeNewFans(data?.auto_mode_new_fans ?? false)
       })
@@ -972,6 +981,82 @@ export default function SettingsPage() {
                     sleep_hours_end: sleepHours.end,
                   }).eq('id', selectedCreatorId)
                   showToast('Sleep hours saved')
+                }}
+                style={{
+                  padding: '8px 20px', background: 'rgba(200,200,200,0.1)',
+                  border: '1px solid var(--silver)', borderRadius: 6,
+                  color: 'var(--silver)', fontSize: 13, cursor: 'pointer',
+                }}
+              >
+                Save
+              </button>
+            </div>
+          )}
+
+          {/* Limits */}
+          {activeSection === 'Limits' && (
+            <div>
+              <div style={{ marginBottom: 24 }}>
+                <div style={{ fontSize: 18, fontWeight: 600, marginBottom: 4 }}>Limits</div>
+                <div style={{ fontSize: 13, color: 'var(--text-muted)' }}>
+                  Optional autonomy caps for auto mode. Leave a field blank for no limit.
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
+                <div style={{ fontSize: 13 }}>Enable limits</div>
+                <button
+                  type="button"
+                  onClick={() => setCaps(p => ({ ...p, enabled: !p.enabled }))}
+                  style={{
+                    padding: '2px 10px', borderRadius: 4, cursor: 'pointer', fontSize: 11,
+                    background: caps.enabled ? 'rgba(76,175,130,0.15)' : 'transparent',
+                    border: caps.enabled ? '1px solid var(--green)' : '1px solid var(--border)',
+                    color: caps.enabled ? 'var(--green)' : 'var(--text-muted)',
+                  }}
+                >
+                  {caps.enabled ? 'On' : 'Off'}
+                </button>
+              </div>
+
+              <div style={{ opacity: caps.enabled ? 1 : 0.5, pointerEvents: caps.enabled ? 'auto' : 'none' }}>
+                {([
+                  ['maxPpv', 'Max PPV sends per fan / day', 'e.g. 3'],
+                  ['maxSpend', 'Max spend per fan / day ($)', 'e.g. 200'],
+                  ['maxSets', 'Max sets per session', 'e.g. 3'],
+                ] as const).map(([key, label, ph]) => (
+                  <div key={key} style={{ marginBottom: 16 }}>
+                    <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 6 }}>{label}</div>
+                    <input
+                      type="number" min="0" inputMode="numeric"
+                      value={caps[key]} placeholder={ph}
+                      onChange={e => setCaps(p => ({ ...p, [key]: e.target.value }))}
+                      style={{ width: 140, background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: 6, color: 'var(--text-primary)', padding: '8px 12px', fontSize: 13 }}
+                    />
+                  </div>
+                ))}
+              </div>
+
+              <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4, marginBottom: 20 }}>
+                Note: “Max sets per session” is saved and ready, but takes effect once multi-set
+                session escalation ships — the planner currently sends one set per session.
+              </div>
+
+              <button
+                type="button"
+                onClick={async () => {
+                  if (!selectedCreatorId) return
+                  const toIntOrNull = (v: string) => {
+                    const n = parseInt(v, 10)
+                    return Number.isFinite(n) && n >= 0 ? n : null
+                  }
+                  await supabase.from('creators').update({
+                    caps_enabled: caps.enabled,
+                    max_ppv_per_fan_per_day: toIntOrNull(caps.maxPpv),
+                    max_spend_per_fan_per_day: toIntOrNull(caps.maxSpend),
+                    max_sets_per_session: toIntOrNull(caps.maxSets),
+                  }).eq('id', selectedCreatorId)
+                  showToast('Limits saved')
                 }}
                 style={{
                   padding: '8px 20px', background: 'rgba(200,200,200,0.1)',
