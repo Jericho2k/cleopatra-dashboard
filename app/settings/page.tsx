@@ -49,8 +49,8 @@ export default function SettingsPage() {
     welcome_message: '',
   })
   const [sleepHours, setSleepHours] = useState({ start: 0, end: 7 })
-  const [caps, setCaps] = useState<{ enabled: boolean; maxPpv: string; maxSpend: string; maxSets: string }>({
-    enabled: false, maxPpv: '', maxSpend: '', maxSets: '',
+  const [caps, setCaps] = useState<{ enabled: boolean; maxPpv: string; maxSpend: string; maxSets: string; crisisPolicy: string; whaleHandoff: string }>({
+    enabled: false, maxPpv: '', maxSpend: '', maxSets: '', crisisPolicy: 'continue', whaleHandoff: '',
   })
   const [personaSaving, setPersonaSaving] = useState(false)
   const [personaSaved, setPersonaSaved] = useState(false)
@@ -235,7 +235,7 @@ export default function SettingsPage() {
   const loadPersona = (creatorId: string) => {
     return supabase
       .from('creators')
-      .select('persona, sleep_hours_start, sleep_hours_end, auto_mode_new_fans, caps_enabled, max_ppv_per_fan_per_day, max_spend_per_fan_per_day, max_sets_per_session')
+      .select('persona, sleep_hours_start, sleep_hours_end, auto_mode_new_fans, caps_enabled, max_ppv_per_fan_per_day, max_spend_per_fan_per_day, max_sets_per_session, crisis_policy, whale_handoff_threshold')
       .eq('id', creatorId)
       .single()
       .then(({ data }) => {
@@ -259,6 +259,8 @@ export default function SettingsPage() {
           maxPpv: data?.max_ppv_per_fan_per_day != null ? String(data.max_ppv_per_fan_per_day) : '',
           maxSpend: data?.max_spend_per_fan_per_day != null ? String(data.max_spend_per_fan_per_day) : '',
           maxSets: data?.max_sets_per_session != null ? String(data.max_sets_per_session) : '',
+          crisisPolicy: data?.crisis_policy ?? 'continue',
+          whaleHandoff: data?.whale_handoff_threshold != null ? String(data.whale_handoff_threshold) : '',
         })
         setAutoModeNewFans(data?.auto_mode_new_fans ?? false)
       })
@@ -1042,6 +1044,37 @@ export default function SettingsPage() {
                 session escalation ships — the planner currently sends one set per session.
               </div>
 
+              <div style={{ marginTop: 8, marginBottom: 24, paddingTop: 20, borderTop: '1px solid var(--border-subtle)' }}>
+                <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 4 }}>Sensitive situations</div>
+                <div style={{ fontSize: 12.5, color: 'var(--text-muted)', marginBottom: 12 }}>
+                  What auto mode does if a fan expresses genuine self-harm or a real threat (not roleplay/kink).
+                </div>
+                <select
+                  value={caps.crisisPolicy}
+                  onChange={e => setCaps(p => ({ ...p, crisisPolicy: e.target.value }))}
+                  style={{ width: '100%', maxWidth: 420, background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text-primary)', padding: '10px 12px', fontSize: 13 }}
+                >
+                  <option value="continue">Keep going — AI responds with care, stops selling, no human needed</option>
+                  <option value="freeze">Freeze chat — AI stops, flags the conversation for a human to take over</option>
+                </select>
+              </div>
+
+              <div style={{ marginTop: 8, marginBottom: 24, paddingTop: 20, borderTop: '1px solid var(--border-subtle)' }}>
+                <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 4 }}>Whale handoff</div>
+                <div style={{ fontSize: 12.5, color: 'var(--text-muted)', marginBottom: 12 }}>
+                  Hand a fan over to a human once their total spend crosses this amount, so your team closes the big spenders personally. Leave blank to disable.
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span style={{ color: 'var(--text-muted)', fontSize: 14 }}>$</span>
+                  <input
+                    type="number" min="0" inputMode="numeric"
+                    value={caps.whaleHandoff} placeholder="e.g. 500"
+                    onChange={e => setCaps(p => ({ ...p, whaleHandoff: e.target.value }))}
+                    style={{ width: 160, background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: 6, color: 'var(--text-primary)', padding: '8px 12px', fontSize: 13 }}
+                  />
+                </div>
+              </div>
+
               <button
                 type="button"
                 onClick={async () => {
@@ -1055,6 +1088,8 @@ export default function SettingsPage() {
                     max_ppv_per_fan_per_day: toIntOrNull(caps.maxPpv),
                     max_spend_per_fan_per_day: toIntOrNull(caps.maxSpend),
                     max_sets_per_session: toIntOrNull(caps.maxSets),
+                    crisis_policy: caps.crisisPolicy,
+                    whale_handoff_threshold: toIntOrNull(caps.whaleHandoff),
                   }).eq('id', selectedCreatorId)
                   showToast('Limits saved')
                 }}

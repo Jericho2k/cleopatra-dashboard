@@ -35,6 +35,7 @@ export default function FanPanel({ fan, creatorId, onHistoryLoaded, showToast }:
   const [showMemberNote, setShowMemberNote] = useState(true)
   const [showModelNote, setShowModelNote] = useState(false)
   const [creatorLegend, setCreatorLegend] = useState<string>('')
+  const [needsReview, setNeedsReview] = useState<{ frozen: boolean; reason: string }>({ frozen: false, reason: '' })
   const [salesLog, setSalesLog] = useState<{ date: string; item: string; amount: number; chatter: string }[]>([])
   const [notSoldLog, setNotSoldLog] = useState<{ date: string; item: string; amount: number; reason: string; chatter: string }[]>([])
   const [newSale, setNewSale] = useState({ item: '', amount: '', chatter: '' })
@@ -90,7 +91,7 @@ export default function FanPanel({ fan, creatorId, onHistoryLoaded, showToast }:
     if (!fan?.id) return
     void supabase
       .from('fans')
-      .select('sales_log, not_sold_log')
+      .select('sales_log, not_sold_log, needs_human_review, review_reason')
       .eq('id', fan.id)
       .single()
       .then(({ data, error }) => {
@@ -100,6 +101,7 @@ export default function FanPanel({ fan, creatorId, onHistoryLoaded, showToast }:
         }
         setSalesLog((data as any)?.sales_log ?? [])
         setNotSoldLog((data as any)?.not_sold_log ?? [])
+        setNeedsReview({ frozen: !!(data as any)?.needs_human_review, reason: (data as any)?.review_reason ?? '' })
       })
   }, [fan?.id])
 
@@ -276,6 +278,38 @@ export default function FanPanel({ fan, creatorId, onHistoryLoaded, showToast }:
 
       {/* Tab content */}
       <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: 16, paddingBottom: 48 }}>
+        {needsReview.frozen && (
+          <div style={{
+            marginBottom: 16, padding: '12px 14px', borderRadius: 10,
+            background: 'rgba(229,118,137,0.10)', border: '1px solid rgba(229,118,137,0.4)',
+          }}>
+            <div style={{ fontSize: 13, fontWeight: 600, color: '#e57689', marginBottom: 4 }}>
+              ⚠ Auto mode paused — needs a human
+            </div>
+            <div style={{ fontSize: 12.5, color: 'var(--text-muted)', marginBottom: 10 }}>
+              This conversation was frozen{needsReview.reason ? ` (${needsReview.reason})` : ''}. Review it, then resume AI when you're ready.
+            </div>
+            <button
+              type="button"
+              onClick={async () => {
+                if (!fan?.id) return
+                const { error } = await supabase.from('fans')
+                  .update({ needs_human_review: false, review_reason: null })
+                  .eq('id', fan.id)
+                if (error) { showToast?.(error.message); return }
+                setNeedsReview({ frozen: false, reason: '' })
+                showToast?.('AI resumed for this fan')
+              }}
+              style={{
+                padding: '8px 16px', borderRadius: 8, fontSize: 12.5, fontWeight: 600,
+                background: 'rgba(94,214,154,0.12)', border: '1px solid var(--green)',
+                color: 'var(--green)', cursor: 'pointer',
+              }}
+            >
+              Resume AI
+            </button>
+          </div>
+        )}
 
         {/* PROFILE TAB */}
         {activeTab === 'profile' && (
