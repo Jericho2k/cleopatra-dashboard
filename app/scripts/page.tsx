@@ -2,8 +2,8 @@
 
 import React, { useEffect, useMemo, useState } from 'react'
 import { supabase } from '../../lib/supabase'
+import { apiFetch } from '../lib/api'
 
-const API = process.env.NEXT_PUBLIC_API_URL
 
 type VaultSet = {
   id: string; creator_id: string; title: string
@@ -84,7 +84,7 @@ export default function SetsPage() {
   async function generate() {
     if (!creatorId) return
     setGenerating(true)
-    try { await fetch(`${API}/generate-sets/${creatorId}`, { method: 'POST' }); await loadSets(creatorId) }
+    try { await apiFetch(`/generate-sets/${creatorId}`, { method: 'POST' }); await loadSets(creatorId) }
     finally { setGenerating(false) }
   }
   async function patchSet(id: string, patch: Partial<VaultSet>) {

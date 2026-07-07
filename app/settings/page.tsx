@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from 'react'
 import { Eye, EyeOff } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
+import { apiFetch } from '../../lib/api'
 
 type Section = 'Creator Persona' | 'Blocked Words' | 'Re-engagement' | 'Sleep Hours' | 'Limits'
 
@@ -108,7 +109,7 @@ export default function SettingsPage() {
         setSelectedCreatorId(null)
         return
       }
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/my-creators?user_id=${user.id}`)
+      const res = await apiFetch(`/my-creators?user_id=${user.id}`)
       const data = await res.json()
       const next = data.creators ?? []
       sessionStorage.setItem('creators', JSON.stringify(next))
@@ -130,7 +131,7 @@ export default function SettingsPage() {
     setConnecting(true)
     try {
       const { data: { user } } = await supabase.auth.getUser()
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/connect-creator`, {
+      const res = await apiFetch(`/connect-creator`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -162,7 +163,7 @@ export default function SettingsPage() {
     setConnecting(true)
     try {
       const { data: { user } } = await supabase.auth.getUser()
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/connect-creator-2fa`, {
+      const res = await apiFetch(`/connect-creator-2fa`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -201,7 +202,7 @@ export default function SettingsPage() {
   async function deleteCreator(id: string) {
     if (!confirm('Delete this creator and ALL their data? This cannot be undone.')) return
 
-    const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/creators/${id}`, {
+    const res = await apiFetch(`/creators/${id}`, {
       method: 'DELETE',
     })
 

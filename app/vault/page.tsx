@@ -2,6 +2,7 @@
 
 import React, { useEffect, useState } from 'react'
 import { supabase } from '../../lib/supabase'
+import { apiFetch } from '../../lib/api'
 
 export default function VaultPage() {
   const [creators, setCreators] = useState<{ id: string; name: string }[]>([])
@@ -101,7 +102,7 @@ export default function VaultPage() {
                     setSyncingVault(true)
                     setVaultProgress({ synced: 0, total: 0, album: 'Starting...' })
                     const creatorId = selectedCreatorId
-                    const startRes = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/sync-vault-start/${creatorId}`, { method: 'POST' })
+                    const startRes = await apiFetch(`/sync-vault-start/${creatorId}`, { method: 'POST' })
                     const startData = await startRes.json().catch(() => ({}))
                     if (startData.status === 'cooldown') {
                       setSyncingVault(false)
@@ -111,7 +112,7 @@ export default function VaultPage() {
                     }
                     const interval = setInterval(async () => {
                       try {
-                        const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/sync-vault-status/${creatorId}`)
+                        const res = await apiFetch(`/sync-vault-status/${creatorId}`)
                         const state = await res.json()
                         setVaultProgress({ synced: state.synced, total: state.total, album: state.album })
                         if (state.status === 'done' || state.status === 'error') {
@@ -156,7 +157,7 @@ export default function VaultPage() {
                   onClick={async () => {
                     if (!selectedCreatorId || categorizingVault) return
                     setCategorizingVault(true)
-                    const startRes = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/categorize-vault/${selectedCreatorId}`, { method: 'POST' })
+                    const startRes = await apiFetch(`/categorize-vault/${selectedCreatorId}`, { method: 'POST' })
                     const startData = await startRes.json().catch(() => ({}))
                     if (startData.status === 'nothing_to_categorize') {
                       setCategorizingVault(false)
@@ -169,7 +170,7 @@ export default function VaultPage() {
                       return
                     }
                     const interval = setInterval(async () => {
-                      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/categorize-vault-status/${selectedCreatorId}`)
+                      const res = await apiFetch(`/categorize-vault-status/${selectedCreatorId}`)
                       const state = await res.json()
                       setCategorizeProgress(state)
                       if (state.status === 'done' || state.status === 'error') {
@@ -459,8 +460,7 @@ export default function VaultPage() {
                           if (!previewItem?.id || previewSaving) return
                           setPreviewSaving(true)
                           try {
-                            const res = await fetch(
-                              `${process.env.NEXT_PUBLIC_API_URL}/recategorize-item/${previewItem.id}`,
+                            const res = await apiFetch(`/recategorize-item/${previewItem.id}`,
                               { method: 'POST' }
                             )
                             const data = await res.json()
@@ -716,8 +716,7 @@ export default function VaultPage() {
                     if (uploadNotesMode === 'manual' && uploadNotes.trim()) {
                       formData.append('ai_description', uploadNotes.trim())
                     }
-                    const res = await fetch(
-                      `${process.env.NEXT_PUBLIC_API_URL}/upload-vault-media/${selectedCreatorId}`,
+                    const res = await apiFetch(`/upload-vault-media/${selectedCreatorId}`,
                       { method: 'POST', body: formData }
                     )
                     const data = await res.json()

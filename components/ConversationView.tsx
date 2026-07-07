@@ -2,7 +2,7 @@
 
 import React, { useState, useRef, useEffect } from 'react'
 import type { Fan, Message } from '../types'
-import { sendReply, getLatestSuggestions, generateSuggestions } from '../lib/api'
+import { sendReply, getLatestSuggestions, generateSuggestions, apiFetch } from '../lib/api'
 import { supabase } from '../lib/supabase'
 import { useRealtimeRecovery } from '../lib/realtime-recovery'
 import { ChevronDown } from 'lucide-react'
@@ -207,7 +207,7 @@ function ConversationView({
 
     Promise.all(
       uniqueIds.map(mediaId =>
-        fetch(`${process.env.NEXT_PUBLIC_API_URL}/vault-media-url/${creatorId}/${mediaId}`)
+        apiFetch(`/vault-media-url/${creatorId}/${mediaId}`)
           .then(r => r.json())
           .then(data => ({ mediaId, data }))
           .catch(() => ({ mediaId, data: { url: null, thumbnail_url: null, mimetype: null } }))
@@ -572,8 +572,7 @@ function ConversationView({
                     key={i}
                     onClick={async () => {
                       try {
-                        const res = await fetch(
-                          `${process.env.NEXT_PUBLIC_API_URL}/vault-media-url/${creatorId}/${att.media_id}`
+                        const res = await apiFetch(`/vault-media-url/${creatorId}/${att.media_id}`
                         )
                         const data = await res.json()
                         if (data.url) {

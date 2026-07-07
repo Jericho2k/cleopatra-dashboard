@@ -4,6 +4,7 @@ import React, { useState, useEffect } from 'react'
 import type { Fan } from '../types'
 import { supabase } from '../lib/supabase'
 import { User } from 'lucide-react'
+import { apiFetch } from '../lib/api'
 
 export interface FanPanelProps {
   fan: Fan | null
@@ -50,7 +51,7 @@ export default function FanPanel({ fan, creatorId, onHistoryLoaded, showToast }:
   const [mediaPreview, setMediaPreview] = useState<{ url: string; isVideo: boolean } | null>(null)
 
   const openMediaPreview = async (mediaId: string, cid: string) => {
-    const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/vault-media-url/${cid}/${mediaId}`)
+    const res = await apiFetch(`/vault-media-url/${cid}/${mediaId}`)
     const data = await res.json()
     if (data.url) {
       const isVideo = data.mimetype?.startsWith('video') || mediaId?.includes('video')
@@ -154,8 +155,7 @@ export default function FanPanel({ fan, creatorId, onHistoryLoaded, showToast }:
     if (!fan || !creatorId) return
     setLoadingHistory(true)
     try {
-      const res = await fetch(
-        `${process.env.NEXT_PUBLIC_API_URL}/load-history/${creatorId}/${fan.id}`,
+      const res = await apiFetch(`/load-history/${creatorId}/${fan.id}`,
         { method: 'POST' }
       )
       const data = await res.json()

@@ -4,6 +4,7 @@
 
 import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { supabase } from '../lib/supabase'
+import { apiFetch } from '../lib/api'
 import type { Fan, Message, ConversationSummary, FanList } from '../types'
 import { warmBackend } from '../lib/api'
 import { useRealtimeRecovery } from '../lib/realtime-recovery'
@@ -973,7 +974,7 @@ export default function Page() {
               if (!activeTab) return
               setSyncingChats(true)
               try {
-                const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/sync-chats/${activeTab.creatorId}`, { method: 'POST' })
+                const res = await apiFetch(`/sync-chats/${activeTab.creatorId}`, { method: 'POST' })
                 await res.json()
                 delete conversationsCache.current[activeTab.creatorId]
                 updateTab(activeTab.id, { conversations: [] })
@@ -983,7 +984,7 @@ export default function Page() {
             }}
             onMarkAllRead={async () => {
               if (!activeTab) return
-              await fetch(`${process.env.NEXT_PUBLIC_API_URL}/mark-all-read/${activeTab.creatorId}`, { method: 'POST' })
+              await apiFetch(`/mark-all-read/${activeTab.creatorId}`, { method: 'POST' })
               updateTab(activeTab.id, {
                 conversations: activeTab.conversations.map(c => ({ ...c, unread: false, unread_count: 0 })),
                 unreadCounts: {},
