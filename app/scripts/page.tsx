@@ -2,7 +2,7 @@
 
 import React, { useEffect, useMemo, useState } from 'react'
 import { supabase } from '../../lib/supabase'
-import { apiFetch } from '../lib/api'
+import { apiFetch } from '../../lib/api'
 
 
 type VaultSet = {
