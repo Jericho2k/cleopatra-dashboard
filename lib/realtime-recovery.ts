@@ -59,6 +59,28 @@ function install() {
   const onOnline = () => void recover()
   document.addEventListener('visibilitychange', onVisible)
   window.addEventListener('online', onOnline)
+
+  // Authenticate the realtime socket as soon as we have a session, and whenever
+  // the session changes. Without this the socket connects with only the anon key;
+  // since anon has no RLS access, realtime UPDATE/INSERT events are never
+  // delivered and the UI only updates on a manual refresh (which reads over the
+  // authenticated REST session instead).
+  void (async () => {
+    try {
+      const { data } = await supabase.auth.getSession()
+      const token = data.session?.access_token
+      if (token) supabase.realtime.setAuth(token)
+    } catch {
+      /* best effort */
+    }
+  })()
+  supabase.auth.onAuthStateChange((_event, session) => {
+    try {
+      if (session?.access_token) supabase.realtime.setAuth(session.access_token)
+    } catch {
+      /* best effort */
+    }
+  })
 }
 
 /**

@@ -488,12 +488,12 @@ function ConversationView({
                             <div key={mid} style={{ width: w, maxWidth: 220, aspectRatio: '3/4', background: 'rgba(255,255,255,0.05)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, color: 'var(--text-muted)' }}>…</div>
                           )
                           return (
-                            <div key={mid} style={{ position: 'relative', cursor: 'pointer', width: w, maxWidth: 220 }}
+                            <div key={mid} style={{ position: 'relative', cursor: 'pointer', width: w, maxWidth: 220, aspectRatio: '3/4', overflow: 'hidden' }}
                               onClick={async () => {
                                 const { data } = await supabase.from('creator_vault_media').select('url, mimetype, filename').eq('fansly_media_id', mid).single()
                                 if (data?.url) setMediaPreview(data as any)
                               }}>
-                              <img src={thumbSrc} alt="PPV preview" style={{ width: '100%', display: 'block' }} onError={e => { (e.target as HTMLImageElement).style.display = 'none' }} />
+                              <img src={thumbSrc} alt="PPV preview" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} onError={e => { (e.target as HTMLImageElement).style.display = 'none' }} />
                               <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.25)' }}>
                                 <span style={{ fontSize: 18 }}>{isVideo ? '🎬' : '🔒'}</span>
                               </div>

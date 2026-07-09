@@ -5,6 +5,7 @@ import type { Fan } from '../types'
 import { supabase } from '../lib/supabase'
 import { User } from 'lucide-react'
 import { apiFetch } from '../lib/api'
+import { useRealtimeRecovery } from '../lib/realtime-recovery'
 
 export interface FanPanelProps {
   fan: Fan | null
@@ -32,8 +33,9 @@ function renderLegend(legend: any): string {
 }
 
 export default function FanPanel({ fan, creatorId, onHistoryLoaded, showToast }: FanPanelProps) {
+  const recoveryTick = useRealtimeRecovery()
   const [activeTab, setActiveTab] = useState<Tab>('profile')
-  const [showMemberNote, setShowMemberNote] = useState(true)
+  const [showMemberNote, setShowMemberNote] = useState(false)
   const [showModelNote, setShowModelNote] = useState(false)
   const [creatorLegend, setCreatorLegend] = useState<string>('')
   const [needsReview, setNeedsReview] = useState<{ frozen: boolean; reason: string }>({ frozen: false, reason: '' })
@@ -86,7 +88,7 @@ export default function FanPanel({ fan, creatorId, onHistoryLoaded, showToast }:
       })
       .subscribe()
     return () => { supabase.removeChannel(channel) }
-  }, [creatorId])
+  }, [creatorId, recoveryTick])
 
   useEffect(() => {
     if (!fan?.id) return
@@ -142,7 +144,7 @@ export default function FanPanel({ fan, creatorId, onHistoryLoaded, showToast }:
       })
       .subscribe()
     return () => { supabase.removeChannel(channel) }
-  }, [fan?.id])
+  }, [fan?.id, recoveryTick])
 
 
 
