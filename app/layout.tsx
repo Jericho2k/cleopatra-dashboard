@@ -151,6 +151,17 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             }
           />
           <NavItem
+            href="/monetization"
+            expanded={expanded}
+            label="Monetization"
+            icon={
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                <circle cx="8" cy="8" r="6.25" stroke="currentColor" strokeWidth="1.5" />
+                <path d="M10.4 5.2c-.55-.45-1.3-.7-2.18-.7-1.28 0-2.22.62-2.22 1.55 0 2.3 4.45 1.05 4.45 3.35 0 .98-.94 1.65-2.35 1.65-.94 0-1.82-.3-2.5-.88M8 3.3v9.4" stroke="currentColor" strokeWidth="1.25" strokeLinecap="round" />
+              </svg>
+            }
+          />
+          <NavItem
             href="/settings"
             expanded={expanded}
             label="Settings"
