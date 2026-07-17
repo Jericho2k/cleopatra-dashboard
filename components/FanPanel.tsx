@@ -17,6 +17,38 @@ export interface FanPanelProps {
 
 type Tab = 'profile' | 'sales'
 
+type FullAutoStatus = {
+  effective_auto_mode: boolean
+  needs_human_review: boolean
+  review_reason: string | null
+  commercial_state: {
+    status: string
+    next_followup_at: string | null
+    next_followup_type: string | null
+    last_session_completed_at: string | null
+    last_abandoned_ppv_at: string | null
+  }
+  session: {
+    status?: string
+    payment_state?: string
+    current_index?: number
+    plan?: unknown[]
+  } | null
+  pending_ppv: {
+    sent_at?: string
+    expires_at?: string
+    price?: number
+    verification_attempts?: number
+  } | null
+  scheduled_actions: Array<{
+    id: string
+    action_type: string
+    status: string
+    execute_at: string
+    last_error?: string | null
+  }>
+}
+
 /** Render the canonical creator legend JSONB into readable multi-line text. */
 function renderLegend(legend: any): string {
   if (!legend) return ''
@@ -30,6 +62,12 @@ function renderLegend(legend: any): string {
   const other = Array.isArray(legend.other) ? legend.other.filter((o: string) => (o ?? '').trim()) : []
   if (other.length) lines.push('Other: ' + other.join('; '))
   return lines.join('\n')
+}
+
+function formatOperationalTime(value?: string | null): string {
+  if (!value) return 'unknown'
+  const parsed = new Date(value)
+  return Number.isNaN(parsed.getTime()) ? value : parsed.toLocaleString()
 }
 
 export default function FanPanel({ fan, creatorId, onHistoryLoaded, showToast }: FanPanelProps) {
@@ -51,6 +89,7 @@ export default function FanPanel({ fan, creatorId, onHistoryLoaded, showToast }:
   const [aiSummary, setAiSummary] = useState<any>(null)
   const [showAiProfile, setShowAiProfile] = useState(false)
   const [mediaPreview, setMediaPreview] = useState<{ url: string; isVideo: boolean } | null>(null)
+  const [fullAutoStatus, setFullAutoStatus] = useState<FullAutoStatus | null>(null)
 
   const openMediaPreview = async (mediaId: string, cid: string) => {
     const res = await apiFetch(`/vault-media-url/${cid}/${mediaId}`)
@@ -107,6 +146,27 @@ export default function FanPanel({ fan, creatorId, onHistoryLoaded, showToast }:
         setNeedsReview({ frozen: !!(data as any)?.needs_human_review, reason: (data as any)?.review_reason ?? '' })
       })
   }, [fan?.id])
+
+  useEffect(() => {
+    if (!fan?.id) { setFullAutoStatus(null); return }
+    let cancelled = false
+    const load = async () => {
+      try {
+        const response = await apiFetch(`/fan/${fan.id}/full-auto-status`)
+        if (!response.ok) return
+        const body = await response.json() as FullAutoStatus
+        if (!cancelled) setFullAutoStatus(body)
+      } catch {
+        // Keep the conversation usable if the operational panel is unavailable.
+      }
+    }
+    void load()
+    const interval = window.setInterval(() => void load(), 30_000)
+    return () => {
+      cancelled = true
+      window.clearInterval(interval)
+    }
+  }, [fan?.id, recoveryTick])
 
   useEffect(() => {
     if (fan) {
@@ -316,6 +376,76 @@ export default function FanPanel({ fan, creatorId, onHistoryLoaded, showToast }:
         {/* PROFILE TAB */}
         {activeTab === 'profile' && (
           <div>
+            {fullAutoStatus && (
+              <div style={{ marginBottom: 20 }}>
+                <div style={LABEL_STYLE}>FULL AUTO</div>
+                <div style={{ ...CARD_STYLE, borderColor: fullAutoStatus.scheduled_actions.some(action => action.status === 'FAILED') ? 'rgba(229,118,137,0.45)' : 'var(--border-subtle)' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, marginBottom: 10 }}>
+                    <div>
+                      <div style={{ fontSize: 12.5, fontWeight: 650, color: 'var(--text-primary)' }}>
+                        {fullAutoStatus.commercial_state.status.replaceAll('_', ' ')}
+                      </div>
+                      <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
+                        Auto {fullAutoStatus.effective_auto_mode ? 'on' : 'off'}
+                        {fullAutoStatus.session?.payment_state ? ` · ${fullAutoStatus.session.payment_state.replaceAll('_', ' ')}` : ''}
+                      </div>
+                    </div>
+                    <span style={{ width: 8, height: 8, borderRadius: 999, marginTop: 5, background: fullAutoStatus.effective_auto_mode ? 'var(--green)' : 'var(--text-faint)' }} />
+                  </div>
+
+                  {fullAutoStatus.pending_ppv && (
+                    <div style={{ padding: '8px 10px', borderRadius: 7, background: 'rgba(155,143,212,0.08)', marginBottom: 8 }}>
+                      <div style={{ fontSize: 11, color: 'var(--purple)' }}>Locked PPV awaiting purchase</div>
+                      <div style={{ fontSize: 10.5, color: 'var(--text-muted)', marginTop: 3 }}>
+                        ${fullAutoStatus.pending_ppv.price ?? 0} · expires {formatOperationalTime(fullAutoStatus.pending_ppv.expires_at)} · checked {fullAutoStatus.pending_ppv.verification_attempts ?? 0}×
+                      </div>
+                    </div>
+                  )}
+
+                  {fullAutoStatus.commercial_state.next_followup_at && (
+                    <div style={{ padding: '8px 10px', borderRadius: 7, background: 'var(--bg-hover)', marginBottom: 8 }}>
+                      <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>
+                        {fullAutoStatus.commercial_state.next_followup_type?.replaceAll('_', ' ')}
+                      </div>
+                      <div style={{ fontSize: 10.5, color: 'var(--text-muted)', marginTop: 3 }}>
+                        {formatOperationalTime(fullAutoStatus.commercial_state.next_followup_at)}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          const response = await apiFetch(`/fan/${fan.id}/cancel-followup`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ action_type: fullAutoStatus.commercial_state.next_followup_type }),
+                          })
+                          if (!response.ok) { showToast?.('Could not cancel follow-up'); return }
+                          setFullAutoStatus(current => current ? {
+                            ...current,
+                            commercial_state: {
+                              ...current.commercial_state,
+                              next_followup_at: null,
+                              next_followup_type: null,
+                            },
+                            scheduled_actions: current.scheduled_actions.filter(action => !action.action_type.endsWith('FOLLOWUP') && action.action_type !== 'PAYDAY_REENGAGEMENT'),
+                          } : current)
+                          showToast?.('Follow-up cancelled')
+                        }}
+                        style={{ marginTop: 7, padding: 0, border: 'none', background: 'transparent', color: '#e57689', fontSize: 10.5, cursor: 'pointer' }}
+                      >
+                        Cancel follow-up
+                      </button>
+                    </div>
+                  )}
+
+                  {fullAutoStatus.scheduled_actions.filter(action => action.status === 'FAILED').map(action => (
+                    <div key={action.id} style={{ fontSize: 10.5, color: '#e57689', marginTop: 6 }}>
+                      {action.action_type.replaceAll('_', ' ')} failed{action.last_error ? `: ${action.last_error}` : ''}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
             <div style={LABEL_STYLE}>NOTES</div>
             <div style={{ ...CARD_STYLE, color: 'var(--text-secondary)', fontSize: 13, lineHeight: 1.5, marginBottom: 12, minHeight: 60 }}>
               {fan.notes?.trim() ? fan.notes : 'No notes yet.'}
