@@ -25,6 +25,9 @@ type AutoAudiencePreview = {
   total: number
   creator_auto_mode: boolean
   reasons: Record<string, number>
+  eligible_if_creator_on?: number
+  ineligible_if_creator_on?: number
+  reasons_if_creator_on?: Record<string, number>
 }
 
 const DEFAULT_AUTO_AUDIENCE: AutoAudiencePolicy = {
@@ -745,7 +748,7 @@ export default function SettingsPage() {
               <div style={{ marginBottom: 22 }}>
                 <div style={{ fontSize: 18, fontWeight: 600, marginBottom: 4 }}>Auto audience</div>
                 <div style={{ fontSize: 13, color: 'var(--text-muted)', lineHeight: 1.5 }}>
-                  Choose which chats Full Auto may handle. Per-fan Off and human-review states always win; a deliberate per-fan On override is always eligible.
+                  Choose which synced fans Full Auto may handle when they message you. These rules do not start conversations or send a bulk message.
                 </div>
               </div>
 
@@ -758,7 +761,7 @@ export default function SettingsPage() {
                 <div>
                   <div style={{ fontSize: 13, fontWeight: 650 }}>Creator Full Auto</div>
                   <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 3, lineHeight: 1.4 }}>
-                    The audience rules choose who is eligible. This master switch decides whether inherited chats actually run automatically.
+                    The master switch activates your audience rules. Per-fan Off and human review still block automation; a deliberate per-fan On remains active independently.
                   </div>
                 </div>
                 <button
@@ -781,7 +784,7 @@ export default function SettingsPage() {
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 8, marginBottom: 20 }}>
                 {([
                   ['all', 'All chats', 'Every fan unless explicitly excluded'],
-                  ['new_only', 'Only new chats', 'Fans with no creator reply yet'],
+                  ['new_only', 'Only new chats', 'Synced fans with no creator reply yet'],
                   ['matching', 'Matching rules', 'Lists, spend, tiers, or new fans'],
                 ] as const).map(([scope, title, detail]) => (
                   <button key={scope} type="button" onClick={() => setAudiencePolicy(p => ({ ...p, scope }))}
@@ -865,14 +868,38 @@ export default function SettingsPage() {
               )}
 
               {audiencePreview && (
-                <div style={{ padding: '10px 12px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg-elevated)', marginBottom: 14, fontSize: 12 }}>
-                  <div>
-                    <span style={{ color: 'var(--text-primary)', fontWeight: 650 }}>{audiencePreview.eligible}</span> of {audiencePreview.total} current fans are eligible · {audiencePreview.ineligible} excluded
-                    {!audiencePreview.creator_auto_mode && <span style={{ color: '#e0a83a' }}> · Creator Full Auto is currently off</span>}
+                <div style={{ padding: '12px 14px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg-elevated)', marginBottom: 14, fontSize: 12 }}>
+                  {audiencePreview.creator_auto_mode ? (
+                    <div style={{ lineHeight: 1.5 }}>
+                      <span style={{ color: 'var(--green)', fontWeight: 700 }}>{audiencePreview.eligible}</span> of {audiencePreview.total} synced fans can receive automatic replies now.
+                      {' '}{audiencePreview.ineligible} are blocked by an exclusion, per-fan Off, human review, or the selected rules.
+                    </div>
+                  ) : (
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                      <div style={{ padding: 10, borderRadius: 7, background: 'var(--bg-main)' }}>
+                        <div style={{ color: '#e0a83a', fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 5 }}>Active now — master switch Off</div>
+                        <div><span style={{ color: 'var(--text-primary)', fontWeight: 700 }}>{audiencePreview.eligible}</span> fans are explicitly enabled per fan.</div>
+                      </div>
+                      <div style={{ padding: 10, borderRadius: 7, background: 'var(--bg-main)' }}>
+                        <div style={{ color: 'var(--purple)', fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 5 }}>If Creator Full Auto is turned On</div>
+                        <div><span style={{ color: 'var(--text-primary)', fontWeight: 700 }}>{audiencePreview.eligible_if_creator_on ?? audiencePreview.eligible}</span> of {audiencePreview.total} synced fans would be covered.</div>
+                      </div>
+                    </div>
+                  )}
+                  <div style={{ color: 'var(--text-faint)', fontSize: 10.5, marginTop: 10, lineHeight: 1.45 }}>
+                    Counts are fan profiles synchronized into Cleopatra—not messages. Eligibility is checked when that fan sends a message.
                   </div>
-                  {Object.entries(audiencePreview.reasons ?? {}).length > 0 && (
+                  {Object.entries(
+                    audiencePreview.creator_auto_mode
+                      ? (audiencePreview.reasons ?? {})
+                      : (audiencePreview.reasons_if_creator_on ?? audiencePreview.reasons ?? {})
+                  ).length > 0 && (
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 9 }}>
-                      {Object.entries(audiencePreview.reasons).map(([reason, count]) => (
+                      {Object.entries(
+                        audiencePreview.creator_auto_mode
+                          ? (audiencePreview.reasons ?? {})
+                          : (audiencePreview.reasons_if_creator_on ?? audiencePreview.reasons ?? {})
+                      ).map(([reason, count]) => (
                         <span key={reason} style={{ padding: '3px 7px', borderRadius: 5, background: 'var(--bg-main)', color: 'var(--text-muted)', fontSize: 10.5 }}>
                           {audienceReasonLabel(reason)}: {count}
                         </span>
