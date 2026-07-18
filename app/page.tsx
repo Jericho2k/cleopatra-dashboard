@@ -37,6 +37,8 @@ function rowToFan(row: Record<string, unknown>): Fan {
     last_active: (row.last_active as string) ?? null,
     preferences: Array.isArray(row.preferences) ? (row.preferences as string[]) : [],
     notes: (row.notes as string) ?? '',
+    member_note: (row.member_note as string) ?? '',
+    model_note: (row.model_note as string) ?? '',
     age: (row.age as string) ?? '',
     payday: (row.payday as string) ?? '',
     hobbies: (row.hobbies as string) ?? '',

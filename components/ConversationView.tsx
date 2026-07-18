@@ -307,11 +307,17 @@ function ConversationView({
     setPpvError('')
     try {
       const response = await apiFetch(`/fan/${fan.id}/operator-ppv-options?creator_id=${creatorId}`)
-      const body = await response.json()
-      if (!response.ok) throw new Error(body.detail || 'Could not load vault media')
+      const body = await response.json().catch(() => ({}))
+      if (!response.ok) {
+        if (response.status === 404) throw new Error('The operator PPV route is not available on the deployed backend yet.')
+        throw new Error(body.detail || `Could not load vault media (${response.status})`)
+      }
       setPpvOptions(body)
     } catch (error) {
-      setPpvError(String(error instanceof Error ? error.message : error))
+      const message = String(error instanceof Error ? error.message : error)
+      setPpvError(message === 'Failed to fetch'
+        ? 'Could not reach the backend. Confirm the latest backend deployment is healthy and allows this dashboard origin.'
+        : message)
     } finally {
       setPpvOptionsLoading(false)
     }
@@ -353,7 +359,7 @@ function ConversationView({
           set_id: ppvSelectedSetId,
         }),
       })
-      const body = await response.json()
+      const body = await response.json().catch(() => ({}))
       if (!response.ok) throw new Error(body.detail || 'PPV could not be sent')
       onReplySent(ppvMessage.trim() || 'just for you...')
       setPpvComposerOpen(false)
@@ -1099,7 +1105,15 @@ function ConversationView({
               </div>
             </>
           ) : null}
-          {!ppvOptionsLoading && ppvError && !ppvOptions && <div style={{ color: '#e57689', fontSize: 12 }}>{ppvError}</div>}
+          {!ppvOptionsLoading && ppvError && !ppvOptions && (
+            <div>
+              <div style={{ color: '#e57689', fontSize: 12 }}>{ppvError}</div>
+              <button type="button" onClick={() => void openPpvComposer()}
+                style={{ marginTop: 10, padding: '7px 11px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg-elevated)', color: 'var(--text-secondary)', cursor: 'pointer' }}>
+                Retry
+              </button>
+            </div>
+          )}
         </div>
       </div>
     )}

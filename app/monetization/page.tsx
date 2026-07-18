@@ -288,7 +288,10 @@ export default function MonetizationPage() {
               </Grid>
               <Invariant label="Purchase confirmation is required before every next PPV step" />
               <NumberField label="Text messages between purchased PPV steps" value={policy.post_purchase_cooldown_messages} min={0} max={20} onChange={(value) => update('post_purchase_cooldown_messages', value)} />
-              <Hint>Package prices are confirmed by selection; Cleopatra never infers a hidden spending ceiling.</Hint>
+              <Hint>
+                Quick and full amounts are soft starting targets, not price caps. The exact selected package is priced inside the
+                combined minimum and maximum of its approved vault sets; an explicit fan budget is the only hard current ceiling.
+              </Hint>
             </Card>
 
             <Card title="Operator approval">
@@ -485,21 +488,63 @@ function Invariant({ label }: { label: string }) {
 }
 
 function NumberField({ label, value, min, max, onChange }: { label: string; value: number; min: number; max: number; onChange: (value: number) => void }) {
+  const [draft, setDraft] = useState(String(value))
+  useEffect(() => setDraft(String(value)), [value])
+
+  const commit = () => {
+    const parsed = draft.trim() === '' ? Number.NaN : Number(draft)
+    const next = Number.isFinite(parsed)
+      ? Math.max(min, Math.min(max, Math.round(parsed)))
+      : value
+    setDraft(String(next))
+    if (next !== value) onChange(next)
+  }
+
   return (
     <div>
       <label title={FIELD_HELP[label]} style={labelStyle}>{label}{FIELD_HELP[label] && <span style={{ marginLeft: 5 }}>ⓘ</span>}</label>
-      <input type="number" value={value} min={min} max={max} onChange={(event) => onChange(Number(event.target.value))} style={inputStyle} />
+      <input
+        type="number"
+        value={draft}
+        min={min}
+        max={max}
+        onChange={(event) => setDraft(event.target.value)}
+        onBlur={commit}
+        onKeyDown={(event) => { if (event.key === 'Enter') event.currentTarget.blur() }}
+        style={inputStyle}
+      />
     </div>
   )
 }
 
 function MoneyField({ label, cents, onChange, disabled = false }: { label: string; cents: number; onChange: (value: number) => void; disabled?: boolean }) {
+  const dollars = cents / 100
+  const [draft, setDraft] = useState(String(dollars))
+  useEffect(() => setDraft(String(dollars)), [dollars])
+
+  const commit = () => {
+    const parsed = draft.trim() === '' ? Number.NaN : Number(draft)
+    const nextCents = Number.isFinite(parsed) ? Math.max(100, Math.round(parsed * 100)) : cents
+    setDraft(String(nextCents / 100))
+    if (nextCents !== cents) onChange(nextCents)
+  }
+
   return (
     <div>
       <label title={FIELD_HELP[label]} style={labelStyle}>{label}{FIELD_HELP[label] && <span style={{ marginLeft: 5 }}>ⓘ</span>}</label>
       <div style={{ position: 'relative' }}>
         <span style={{ position: 'absolute', left: 12, top: 10, color: 'var(--text-muted)' }}>$</span>
-        <input disabled={disabled} type="number" min={1} step="1" value={(cents / 100).toFixed(0)} onChange={(event) => onChange(Math.max(0, Number(event.target.value) * 100))} style={{ ...inputStyle, paddingLeft: 26, opacity: disabled ? 0.5 : 1 }} />
+        <input
+          disabled={disabled}
+          type="number"
+          min={1}
+          step="0.01"
+          value={draft}
+          onChange={(event) => setDraft(event.target.value)}
+          onBlur={commit}
+          onKeyDown={(event) => { if (event.key === 'Enter') event.currentTarget.blur() }}
+          style={{ ...inputStyle, paddingLeft: 26, opacity: disabled ? 0.5 : 1 }}
+        />
       </div>
     </div>
   )

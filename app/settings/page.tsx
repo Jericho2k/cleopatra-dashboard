@@ -19,9 +19,33 @@ type AutoAudiencePolicy = {
   max_total_spend: number | null
 }
 
+type AutoAudiencePreview = {
+  eligible: number
+  ineligible: number
+  total: number
+  creator_auto_mode: boolean
+  reasons: Record<string, number>
+}
+
 const DEFAULT_AUTO_AUDIENCE: AutoAudiencePolicy = {
   scope: 'all', match_mode: 'any', include_list_ids: [], exclude_list_ids: [],
   spend_tiers: [], include_new_fans: false, min_total_spend: null, max_total_spend: null,
+}
+
+function audienceReasonLabel(reason: string): string {
+  return ({
+    all_fans: 'Included by All chats',
+    fan_override_on: 'Per-fan On',
+    fan_override_off: 'Per-fan Off',
+    creator_auto_off: 'Inheriting creator Off',
+    needs_human_review: 'Needs human review',
+    excluded_list: 'Excluded list',
+    new_fan: 'New chat',
+    not_new: 'Not a new chat',
+    rules_matched: 'Rules matched',
+    rules_not_matched: 'Rules not matched',
+    no_matching_rules: 'No matching criteria',
+  } as Record<string, string>)[reason] ?? reason.replaceAll('_', ' ')
 }
 const PROXY_COUNTRIES = [
   { code: 'US', label: '🇺🇸 United States' },
@@ -89,8 +113,9 @@ export default function SettingsPage() {
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null)
   const [audiencePolicy, setAudiencePolicy] = useState<AutoAudiencePolicy>(DEFAULT_AUTO_AUDIENCE)
   const [audienceLists, setAudienceLists] = useState<{ id: string; name: string }[]>([])
-  const [audiencePreview, setAudiencePreview] = useState<{ eligible: number; ineligible: number; total: number; creator_auto_mode: boolean } | null>(null)
+  const [audiencePreview, setAudiencePreview] = useState<AutoAudiencePreview | null>(null)
   const [audienceSaving, setAudienceSaving] = useState(false)
+  const [fullAutoSaving, setFullAutoSaving] = useState(false)
 
   function showToast(message: string, type: 'success' | 'error' = 'success') {
     setToast({ message, type })
@@ -355,6 +380,31 @@ export default function SettingsPage() {
       showToast(String(error instanceof Error ? error.message : error), 'error')
     } finally {
       setAudienceSaving(false)
+    }
+  }
+
+  const setCreatorFullAuto = async (enabled: boolean) => {
+    if (!selectedCreatorId || fullAutoSaving) return
+    if (enabled && !autoAvailable) {
+      showToast('Approve at least one vault set before enabling Full Auto', 'error')
+      return
+    }
+    setFullAutoSaving(true)
+    try {
+      const { error } = await supabase
+        .from('creators')
+        .update({ auto_mode: enabled })
+        .eq('id', selectedCreatorId)
+      if (error) throw error
+      setCreators(current => current.map(creator => (
+        creator.id === selectedCreatorId ? { ...creator, auto_mode: enabled } : creator
+      )))
+      await loadAutoAudience(selectedCreatorId)
+      showToast(`Creator Full Auto ${enabled ? 'enabled' : 'disabled'}`)
+    } catch (error) {
+      showToast(String(error instanceof Error ? error.message : error), 'error')
+    } finally {
+      setFullAutoSaving(false)
     }
   }
 
@@ -699,6 +749,35 @@ export default function SettingsPage() {
                 </div>
               </div>
 
+              <div style={{
+                display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 18,
+                padding: '13px 14px', marginBottom: 18, borderRadius: 9,
+                border: `1px solid ${audiencePreview?.creator_auto_mode ? 'rgba(76,175,130,0.45)' : 'var(--border)'}`,
+                background: audiencePreview?.creator_auto_mode ? 'rgba(76,175,130,0.07)' : 'var(--bg-elevated)',
+              }}>
+                <div>
+                  <div style={{ fontSize: 13, fontWeight: 650 }}>Creator Full Auto</div>
+                  <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 3, lineHeight: 1.4 }}>
+                    The audience rules choose who is eligible. This master switch decides whether inherited chats actually run automatically.
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => void setCreatorFullAuto(!audiencePreview?.creator_auto_mode)}
+                  disabled={fullAutoSaving || (autoAvailable === false && !audiencePreview?.creator_auto_mode)}
+                  style={{
+                    flexShrink: 0, minWidth: 92, padding: '8px 12px', borderRadius: 7,
+                    border: audiencePreview?.creator_auto_mode ? '1px solid var(--green)' : '1px solid var(--border)',
+                    background: audiencePreview?.creator_auto_mode ? 'rgba(76,175,130,0.13)' : 'var(--bg-main)',
+                    color: audiencePreview?.creator_auto_mode ? 'var(--green)' : 'var(--text-secondary)',
+                    cursor: fullAutoSaving ? 'wait' : 'pointer',
+                    opacity: fullAutoSaving || (autoAvailable === false && !audiencePreview?.creator_auto_mode) ? 0.55 : 1,
+                  }}
+                >
+                  {fullAutoSaving ? 'Saving…' : audiencePreview?.creator_auto_mode ? 'On' : 'Off'}
+                </button>
+              </div>
+
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 8, marginBottom: 20 }}>
                 {([
                   ['all', 'All chats', 'Every fan unless explicitly excluded'],
@@ -787,8 +866,19 @@ export default function SettingsPage() {
 
               {audiencePreview && (
                 <div style={{ padding: '10px 12px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg-elevated)', marginBottom: 14, fontSize: 12 }}>
-                  <span style={{ color: 'var(--text-primary)', fontWeight: 650 }}>{audiencePreview.eligible}</span> of {audiencePreview.total} current fans are eligible · {audiencePreview.ineligible} excluded
-                  {!audiencePreview.creator_auto_mode && <span style={{ color: '#e0a83a' }}> · Creator Full Auto is currently off</span>}
+                  <div>
+                    <span style={{ color: 'var(--text-primary)', fontWeight: 650 }}>{audiencePreview.eligible}</span> of {audiencePreview.total} current fans are eligible · {audiencePreview.ineligible} excluded
+                    {!audiencePreview.creator_auto_mode && <span style={{ color: '#e0a83a' }}> · Creator Full Auto is currently off</span>}
+                  </div>
+                  {Object.entries(audiencePreview.reasons ?? {}).length > 0 && (
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 9 }}>
+                      {Object.entries(audiencePreview.reasons).map(([reason, count]) => (
+                        <span key={reason} style={{ padding: '3px 7px', borderRadius: 5, background: 'var(--bg-main)', color: 'var(--text-muted)', fontSize: 10.5 }}>
+                          {audienceReasonLabel(reason)}: {count}
+                        </span>
+                      ))}
+                    </div>
+                  )}
                 </div>
               )}
 
