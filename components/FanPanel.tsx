@@ -137,6 +137,8 @@ export default function FanPanel({ fan, creatorId, onHistoryLoaded, showToast }:
   const [showAiProfile, setShowAiProfile] = useState(false)
   const [mediaPreview, setMediaPreview] = useState<{ items: MediaPreviewItem[]; index: number } | null>(null)
   const [fullAutoStatus, setFullAutoStatus] = useState<FullAutoStatus | null>(null)
+  const [reviewResolution, setReviewResolution] = useState<string | null>(null)
+  const [statusRefresh, setStatusRefresh] = useState(0)
 
   const mediaIdsForEntry = (entry: SalesEntry): string[] => {
     const primary = entry.media_id || (entry.item?.startsWith('PPV media ') ? entry.item.slice('PPV media '.length).trim() : '')
@@ -223,12 +225,15 @@ export default function FanPanel({ fan, creatorId, onHistoryLoaded, showToast }:
           relationship_status: (data as any)?.relationship_status || (data as any)?.ai_summary?.relationship_status || '',
         })
       })
-  }, [fan?.id])
+  }, [fan?.id, statusRefresh])
 
   useEffect(() => {
     if (!fan?.id) { setFullAutoStatus(null); return }
     let cancelled = false
+    let loading = false
     const load = async () => {
+      if (loading) return
+      loading = true
       try {
         const response = await apiFetch(`/fan/${fan.id}/full-auto-status`)
         if (!response.ok) return
@@ -236,15 +241,19 @@ export default function FanPanel({ fan, creatorId, onHistoryLoaded, showToast }:
         if (!cancelled) setFullAutoStatus(body)
       } catch {
         // Keep the conversation usable if the operational panel is unavailable.
+      } finally {
+        loading = false
       }
     }
     void load()
-    const interval = window.setInterval(() => void load(), 30_000)
+    const interval = window.setInterval(() => {
+      if (document.visibilityState === 'visible') void load()
+    }, 60_000)
     return () => {
       cancelled = true
       window.clearInterval(interval)
     }
-  }, [fan?.id, recoveryTick])
+  }, [fan?.id, recoveryTick, statusRefresh])
 
   useEffect(() => {
     if (fan) {
@@ -276,6 +285,7 @@ export default function FanPanel({ fan, creatorId, onHistoryLoaded, showToast }:
         setAiSummary(updated.ai_summary ?? null)
         if (Array.isArray(updated.sales_log)) setSalesLog(updated.sales_log)
         if (Array.isArray(updated.not_sold_log)) setNotSoldLog(updated.not_sold_log)
+        setNeedsReview({ frozen: !!updated.needs_human_review, reason: updated.review_reason ?? '' })
         setMemberNote(updated.member_note ?? '')
         setFanNotes(updated.notes ?? '')
         setFanPreferences(Array.isArray(updated.preferences) ? updated.preferences : [])
@@ -309,6 +319,33 @@ export default function FanPanel({ fan, creatorId, onHistoryLoaded, showToast }:
       showToast?.(`Imported ${data.imported} messages`)
     } finally {
       setLoadingHistory(false)
+    }
+  }
+
+  async function resolveReview(resolution: 'repair_ppv' | 'mark_purchased' | 'mark_not_sent' | 'resume_ai') {
+    if (!fan?.id || reviewResolution) return
+    if (resolution === 'mark_not_sent' && !window.confirm('Confirm that this PPV did not reach the fan. This will make the session eligible to send again.')) return
+    setReviewResolution(resolution)
+    try {
+      const response = await apiFetch(`/fan/${fan.id}/resolve-review`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ resolution }),
+      })
+      const body = await response.json().catch(() => ({}))
+      if (!response.ok) throw new Error(body.detail || 'Could not resolve this conversation')
+      setNeedsReview({ frozen: false, reason: '' })
+      setStatusRefresh(value => value + 1)
+      showToast?.(
+        resolution === 'repair_ppv' ? 'Payment tracking repaired — AI resumed'
+        : resolution === 'mark_purchased' ? 'Purchase recorded — AI resumed'
+        : resolution === 'mark_not_sent' ? 'PPV marked not sent — AI resumed'
+        : 'AI resumed for this fan'
+      )
+    } catch (error) {
+      showToast?.(error instanceof Error ? error.message : 'Could not resolve this conversation')
+    } finally {
+      setReviewResolution(null)
     }
   }
 
@@ -434,27 +471,27 @@ export default function FanPanel({ fan, creatorId, onHistoryLoaded, showToast }:
               ⚠ Auto mode paused — needs a human
             </div>
             <div style={{ fontSize: 12.5, color: 'var(--text-muted)', marginBottom: 10 }}>
-              This conversation was frozen{needsReview.reason ? ` (${needsReview.reason})` : ''}. Review it, then resume AI when you're ready.
+              {needsReview.reason === 'ppv_sent_but_reconciliation_not_persisted' || needsReview.reason === 'delivery_sent_but_not_persisted'
+                ? 'The PPV may have reached the fan, but payment tracking was not fully saved. Choose the outcome below before AI can resume.'
+                : `This conversation was frozen${needsReview.reason ? ` (${needsReview.reason})` : ''}. Review it, then resume AI when you're ready.`}
             </div>
-            <button
-              type="button"
-              onClick={async () => {
-                if (!fan?.id) return
-                const { error } = await supabase.from('fans')
-                  .update({ needs_human_review: false, review_reason: null })
-                  .eq('id', fan.id)
-                if (error) { showToast?.(error.message); return }
-                setNeedsReview({ frozen: false, reason: '' })
-                showToast?.('AI resumed for this fan')
-              }}
-              style={{
-                padding: '8px 16px', borderRadius: 8, fontSize: 12.5, fontWeight: 600,
-                background: 'rgba(94,214,154,0.12)', border: '1px solid var(--green)',
-                color: 'var(--green)', cursor: 'pointer',
-              }}
-            >
-              Resume AI
-            </button>
+            {needsReview.reason === 'ppv_sent_but_reconciliation_not_persisted' || needsReview.reason === 'delivery_sent_but_not_persisted' ? (
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                <button type="button" disabled={!!reviewResolution} onClick={() => void resolveReview('repair_ppv')} style={{ padding: '8px 12px', borderRadius: 8, fontSize: 12, fontWeight: 600, background: 'rgba(94,214,154,0.12)', border: '1px solid var(--green)', color: 'var(--green)', cursor: reviewResolution ? 'wait' : 'pointer', opacity: reviewResolution ? 0.55 : 1 }}>
+                  {reviewResolution === 'repair_ppv' ? 'Repairing…' : 'Repair payment tracking'}
+                </button>
+                <button type="button" disabled={!!reviewResolution} onClick={() => void resolveReview('mark_purchased')} style={{ padding: '8px 12px', borderRadius: 8, fontSize: 12, fontWeight: 600, background: 'rgba(155,143,212,0.12)', border: '1px solid var(--purple)', color: 'var(--purple)', cursor: reviewResolution ? 'wait' : 'pointer', opacity: reviewResolution ? 0.55 : 1 }}>
+                  {reviewResolution === 'mark_purchased' ? 'Recording…' : 'Mark purchased'}
+                </button>
+                <button type="button" disabled={!!reviewResolution} onClick={() => void resolveReview('mark_not_sent')} style={{ padding: '8px 12px', borderRadius: 8, fontSize: 12, fontWeight: 600, background: 'transparent', border: '1px solid var(--border)', color: 'var(--text-secondary)', cursor: reviewResolution ? 'wait' : 'pointer', opacity: reviewResolution ? 0.55 : 1 }}>
+                  {reviewResolution === 'mark_not_sent' ? 'Updating…' : 'Confirm not sent'}
+                </button>
+              </div>
+            ) : (
+              <button type="button" disabled={!!reviewResolution} onClick={() => void resolveReview('resume_ai')} style={{ padding: '8px 16px', borderRadius: 8, fontSize: 12.5, fontWeight: 600, background: 'rgba(94,214,154,0.12)', border: '1px solid var(--green)', color: 'var(--green)', cursor: reviewResolution ? 'wait' : 'pointer', opacity: reviewResolution ? 0.55 : 1 }}>
+                {reviewResolution === 'resume_ai' ? 'Resuming…' : 'Resume AI'}
+              </button>
+            )}
           </div>
         )}
 
