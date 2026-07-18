@@ -4,6 +4,19 @@ import React, { useEffect, useState } from 'react'
 import { supabase } from '../../lib/supabase'
 import { apiFetch } from '../../lib/api'
 
+type VaultCategorizationOverview = {
+  initial_completed_at: string | null
+  auto_categorize_new_media: boolean
+  uncategorized: number
+  manual_reanalysis: {
+    used: number
+    remaining: number
+    daily_limit: number
+    allowed: boolean
+  }
+  active_run: { status: string; mode?: string; done: number; total: number; errors?: number }
+}
+
 export default function VaultPage() {
   const [creators, setCreators] = useState<{ id: string; name: string }[]>([])
   const [selectedCreatorId, setSelectedCreatorId] = useState<string | null>(null)
@@ -18,6 +31,7 @@ export default function VaultPage() {
   const [uploadingVault, setUploadingVault] = useState(false)
   const [categorizingVault, setCategorizingVault] = useState(false)
   const [categorizeProgress, setCategorizeProgress] = useState<{ done: number; total: number; status: string } | null>(null)
+  const [categorizationOverview, setCategorizationOverview] = useState<VaultCategorizationOverview | null>(null)
   const [uploadAlbum, setUploadAlbum] = useState('')
   const [newAlbumName, setNewAlbumName] = useState('')
   const [showUploadModal, setShowUploadModal] = useState(false)
@@ -74,10 +88,23 @@ export default function VaultPage() {
     setVaultAlbums(byAlbum)
   }
 
+  const loadCategorizationOverview = async (creatorId: string) => {
+    try {
+      const response = await apiFetch(`/creator/${creatorId}/vault-categorization-overview`)
+      if (!response.ok) return
+      setCategorizationOverview(await response.json())
+    } catch {
+      setCategorizationOverview(null)
+    }
+  }
+
   useEffect(() => {
     if (!selectedCreatorId) return
     setSelectedAlbum(null)
-    loadVaultMedia(selectedCreatorId)
+    void Promise.all([
+      loadVaultMedia(selectedCreatorId),
+      loadCategorizationOverview(selectedCreatorId),
+    ])
   }, [selectedCreatorId])
 
   return (
@@ -117,9 +144,20 @@ export default function VaultPage() {
                         setVaultProgress({ synced: state.synced, total: state.total, album: state.album })
                         if (state.status === 'done' || state.status === 'error') {
                           clearInterval(interval)
-                          await loadVaultMedia(creatorId)
+                          await Promise.all([
+                            loadVaultMedia(creatorId),
+                            loadCategorizationOverview(creatorId),
+                          ])
                           setSyncingVault(false)
                           setTimeout(() => setVaultProgress(null), 1500)
+                          if (state.status === 'done') {
+                            const categorized = Number(state.categorized_new ?? 0)
+                            showToast(
+                              state.synced > 0
+                                ? `Imported ${state.synced} new item(s)${categorized ? ` and categorized ${categorized}` : ''}.`
+                                : 'Vault is already synchronized.'
+                            )
+                          }
                         }
                       } catch {
                         clearInterval(interval)
@@ -157,16 +195,18 @@ export default function VaultPage() {
                   onClick={async () => {
                     if (!selectedCreatorId || categorizingVault) return
                     setCategorizingVault(true)
-                    const startRes = await apiFetch(`/categorize-vault/${selectedCreatorId}`, { method: 'POST' })
+                    const mode = categorizationOverview?.initial_completed_at ? 'new' : 'initial'
+                    const startRes = await apiFetch(`/categorize-vault/${selectedCreatorId}?mode=${mode}`, { method: 'POST' })
                     const startData = await startRes.json().catch(() => ({}))
                     if (startData.status === 'nothing_to_categorize') {
                       setCategorizingVault(false)
                       showToast('Everything is already categorized — nothing new to process.')
                       return
                     }
-                    if (startData.status === 'cooldown') {
+                    if (startData.status === 'initial_already_completed') {
                       setCategorizingVault(false)
-                      showToast(`Categorize ran recently — available again in ${startData.days_remaining} day(s).`, 'error')
+                      await loadCategorizationOverview(selectedCreatorId)
+                      showToast('The one-time full-vault categorization is already complete.', 'error')
                       return
                     }
                     const interval = setInterval(async () => {
@@ -176,23 +216,77 @@ export default function VaultPage() {
                       if (state.status === 'done' || state.status === 'error') {
                         clearInterval(interval)
                         setCategorizingVault(false)
+                        await Promise.all([
+                          loadVaultMedia(selectedCreatorId),
+                          loadCategorizationOverview(selectedCreatorId),
+                        ])
                         setTimeout(() => setCategorizeProgress(null), 2000)
+                        if (state.status === 'done') {
+                          showToast(
+                            state.errors
+                              ? `Categorized ${state.done}; ${state.errors} item(s) need a retry.`
+                              : `Categorized ${state.done} item(s).`
+                          )
+                        }
                       }
                     }, 2000)
                   }}
-                  disabled={!selectedCreatorId || categorizingVault}
+                  disabled={!selectedCreatorId || categorizingVault || Boolean(categorizationOverview?.initial_completed_at && !categorizationOverview.uncategorized)}
                   style={{
                     padding: '6px 14px', borderRadius: 6, cursor: categorizingVault ? 'not-allowed' : 'pointer',
                     background: 'transparent', border: '1px solid var(--border)',
                     color: 'var(--text-muted)', fontSize: 12,
-                    opacity: !selectedCreatorId || categorizingVault ? 0.5 : 1,
+                    opacity: !selectedCreatorId || categorizingVault || Boolean(categorizationOverview?.initial_completed_at && !categorizationOverview.uncategorized) ? 0.5 : 1,
                   }}
                 >
                   {categorizingVault
                     ? `✦ ${categorizeProgress?.done ?? 0}/${categorizeProgress?.total ?? '?'}`
-                    : '✦ Categorize'}
+                    : categorizationOverview?.initial_completed_at
+                      ? `✦ Categorize new (${categorizationOverview.uncategorized})`
+                      : '✦ Run one-time setup'}
                 </button>
               </div>
+
+              {categorizationOverview && (
+                <div style={{
+                  marginBottom: 20, padding: '12px 14px', border: '1px solid var(--border)',
+                  borderRadius: 8, background: 'var(--bg-elevated)', fontSize: 12,
+                }}>
+                  <div style={{ color: 'var(--text-primary)', fontWeight: 600, marginBottom: 5 }}>
+                    AI categorization is optional
+                  </div>
+                  <div style={{ color: 'var(--text-muted)', lineHeight: 1.5 }}>
+                    It is required only for automatic set building and semantic media matching. The full vault can be
+                    processed once; later syncs process only newly imported media and never rerun the completed vault.
+                  </div>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 10, color: 'var(--text-secondary)', cursor: 'pointer' }}>
+                    <input
+                      type="checkbox"
+                      checked={categorizationOverview.auto_categorize_new_media}
+                      onChange={async event => {
+                        if (!selectedCreatorId) return
+                        const enabled = event.target.checked
+                        setCategorizationOverview(current => current ? { ...current, auto_categorize_new_media: enabled } : current)
+                        const response = await apiFetch(`/creator/${selectedCreatorId}/vault-categorization-settings`, {
+                          method: 'PUT',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({ auto_categorize_new_media: enabled }),
+                        })
+                        if (!response.ok) {
+                          setCategorizationOverview(current => current ? { ...current, auto_categorize_new_media: !enabled } : current)
+                          showToast('Could not update the new-media categorization setting.', 'error')
+                        }
+                      }}
+                    />
+                    Automatically categorize media imported by future syncs and uploads
+                  </label>
+                  <div style={{ marginTop: 8, color: 'var(--text-muted)' }}>
+                    Full-vault setup: {categorizationOverview.initial_completed_at ? 'completed and locked' : 'not run'} ·
+                    {' '}{categorizationOverview.uncategorized} uncategorized ·
+                    {' '}{categorizationOverview.manual_reanalysis.remaining}/{categorizationOverview.manual_reanalysis.daily_limit} manual AI re-analyses remaining today
+                  </div>
+                </div>
+              )}
 
               <div style={{ marginBottom: 24 }}>
                 <div style={{ fontSize: 18, fontWeight: 600, marginBottom: 4 }}>Vault</div>
@@ -464,6 +558,10 @@ export default function VaultPage() {
                               { method: 'POST' }
                             )
                             const data = await res.json()
+                            if (!res.ok) {
+                              showToast(data.detail || 'Could not re-analyze this media.', 'error')
+                              return
+                            }
                             if (data.status === 'ok' && data.item) {
                               setPreviewItem((prev: any) => ({ ...prev, ...data.item }))
                               setPreviewEdits((prev: any) => prev ? {
@@ -482,20 +580,26 @@ export default function VaultPage() {
                                 })
                                 return next
                               })
+                              if (selectedCreatorId) await loadCategorizationOverview(selectedCreatorId)
+                              showToast(
+                                `Media re-analyzed. ${data.manual_reanalysis?.remaining ?? 0} AI re-analyses remaining today.`
+                              )
                             }
                           } finally {
                             setPreviewSaving(false)
                           }
                         }}
-                        disabled={previewSaving}
+                        disabled={previewSaving || categorizationOverview?.manual_reanalysis.allowed === false}
                         style={{
                           width: '100%', padding: '6px', borderRadius: 6, marginBottom: 8,
                           background: 'rgba(155,143,212,0.1)', border: '1px solid rgba(155,143,212,0.3)',
                           color: 'var(--purple)', fontSize: 12, cursor: previewSaving ? 'not-allowed' : 'pointer',
-                          opacity: previewSaving ? 0.6 : 1,
+                          opacity: previewSaving || categorizationOverview?.manual_reanalysis.allowed === false ? 0.6 : 1,
                         }}
                       >
-                        {previewSaving ? 'Analyzing...' : '✦ Re-analyze with AI'}
+                        {previewSaving
+                          ? 'Analyzing...'
+                          : `✦ Re-analyze with AI (${categorizationOverview?.manual_reanalysis.remaining ?? 5} left today)`}
                       </button>
 
                       <button
