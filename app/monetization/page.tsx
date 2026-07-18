@@ -28,10 +28,14 @@ type Policy = {
   session_max_steps: number
   post_purchase_cooldown_messages: number
   require_purchase_before_next_step: boolean
+  require_operator_ppv_approval: boolean
   ppv_recheck_minutes: number
   ppv_payment_window_hours: number
   abandoned_ppv_followup_enabled: boolean
   abandoned_ppv_followup_delay_hours: number
+  pending_offer_expiry_hours: number
+  abandoned_offer_followup_enabled: boolean
+  abandoned_offer_followup_delay_hours: number
   post_session_followup_enabled: boolean
   post_session_followup_delay_hours: number
   followup_recent_activity_suppression_hours: number
@@ -56,6 +60,17 @@ type FullAutoHealth = {
   }>
 }
 
+type PPVApproval = {
+  id: string
+  fan_id: string
+  fans?: { display_name?: string | null } | null
+  message_content: string
+  media_ids: string[]
+  price_cents: number
+  approved_experience: string | null
+  created_at: string
+}
+
 const DEFAULT_POLICY: Policy = {
   sexting_mode: 'HYBRID_TEASER',
   teaser_max_messages: 4,
@@ -72,10 +87,14 @@ const DEFAULT_POLICY: Policy = {
   session_max_steps: 4,
   post_purchase_cooldown_messages: 2,
   require_purchase_before_next_step: true,
+  require_operator_ppv_approval: false,
   ppv_recheck_minutes: 20,
   ppv_payment_window_hours: 24,
   abandoned_ppv_followup_enabled: true,
   abandoned_ppv_followup_delay_hours: 18,
+  pending_offer_expiry_hours: 24,
+  abandoned_offer_followup_enabled: true,
+  abandoned_offer_followup_delay_hours: 18,
   post_session_followup_enabled: true,
   post_session_followup_delay_hours: 18,
   followup_recent_activity_suppression_hours: 6,
@@ -89,6 +108,8 @@ export default function MonetizationPage() {
   const [saving, setSaving] = useState(false)
   const [message, setMessage] = useState('')
   const [health, setHealth] = useState<FullAutoHealth | null>(null)
+  const [approvals, setApprovals] = useState<PPVApproval[]>([])
+  const [resolvingApproval, setResolvingApproval] = useState<string | null>(null)
 
   useEffect(() => {
     void loadCreators()
@@ -98,6 +119,7 @@ export default function MonetizationPage() {
     if (creatorId) {
       void loadPolicy(creatorId)
       void loadHealth(creatorId)
+      void loadApprovals(creatorId)
     }
   }, [creatorId])
 
@@ -140,6 +162,39 @@ export default function MonetizationPage() {
       setHealth(await response.json())
     } catch {
       setHealth(null)
+    }
+  }
+
+  async function loadApprovals(id: string) {
+    try {
+      const response = await apiFetch(`/creator/${id}/ppv-approvals?status=pending`)
+      if (!response.ok) throw new Error(await response.text())
+      const body = await response.json()
+      setApprovals(body.requests ?? [])
+    } catch {
+      setApprovals([])
+    }
+  }
+
+  async function resolveApproval(id: string, action: 'approve' | 'reject') {
+    setResolvingApproval(id)
+    setMessage('')
+    try {
+      const { data: { user } } = await supabase.auth.getUser()
+      const response = await apiFetch(`/ppv-approvals/${id}/${action}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ resolved_by: user?.id ?? null }),
+      })
+      const body = await response.json()
+      if (!response.ok) throw new Error(body.detail || `Could not ${action} PPV`)
+      await Promise.all([loadApprovals(creatorId), loadHealth(creatorId)])
+      setMessage(action === 'approve' ? 'Locked PPV sent and purchase tracking started.' : 'Prepared PPV rejected.')
+    } catch (error) {
+      setMessage(String(error instanceof Error ? error.message : error))
+      await loadApprovals(creatorId)
+    } finally {
+      setResolvingApproval(null)
     }
   }
 
@@ -220,7 +275,7 @@ export default function MonetizationPage() {
                 <NumberField label="Free text messages" value={policy.free_text_max_messages} min={1} max={500} onChange={(value) => update('free_text_max_messages', value)} />
                 <NumberField label="Free-session cooldown (hours)" value={policy.free_session_cooldown_hours} min={0} max={720} onChange={(value) => update('free_session_cooldown_hours', value)} />
               </Grid>
-              <Toggle label="Media always requires payment" checked={policy.media_always_paid} onChange={(value) => update('media_always_paid', value)} />
+              <Invariant label="Media always requires payment" />
             </Card>
 
             <Card title="Paid session packages">
@@ -231,9 +286,50 @@ export default function MonetizationPage() {
                 <NumberField label="Minimum PPV steps" value={policy.session_min_steps} min={1} max={8} onChange={(value) => update('session_min_steps', value)} />
                 <NumberField label="Maximum PPV steps" value={policy.session_max_steps} min={1} max={8} onChange={(value) => update('session_max_steps', value)} />
               </Grid>
-              <Toggle label="Require purchase before the next PPV step" checked={policy.require_purchase_before_next_step} onChange={(value) => update('require_purchase_before_next_step', value)} />
+              <Invariant label="Purchase confirmation is required before every next PPV step" />
               <NumberField label="Text messages between purchased PPV steps" value={policy.post_purchase_cooldown_messages} min={0} max={20} onChange={(value) => update('post_purchase_cooldown_messages', value)} />
               <Hint>Package prices are confirmed by selection; Cleopatra never infers a hidden spending ceiling.</Hint>
+            </Card>
+
+            <Card title="Operator approval">
+              <Toggle
+                label="Pause before every auto-generated locked PPV and wait for operator approval"
+                checked={policy.require_operator_ppv_approval}
+                onChange={(value) => update('require_operator_ppv_approval', value)}
+              />
+              <Hint>
+                The exact media, approved experience, message, and price are frozen in the approval queue. If the fan
+                replies or the session changes before approval, the prepared send is cancelled instead of becoming stale.
+              </Hint>
+              {approvals.length > 0 && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 14 }}>
+                  {approvals.map(approval => (
+                    <div key={approval.id} style={{ padding: 12, border: '1px solid var(--border)', borderRadius: 9, background: 'var(--bg-elevated)' }}>
+                      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }}>
+                        <div>
+                          <div style={{ fontSize: 13, fontWeight: 650 }}>
+                            {approval.fans?.display_name || 'Fan'} · ${(approval.price_cents / 100).toFixed(0)}
+                          </div>
+                          <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 3 }}>
+                            {approval.media_ids.length} media{approval.approved_experience ? ` · ${approval.approved_experience}` : ''}
+                          </div>
+                          <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 6 }}>{approval.message_content || 'just for you...'}</div>
+                        </div>
+                        <div style={{ display: 'flex', gap: 6 }}>
+                          <button type="button" disabled={resolvingApproval === approval.id} onClick={() => void resolveApproval(approval.id, 'reject')}
+                            style={{ ...buttonStyle, width: 'auto', padding: '7px 10px', background: 'transparent', color: 'var(--text-secondary)', borderColor: 'var(--border)' }}>
+                            Reject
+                          </button>
+                          <button type="button" disabled={resolvingApproval === approval.id} onClick={() => void resolveApproval(approval.id, 'approve')}
+                            style={{ ...buttonStyle, width: 'auto', padding: '7px 10px' }}>
+                            {resolvingApproval === approval.id ? 'Sending…' : 'Approve & send'}
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </Card>
 
             <Card title="Payday recovery">
@@ -258,13 +354,23 @@ export default function MonetizationPage() {
               <NumberField label="Post-session delay (hours)" value={policy.post_session_followup_delay_hours} min={1} max={720} onChange={(value) => update('post_session_followup_delay_hours', value)} />
               <Toggle label="Follow up once after an abandoned locked PPV" checked={policy.abandoned_ppv_followup_enabled} onChange={(value) => update('abandoned_ppv_followup_enabled', value)} />
               <NumberField label="Abandoned PPV delay (hours)" value={policy.abandoned_ppv_followup_delay_hours} min={1} max={720} onChange={(value) => update('abandoned_ppv_followup_delay_hours', value)} />
-              <Hint>A failed verification is retried. An offer is abandoned only after the full purchase window expires.</Hint>
+              <div style={{ marginTop: 18, paddingTop: 16, borderTop: '1px solid var(--border)' }}>
+                <div style={{ fontSize: 13, fontWeight: 650, marginBottom: 4 }}>Presented offer recovery</div>
+                <Hint>If a fan disappears after seeing options, the exact approved offer remains attached until this window expires.</Hint>
+                <Grid>
+                  <NumberField label="Pending offer window (hours)" value={policy.pending_offer_expiry_hours} min={1} max={168} onChange={(value) => update('pending_offer_expiry_hours', value)} />
+                  <NumberField label="Abandoned offer follow-up delay (hours)" value={policy.abandoned_offer_followup_delay_hours} min={1} max={720} onChange={(value) => update('abandoned_offer_followup_delay_hours', value)} />
+                </Grid>
+                <Toggle label="Follow up once after an unselected offer expires" checked={policy.abandoned_offer_followup_enabled} onChange={(value) => update('abandoned_offer_followup_enabled', value)} />
+              </div>
+              <Hint>Failed purchase checks are retried. A locked PPV and an unselected offer have separate durable recovery paths.</Hint>
             </Card>
 
             {health && (
               <Card title="Pilot health">
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: 10 }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, minmax(0, 1fr))', gap: 10 }}>
                   <Metric label="Payment pending" value={health.summary.payment_pending} />
+                  <Metric label="PPV approvals" value={approvals.length} alert={approvals.length > 0} />
                   <Metric label="Follow-ups" value={health.summary.followups_pending} />
                   <Metric label="Needs human" value={health.summary.human_review} />
                   <Metric label="Failed actions" value={health.summary.failed_actions} alert={health.summary.failed_actions > 0} />
@@ -286,7 +392,7 @@ export default function MonetizationPage() {
                     ))}
                   </div>
                 )}
-                <button type="button" onClick={() => void loadHealth(creatorId)} style={{ ...buttonStyle, marginTop: 14, width: 'auto', padding: '8px 14px' }}>
+                <button type="button" onClick={() => void Promise.all([loadHealth(creatorId), loadApprovals(creatorId)])} style={{ ...buttonStyle, marginTop: 14, width: 'auto', padding: '8px 14px' }}>
                   Refresh health
                 </button>
               </Card>
@@ -361,6 +467,19 @@ function Toggle({ label, checked, onChange }: { label: string; checked: boolean;
       <input type="checkbox" checked={checked} onChange={(event) => onChange(event.target.checked)} />
       {label}
     </label>
+  )
+}
+
+function Invariant({ label }: { label: string }) {
+  return (
+    <div style={{
+      display: 'flex', alignItems: 'center', gap: 9, marginTop: 14,
+      color: 'var(--text-secondary)', fontSize: 13,
+    }}>
+      <span aria-hidden="true" style={{ color: 'var(--green)', fontWeight: 700 }}>✓</span>
+      <span>{label}</span>
+      <span style={{ color: 'var(--text-muted)', fontSize: 11 }}>Required safety rule</span>
+    </div>
   )
 }
 
