@@ -37,6 +37,9 @@ type OperatorPPVOptions = {
   approved_sets: OperatorPPVSet[]
 }
 
+type OperatorPPVMode = 'set' | 'manual'
+type OperatorPPVStatusFilter = 'all' | 'unused' | 'not_sold' | 'sold'
+
 export interface ConversationViewProps {
   fan: Fan | null
   creatorId: string
@@ -84,10 +87,13 @@ function ConversationView({
   const [queuedMessages, setQueuedMessages] = useState<string[]>([])
   const [mediaPreview, setMediaPreview] = useState<{ url: string; mimetype: string; filename: string } | null>(null)
   const [ppvComposerOpen, setPpvComposerOpen] = useState(false)
+  const [ppvComposerMode, setPpvComposerMode] = useState<OperatorPPVMode>('manual')
   const [ppvOptions, setPpvOptions] = useState<OperatorPPVOptions | null>(null)
   const [ppvOptionsLoading, setPpvOptionsLoading] = useState(false)
   const [ppvSelectedIds, setPpvSelectedIds] = useState<string[]>([])
   const [ppvSelectedSetId, setPpvSelectedSetId] = useState<string | null>(null)
+  const [ppvAlbumFilter, setPpvAlbumFilter] = useState('all')
+  const [ppvStatusFilter, setPpvStatusFilter] = useState<OperatorPPVStatusFilter>('all')
   const [ppvPrice, setPpvPrice] = useState('')
   const [ppvMessage, setPpvMessage] = useState('just for you...')
   const [ppvSending, setPpvSending] = useState(false)
@@ -147,6 +153,8 @@ function ConversationView({
     setPpvOptions(null)
     setPpvSelectedIds([])
     setPpvSelectedSetId(null)
+    setPpvAlbumFilter('all')
+    setPpvStatusFilter('all')
     setPpvPrice('')
     setPpvError('')
   }, [fan?.id])
@@ -298,10 +306,17 @@ function ConversationView({
     // which already sets setSuggestions and setLoading(false)
   }
 
-  const openPpvComposer = async () => {
+  const openPpvComposer = async (mode: OperatorPPVMode = 'manual') => {
     if (!fan) return
+    setPpvComposerMode(mode)
     setPpvComposerOpen(true)
     setPpvOptionsLoading(true)
+    setPpvOptions(null)
+    setPpvSelectedIds([])
+    setPpvSelectedSetId(null)
+    setPpvAlbumFilter('all')
+    setPpvStatusFilter('all')
+    setPpvPrice('')
     setPpvError('')
     try {
       const response = await apiFetch(`/fan/${fan.id}/operator-ppv-options?creator_id=${creatorId}`)
@@ -415,6 +430,26 @@ function ConversationView({
   }
 
   const hasBlockedWords = getBlockedMatches(inputValue).length > 0
+  const ppvAlbums = ppvOptions
+    ? Array.from(new Set(ppvOptions.media.map(media => media.album_title || 'Uncategorized'))).sort((a, b) => a.localeCompare(b))
+    : []
+  const ppvMediaByExternalId = ppvOptions
+    ? new Map(ppvOptions.media.map(media => [media.external_media_id, media]))
+    : new Map<string, OperatorPPVMedia>()
+  const ppvVisibleMedia = (ppvOptions?.media ?? []).filter(media => {
+    const inAlbum = ppvAlbumFilter === 'all' || (media.album_title || 'Uncategorized') === ppvAlbumFilter
+    const inStatus = ppvStatusFilter === 'all'
+      || (ppvStatusFilter === 'unused' && media.fan_sale_status === 'unused')
+      || (ppvStatusFilter === 'sold' && media.fan_sale_status === 'sold')
+      || (ppvStatusFilter === 'not_sold' && ['sent', 'payment_pending'].includes(media.fan_sale_status))
+    return inAlbum && inStatus
+  })
+  const ppvStatusCounts: Record<OperatorPPVStatusFilter, number> = {
+    all: ppvOptions?.media.length ?? 0,
+    unused: ppvOptions?.media.filter(media => media.fan_sale_status === 'unused').length ?? 0,
+    not_sold: ppvOptions?.media.filter(media => ['sent', 'payment_pending'].includes(media.fan_sale_status)).length ?? 0,
+    sold: ppvOptions?.media.filter(media => media.fan_sale_status === 'sold').length ?? 0,
+  }
 
   const fanAutoMode = fan.auto_mode
   const buttonLabel = fanAutoMode === true ? '● Auto' : fanAutoMode === false ? '○ Off' : 'Auto'
@@ -863,17 +898,30 @@ function ConversationView({
               Scripts
             </button>
           )}
-          <button
-            type="button"
-            onClick={() => void openPpvComposer()}
-            style={{
-              marginLeft: 'auto', padding: '6px 10px', borderRadius: 6, cursor: 'pointer',
-              border: '1px solid rgba(155,143,212,0.4)',
-              background: 'rgba(155,143,212,0.1)', color: 'var(--purple)', fontSize: 12,
-            }}
-          >
-            Build locked PPV
-          </button>
+          <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8 }}>
+            <button
+              type="button"
+              onClick={() => void openPpvComposer('set')}
+              style={{
+                padding: '6px 10px', borderRadius: 6, cursor: 'pointer',
+                border: '1px solid var(--border-strong)',
+                background: 'var(--bg-elevated)', color: 'var(--text-secondary)', fontSize: 12,
+              }}
+            >
+              Choose a set
+            </button>
+            <button
+              type="button"
+              onClick={() => void openPpvComposer('manual')}
+              style={{
+                padding: '6px 10px', borderRadius: 6, cursor: 'pointer',
+                border: '1px solid rgba(155,143,212,0.4)',
+                background: 'rgba(155,143,212,0.1)', color: 'var(--purple)', fontSize: 12,
+              }}
+            >
+              Build locked PPV
+            </button>
+          </div>
         </div>
 
         {showScripts && (
@@ -1000,15 +1048,19 @@ function ConversationView({
         <div
           onClick={event => event.stopPropagation()}
           style={{
-            width: 880, maxWidth: '95vw', maxHeight: '90vh', overflow: 'auto',
+            width: 1000, maxWidth: '95vw', maxHeight: '90vh', overflow: 'auto',
             background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: 14, padding: 20,
           }}
         >
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 16, marginBottom: 16 }}>
             <div>
-              <div style={{ fontSize: 17, fontWeight: 700 }}>Build locked PPV</div>
+              <div style={{ fontSize: 17, fontWeight: 700 }}>
+                {ppvComposerMode === 'set' ? 'Choose a set' : 'Build locked PPV'}
+              </div>
               <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4 }}>
-                Select an approved set or build a bundle. Status is specific to {fan.display_name}.
+                {ppvComposerMode === 'set'
+                  ? `Review every item in an approved set before sending it to ${fan.display_name}.`
+                  : `Build a custom bundle by album and sale history. Status is specific to ${fan.display_name}.`}
               </div>
             </div>
             <button type="button" onClick={() => setPpvComposerOpen(false)} disabled={ppvSending}
@@ -1025,61 +1077,182 @@ function ConversationView({
                 </div>
               )}
 
-              {ppvOptions.approved_sets.length > 0 && (
-                <div style={{ marginBottom: 18 }}>
-                  <div style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>Approved sets</div>
-                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                    {ppvOptions.approved_sets.map(set => {
-                      const active = ppvSelectedSetId === set.id
-                      return (
-                        <button key={set.id} type="button" onClick={() => choosePpvSet(set)}
-                          style={{
-                            textAlign: 'left', padding: '9px 11px', minWidth: 150, borderRadius: 8, cursor: 'pointer',
-                            border: active ? '1px solid var(--purple)' : '1px solid var(--border)',
-                            background: active ? 'rgba(155,143,212,0.12)' : 'var(--bg-elevated)', color: 'var(--text-primary)',
-                          }}>
-                          <div style={{ fontSize: 12, fontWeight: 650 }}>{set.title || 'Approved set'}</div>
-                          <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 3 }}>
-                            {set.media_ids?.length ?? 0} media · ${((Number(set.base_price_cents ?? 0) || Math.round(Number(set.suggested_price ?? 0) * 100)) / 100).toFixed(0)}
+              {ppvComposerMode === 'set' ? (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 12, maxHeight: 480, overflowY: 'auto', paddingRight: 4 }}>
+                  {ppvOptions.approved_sets.length === 0 ? (
+                    <div style={{ padding: 24, borderRadius: 8, border: '1px dashed var(--border)', color: 'var(--text-muted)', textAlign: 'center', fontSize: 12 }}>
+                      No approved sets are available. Approve a set on the Sets page first.
+                    </div>
+                  ) : ppvOptions.approved_sets.map(set => {
+                    const active = ppvSelectedSetId === set.id
+                    const baseCents = Number(set.base_price_cents ?? 0) || Math.round(Number(set.suggested_price ?? 0) * 100)
+                    const minCents = Number(set.min_price_cents ?? 0)
+                    const maxCents = Number(set.max_price_cents ?? 0)
+                    return (
+                      <div key={set.id} style={{
+                        padding: 14, borderRadius: 10,
+                        border: active ? '1px solid var(--purple)' : '1px solid var(--border)',
+                        background: active ? 'rgba(155,143,212,0.09)' : 'var(--bg-elevated)',
+                      }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12 }}>
+                          <div style={{ minWidth: 0, flex: 1 }}>
+                            <div style={{ fontSize: 14, fontWeight: 650 }}>{set.title || 'Approved set'}</div>
+                            <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 3 }}>
+                              {set.media_ids?.length ?? 0} media · default ${(baseCents / 100).toFixed(0)}
+                              {minCents > 0 && maxCents >= minCents ? ` · allowed $${(minCents / 100).toFixed(0)}–$${(maxCents / 100).toFixed(0)}` : ''}
+                            </div>
                           </div>
+                          <button type="button" onClick={() => choosePpvSet(set)} style={{
+                            padding: '7px 12px', borderRadius: 7, cursor: 'pointer', fontSize: 12,
+                            border: active ? '1px solid var(--purple)' : '1px solid var(--border-strong)',
+                            background: active ? 'var(--purple)' : 'var(--bg-surface)',
+                            color: active ? '#111' : 'var(--text-secondary)',
+                          }}>
+                            {active ? 'Selected' : 'Select set'}
+                          </button>
+                        </div>
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7 }}>
+                          {set.media_ids.map(mediaId => {
+                            const media = ppvMediaByExternalId.get(mediaId)
+                            const source = media?.thumbnail_url || media?.url
+                            const statusColor = media?.fan_sale_status === 'sold' ? 'var(--green)'
+                              : media?.fan_sale_status === 'payment_pending' ? '#e0b46d'
+                              : media?.fan_sale_status === 'sent' ? 'var(--purple)'
+                              : 'var(--text-muted)'
+                            return (
+                              <button key={mediaId} type="button"
+                                disabled={!media?.url}
+                                title={media?.url ? 'Preview media' : 'Preview unavailable'}
+                                onClick={() => media?.url && setMediaPreview({
+                                  url: media.url,
+                                  mimetype: media.mimetype || '',
+                                  filename: media.filename || media.external_media_id,
+                                })}
+                                style={{
+                                  position: 'relative', width: 84, height: 108, padding: 0, overflow: 'hidden',
+                                  borderRadius: 7, border: '1px solid var(--border)', background: 'var(--bg-main)',
+                                  cursor: media?.url ? 'zoom-in' : 'default', color: 'var(--text-muted)',
+                                }}>
+                                {source && !media?.mimetype?.startsWith('video') ? (
+                                  <img src={source} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                                ) : media?.thumbnail_url ? (
+                                  <img src={media.thumbnail_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                                ) : (
+                                  <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20 }}>
+                                    {media?.mimetype?.startsWith('video') ? '🎬' : 'Media'}
+                                  </div>
+                                )}
+                                {media && <span style={{
+                                  position: 'absolute', left: 4, bottom: 4, padding: '2px 5px', borderRadius: 999,
+                                  background: 'rgba(0,0,0,0.76)', color: statusColor, fontSize: 8,
+                                  textTransform: 'uppercase', letterSpacing: '0.03em',
+                                }}>{media.fan_sale_status.replace('_', ' ')}</span>}
+                              </button>
+                            )
+                          })}
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              ) : (
+                <>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap', marginBottom: 14 }}>
+                    <span style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginRight: 3 }}>Sale history</span>
+                    {(['all', 'unused', 'not_sold', 'sold'] as OperatorPPVStatusFilter[]).map(status => {
+                      const active = ppvStatusFilter === status
+                      const label = status === 'not_sold' ? 'Not sold' : status[0].toUpperCase() + status.slice(1)
+                      return (
+                        <button key={status} type="button" onClick={() => setPpvStatusFilter(status)} style={{
+                          padding: '5px 10px', borderRadius: 999, cursor: 'pointer', fontSize: 11,
+                          border: active ? '1px solid var(--purple)' : '1px solid var(--border)',
+                          background: active ? 'rgba(155,143,212,0.13)' : 'transparent',
+                          color: active ? 'var(--purple)' : 'var(--text-muted)',
+                        }}>{label} ({ppvStatusCounts[status]})</button>
+                      )
+                    })}
+                  </div>
+
+                  <div style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>Choose an album</div>
+                  <div style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 10, marginBottom: 4 }}>
+                    {[{ value: 'all', label: 'All media', count: ppvOptions.media.length }, ...ppvAlbums.map(album => ({
+                      value: album,
+                      label: album,
+                      count: ppvOptions.media.filter(media => (media.album_title || 'Uncategorized') === album).length,
+                    }))].map(album => {
+                      const active = ppvAlbumFilter === album.value
+                      return (
+                        <button key={album.value} type="button" onClick={() => setPpvAlbumFilter(album.value)} style={{
+                          flex: '0 0 126px', minHeight: 76, padding: '10px 9px', borderRadius: 8, cursor: 'pointer',
+                          border: active ? '1px solid var(--purple)' : '1px solid var(--border)',
+                          background: active ? 'rgba(155,143,212,0.11)' : 'var(--bg-elevated)',
+                          color: active ? 'var(--text-primary)' : 'var(--text-secondary)', textAlign: 'center',
+                        }}>
+                          <div style={{ fontSize: 20, lineHeight: 1 }}>📁</div>
+                          <div style={{ fontSize: 11, fontWeight: 600, marginTop: 6, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{album.label}</div>
+                          <div style={{ fontSize: 9, color: 'var(--text-muted)', marginTop: 3 }}>{album.count} items</div>
                         </button>
                       )
                     })}
                   </div>
-                </div>
-              )}
 
-              <div style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>Individual media</div>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(118px, 1fr))', gap: 8, maxHeight: 330, overflow: 'auto', paddingRight: 4 }}>
-                {ppvOptions.media.map(media => {
-                  const active = ppvSelectedIds.includes(media.external_media_id)
-                  const statusColor = media.fan_sale_status === 'sold' ? 'var(--green)'
-                    : media.fan_sale_status === 'payment_pending' ? '#e0b46d'
-                    : media.fan_sale_status === 'sent' ? 'var(--purple)'
-                    : 'var(--text-muted)'
-                  return (
-                    <button key={media.id} type="button" onClick={() => togglePpvMedia(media.external_media_id)}
-                      style={{
-                        padding: 0, overflow: 'hidden', borderRadius: 8, cursor: 'pointer', textAlign: 'left',
-                        border: active ? '2px solid var(--purple)' : '1px solid var(--border)',
-                        background: 'var(--bg-elevated)', color: 'var(--text-primary)',
-                      }}>
-                      <div style={{ aspectRatio: '1/1', background: 'var(--bg-main)', overflow: 'hidden', position: 'relative' }}>
-                        {(media.thumbnail_url || media.url) ? (
-                          <img src={media.thumbnail_url || media.url || ''} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                        ) : (
-                          <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)' }}>Media</div>
-                        )}
-                        {active && <div style={{ position: 'absolute', top: 5, right: 5, width: 20, height: 20, borderRadius: '50%', background: 'var(--purple)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#111', fontSize: 12, fontWeight: 800 }}>✓</div>}
-                      </div>
-                      <div style={{ padding: '7px 8px' }}>
-                        <div style={{ fontSize: 10, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{media.filename || media.ai_description || media.external_media_id}</div>
-                        <div style={{ fontSize: 9, color: statusColor, marginTop: 3, textTransform: 'uppercase' }}>{media.fan_sale_status.replace('_', ' ')}</div>
-                      </div>
-                    </button>
-                  )
-                })}
-              </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, marginBottom: 8 }}>
+                    <div style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Individual media</div>
+                    <div style={{ fontSize: 10, color: 'var(--text-faint)' }}>{ppvVisibleMedia.length} shown</div>
+                  </div>
+                  {ppvVisibleMedia.length === 0 ? (
+                    <div style={{ padding: 24, borderRadius: 8, border: '1px dashed var(--border)', color: 'var(--text-muted)', textAlign: 'center', fontSize: 12 }}>
+                      No media matches this album and sale-history filter.
+                    </div>
+                  ) : (
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(118px, 1fr))', gap: 8, maxHeight: 330, overflow: 'auto', paddingRight: 4 }}>
+                      {ppvVisibleMedia.map(media => {
+                        const active = ppvSelectedIds.includes(media.external_media_id)
+                        const statusColor = media.fan_sale_status === 'sold' ? 'var(--green)'
+                          : media.fan_sale_status === 'payment_pending' ? '#e0b46d'
+                          : media.fan_sale_status === 'sent' ? 'var(--purple)'
+                          : 'var(--text-muted)'
+                        const source = media.thumbnail_url || media.url
+                        return (
+                          <div key={media.id} role="checkbox" aria-checked={active} tabIndex={0}
+                            onClick={() => togglePpvMedia(media.external_media_id)}
+                            onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') togglePpvMedia(media.external_media_id) }}
+                            style={{
+                              overflow: 'hidden', borderRadius: 8, cursor: 'pointer', textAlign: 'left', position: 'relative',
+                              border: active ? '2px solid var(--purple)' : '1px solid var(--border)',
+                              background: 'var(--bg-elevated)', color: 'var(--text-primary)',
+                            }}>
+                            <div style={{ aspectRatio: '1/1', background: 'var(--bg-main)', overflow: 'hidden', position: 'relative' }}>
+                              {source && !media.mimetype?.startsWith('video') ? (
+                                <img src={source} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                              ) : media.thumbnail_url ? (
+                                <img src={media.thumbnail_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                              ) : (
+                                <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)', fontSize: 20 }}>
+                                  {media.mimetype?.startsWith('video') ? '🎬' : 'Media'}
+                                </div>
+                              )}
+                              {active && <div style={{ position: 'absolute', top: 5, right: 5, width: 20, height: 20, borderRadius: '50%', background: 'var(--purple)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#111', fontSize: 12, fontWeight: 800 }}>✓</div>}
+                              {media.url && <button type="button" title="Preview media" onClick={event => {
+                                event.stopPropagation()
+                                setMediaPreview({ url: media.url || '', mimetype: media.mimetype || '', filename: media.filename || media.external_media_id })
+                              }} style={{
+                                position: 'absolute', left: 5, top: 5, padding: '3px 6px', borderRadius: 5,
+                                border: '1px solid rgba(255,255,255,0.24)', background: 'rgba(0,0,0,0.7)',
+                                color: '#fff', fontSize: 9, cursor: 'zoom-in',
+                              }}>Preview</button>}
+                            </div>
+                            <div style={{ padding: '7px 8px' }}>
+                              <div style={{ fontSize: 10, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{media.filename || media.ai_description || media.external_media_id}</div>
+                              <div style={{ fontSize: 9, color: statusColor, marginTop: 3, textTransform: 'uppercase' }}>{media.fan_sale_status.replace('_', ' ')}</div>
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  )}
+                </>
+              )}
 
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 160px', gap: 12, marginTop: 18 }}>
                 <div>
@@ -1115,7 +1288,7 @@ function ConversationView({
           {!ppvOptionsLoading && ppvError && !ppvOptions && (
             <div>
               <div style={{ color: '#e57689', fontSize: 12 }}>{ppvError}</div>
-              <button type="button" onClick={() => void openPpvComposer()}
+              <button type="button" onClick={() => void openPpvComposer(ppvComposerMode)}
                 style={{ marginTop: 10, padding: '7px 11px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg-elevated)', color: 'var(--text-secondary)', cursor: 'pointer' }}>
                 Retry
               </button>
@@ -1128,7 +1301,7 @@ function ConversationView({
       <div
         onClick={() => setMediaPreview(null)}
         style={{
-          position: 'fixed', inset: 0, zIndex: 1000,
+          position: 'fixed', inset: 0, zIndex: 1200,
           background: 'rgba(0,0,0,0.85)',
           display: 'flex', alignItems: 'center', justifyContent: 'center',
           padding: 24,
