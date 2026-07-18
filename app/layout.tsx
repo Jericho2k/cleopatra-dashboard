@@ -117,7 +117,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           <NavItem
             href="/analytics"
             expanded={expanded}
-            label="Analytics"
+            label="Overview"
             icon={
               <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
                 <rect x="1" y="9" width="3" height="6" rx="0.75" fill="currentColor" />

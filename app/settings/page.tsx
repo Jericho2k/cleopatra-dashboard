@@ -5,9 +5,24 @@ import { Eye, EyeOff } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { apiFetch } from '../../lib/api'
 
-type Section = 'Creator Persona' | 'Blocked Words' | 'Sleep Hours' | 'Limits'
+type Section = 'Creator Persona' | 'Blocked Words' | 'Auto Audience' | 'Sleep Hours' | 'Limits'
 
-const SECTIONS: Section[] = ['Creator Persona', 'Blocked Words', 'Sleep Hours', 'Limits']
+const SECTIONS: Section[] = ['Creator Persona', 'Blocked Words', 'Auto Audience', 'Sleep Hours', 'Limits']
+type AutoAudiencePolicy = {
+  scope: 'all' | 'new_only' | 'matching'
+  match_mode: 'any' | 'all'
+  include_list_ids: string[]
+  exclude_list_ids: string[]
+  spend_tiers: string[]
+  include_new_fans: boolean
+  min_total_spend: number | null
+  max_total_spend: number | null
+}
+
+const DEFAULT_AUTO_AUDIENCE: AutoAudiencePolicy = {
+  scope: 'all', match_mode: 'any', include_list_ids: [], exclude_list_ids: [],
+  spend_tiers: [], include_new_fans: false, min_total_spend: null, max_total_spend: null,
+}
 const PROXY_COUNTRIES = [
   { code: 'US', label: '🇺🇸 United States' },
   { code: 'CA', label: '🇨🇦 Canada' },
@@ -56,7 +71,6 @@ export default function SettingsPage() {
   const [personaSaving, setPersonaSaving] = useState(false)
   const [personaSaved, setPersonaSaved] = useState(false)
   const [syncing, setSyncing] = useState(false)
-  const [autoModeNewFans, setAutoModeNewFans] = useState(false)
   const [autoAvailable, setAutoAvailable] = useState<boolean | null>(null)
   const [approvedSetsCount, setApprovedSetsCount] = useState<number>(0)
   const [showAddCreator, setShowAddCreator] = useState(false)
@@ -73,6 +87,10 @@ export default function SettingsPage() {
     countryCode: 'US',
   })
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null)
+  const [audiencePolicy, setAudiencePolicy] = useState<AutoAudiencePolicy>(DEFAULT_AUTO_AUDIENCE)
+  const [audienceLists, setAudienceLists] = useState<{ id: string; name: string }[]>([])
+  const [audiencePreview, setAudiencePreview] = useState<{ eligible: number; ineligible: number; total: number; creator_auto_mode: boolean } | null>(null)
+  const [audienceSaving, setAudienceSaving] = useState(false)
 
   function showToast(message: string, type: 'success' | 'error' = 'success') {
     setToast({ message, type })
@@ -225,7 +243,7 @@ export default function SettingsPage() {
   const loadPersona = (creatorId: string) => {
     return supabase
       .from('creators')
-      .select('persona, sleep_hours_start, sleep_hours_end, auto_mode_new_fans, caps_enabled, max_ppv_per_fan_per_day, max_spend_per_fan_per_day, crisis_policy, whale_handoff_threshold')
+      .select('persona, sleep_hours_start, sleep_hours_end, caps_enabled, max_ppv_per_fan_per_day, max_spend_per_fan_per_day, crisis_policy, whale_handoff_threshold')
       .eq('id', creatorId)
       .single()
       .then(({ data }) => {
@@ -251,8 +269,21 @@ export default function SettingsPage() {
           crisisPolicy: data?.crisis_policy ?? 'continue',
           whaleHandoff: data?.whale_handoff_threshold != null ? String(data.whale_handoff_threshold) : '',
         })
-        setAutoModeNewFans(data?.auto_mode_new_fans ?? false)
       })
+  }
+
+  const loadAutoAudience = async (creatorId: string) => {
+    const [policyResponse, previewResponse, listsResponse] = await Promise.all([
+      apiFetch(`/creator/${creatorId}/auto-audience-policy`),
+      apiFetch(`/creator/${creatorId}/auto-audience-preview`),
+      supabase.from('fan_lists').select('id, name').eq('creator_id', creatorId).order('name'),
+    ])
+    if (policyResponse.ok) {
+      const body = await policyResponse.json()
+      setAudiencePolicy({ ...DEFAULT_AUTO_AUDIENCE, ...(body.policy ?? {}) })
+    }
+    if (previewResponse.ok) setAudiencePreview(await previewResponse.json())
+    setAudienceLists(listsResponse.data ?? [])
   }
 
   const loadScripts = (_creatorId: string) => {
@@ -269,6 +300,7 @@ export default function SettingsPage() {
           loadPersona(creatorId),
           loadBlockedWords(creatorId),
           Promise.resolve(loadScripts(creatorId)),
+          loadAutoAudience(creatorId),
         ])
       } finally {
         setContentLoading(false)
@@ -304,6 +336,26 @@ export default function SettingsPage() {
     setPersonaSaving(false)
     setPersonaSaved(true)
     setTimeout(() => setPersonaSaved(false), 2000)
+  }
+
+  const saveAutoAudience = async () => {
+    if (!selectedCreatorId) return
+    setAudienceSaving(true)
+    try {
+      const response = await apiFetch(`/creator/${selectedCreatorId}/auto-audience-policy`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(audiencePolicy),
+      })
+      const body = await response.json()
+      if (!response.ok) throw new Error(body.detail || 'Could not save audience rules')
+      await loadAutoAudience(selectedCreatorId)
+      showToast('Auto audience rules saved')
+    } catch (error) {
+      showToast(String(error instanceof Error ? error.message : error), 'error')
+    } finally {
+      setAudienceSaving(false)
+    }
   }
 
   const addWord = async () => {
@@ -425,31 +477,6 @@ export default function SettingsPage() {
             </a>
           )}
 
-          {/* Auto mode for new fans toggle */}
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 10, marginBottom: 2 }}>
-            <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>Auto mode for new fans</div>
-            <button
-              type="button"
-              disabled={!autoAvailable}
-              onClick={async () => {
-                if (!selectedCreatorId || !autoAvailable) return
-                const newVal = !autoModeNewFans
-                setAutoModeNewFans(newVal)
-                await supabase.from('creators').update({ auto_mode_new_fans: newVal }).eq('id', selectedCreatorId)
-              }}
-              title={!autoAvailable ? 'No approved sets — approve a set to enable auto mode' : ''}
-              style={{
-                padding: '2px 10px', borderRadius: 4, fontSize: 11,
-                cursor: autoAvailable ? 'pointer' : 'not-allowed',
-                opacity: autoAvailable ? 1 : 0.45,
-                background: (autoAvailable && autoModeNewFans) ? 'rgba(76,175,130,0.15)' : 'transparent',
-                border: (autoAvailable && autoModeNewFans) ? '1px solid var(--green)' : '1px solid var(--border)',
-                color: (autoAvailable && autoModeNewFans) ? 'var(--green)' : 'var(--text-muted)',
-              }}
-            >
-              {!autoAvailable ? 'Unavailable' : autoModeNewFans ? 'On' : 'Off'}
-            </button>
-          </div>
         </div>
 
         <ul style={{ listStyle: 'none', padding: '8px', margin: 0, flex: 1 }}>
@@ -659,6 +686,116 @@ export default function SettingsPage() {
                   ))}
                 </div>
               )}
+            </div>
+          )}
+
+          {/* Auto Audience */}
+          {activeSection === 'Auto Audience' && (
+            <div>
+              <div style={{ marginBottom: 22 }}>
+                <div style={{ fontSize: 18, fontWeight: 600, marginBottom: 4 }}>Auto audience</div>
+                <div style={{ fontSize: 13, color: 'var(--text-muted)', lineHeight: 1.5 }}>
+                  Choose which chats Full Auto may handle. Per-fan Off and human-review states always win; a deliberate per-fan On override is always eligible.
+                </div>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 8, marginBottom: 20 }}>
+                {([
+                  ['all', 'All chats', 'Every fan unless explicitly excluded'],
+                  ['new_only', 'Only new chats', 'Fans with no creator reply yet'],
+                  ['matching', 'Matching rules', 'Lists, spend, tiers, or new fans'],
+                ] as const).map(([scope, title, detail]) => (
+                  <button key={scope} type="button" onClick={() => setAudiencePolicy(p => ({ ...p, scope }))}
+                    style={{
+                      textAlign: 'left', padding: 12, borderRadius: 8, cursor: 'pointer',
+                      background: audiencePolicy.scope === scope ? 'rgba(155,143,212,0.12)' : 'var(--bg-elevated)',
+                      border: audiencePolicy.scope === scope ? '1px solid var(--purple)' : '1px solid var(--border)',
+                      color: 'var(--text-primary)',
+                    }}>
+                    <div style={{ fontSize: 13, fontWeight: 650 }}>{title}</div>
+                    <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4, lineHeight: 1.4 }}>{detail}</div>
+                  </button>
+                ))}
+              </div>
+
+              {audiencePolicy.scope === 'matching' && (
+                <div style={{ padding: 14, borderRadius: 9, border: '1px solid var(--border)', background: 'var(--bg-elevated)', marginBottom: 18 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16 }}>
+                    <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>A fan must match</span>
+                    {(['any', 'all'] as const).map(mode => (
+                      <button key={mode} type="button" onClick={() => setAudiencePolicy(p => ({ ...p, match_mode: mode }))}
+                        style={{
+                          padding: '4px 9px', borderRadius: 5, cursor: 'pointer', textTransform: 'uppercase', fontSize: 10,
+                          background: audiencePolicy.match_mode === mode ? 'rgba(155,143,212,0.15)' : 'transparent',
+                          border: audiencePolicy.match_mode === mode ? '1px solid var(--purple)' : '1px solid var(--border)',
+                          color: audiencePolicy.match_mode === mode ? 'var(--purple)' : 'var(--text-muted)',
+                        }}>{mode}</button>
+                    ))}
+                    <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>enabled criteria</span>
+                  </div>
+
+                  <label style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 12, marginBottom: 16, color: 'var(--text-secondary)' }}>
+                    <input type="checkbox" checked={audiencePolicy.include_new_fans}
+                      onChange={event => setAudiencePolicy(p => ({ ...p, include_new_fans: event.target.checked }))} />
+                    Include fans with no creator reply yet
+                  </label>
+
+                  <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 7, textTransform: 'uppercase' }}>Spend tiers</div>
+                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 16 }}>
+                    {['cold', 'casual', 'active', 'whale'].map(tier => {
+                      const active = audiencePolicy.spend_tiers.includes(tier)
+                      return <button key={tier} type="button" onClick={() => setAudiencePolicy(p => ({
+                        ...p, spend_tiers: active ? p.spend_tiers.filter(value => value !== tier) : [...p.spend_tiers, tier],
+                      }))} style={{ padding: '5px 9px', borderRadius: 5, cursor: 'pointer', fontSize: 11, background: active ? 'rgba(76,175,130,0.13)' : 'transparent', border: active ? '1px solid var(--green)' : '1px solid var(--border)', color: active ? 'var(--green)' : 'var(--text-muted)' }}>{tier}</button>
+                    })}
+                  </div>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 16 }}>
+                    <label style={{ fontSize: 11, color: 'var(--text-muted)' }}>Minimum total spend ($)
+                      <input type="number" min="0" value={audiencePolicy.min_total_spend ?? ''} onChange={event => setAudiencePolicy(p => ({ ...p, min_total_spend: event.target.value === '' ? null : Number(event.target.value) }))}
+                        style={{ display: 'block', width: '100%', boxSizing: 'border-box', marginTop: 5, padding: '7px 9px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg-main)', color: 'var(--text-primary)' }} />
+                    </label>
+                    <label style={{ fontSize: 11, color: 'var(--text-muted)' }}>Maximum total spend ($)
+                      <input type="number" min="0" value={audiencePolicy.max_total_spend ?? ''} onChange={event => setAudiencePolicy(p => ({ ...p, max_total_spend: event.target.value === '' ? null : Number(event.target.value) }))}
+                        style={{ display: 'block', width: '100%', boxSizing: 'border-box', marginTop: 5, padding: '7px 9px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg-main)', color: 'var(--text-primary)' }} />
+                    </label>
+                  </div>
+
+                  {audienceLists.length > 0 && (
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+                      {([
+                        ['include_list_ids', 'Include lists'],
+                        ['exclude_list_ids', 'Exclude lists'],
+                      ] as const).map(([key, title]) => (
+                        <div key={key}>
+                          <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 7, textTransform: 'uppercase' }}>{title}</div>
+                          {audienceLists.map(list => (
+                            <label key={list.id} style={{ display: 'flex', gap: 7, alignItems: 'center', fontSize: 12, marginBottom: 6, color: 'var(--text-secondary)' }}>
+                              <input type="checkbox" checked={audiencePolicy[key].includes(list.id)} onChange={event => setAudiencePolicy(p => ({
+                                ...p,
+                                [key]: event.target.checked ? [...p[key], list.id] : p[key].filter(id => id !== list.id),
+                              }))} />
+                              {list.name}
+                            </label>
+                          ))}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {audiencePreview && (
+                <div style={{ padding: '10px 12px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg-elevated)', marginBottom: 14, fontSize: 12 }}>
+                  <span style={{ color: 'var(--text-primary)', fontWeight: 650 }}>{audiencePreview.eligible}</span> of {audiencePreview.total} current fans are eligible · {audiencePreview.ineligible} excluded
+                  {!audiencePreview.creator_auto_mode && <span style={{ color: '#e0a83a' }}> · Creator Full Auto is currently off</span>}
+                </div>
+              )}
+
+              <button type="button" onClick={() => void saveAutoAudience()} disabled={audienceSaving || !autoAvailable}
+                style={{ padding: '8px 20px', borderRadius: 6, cursor: audienceSaving ? 'wait' : 'pointer', background: 'rgba(200,200,200,0.1)', border: '1px solid var(--silver)', color: 'var(--silver)', opacity: !autoAvailable ? 0.5 : 1 }}>
+                {audienceSaving ? 'Saving…' : 'Save audience rules'}
+              </button>
             </div>
           )}
 

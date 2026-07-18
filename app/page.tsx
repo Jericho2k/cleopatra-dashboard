@@ -974,7 +974,7 @@ export default function Page() {
               if (!activeTab) return
               setSyncingChats(true)
               try {
-                const res = await apiFetch(`/sync-chats/${activeTab.creatorId}`, { method: 'POST' })
+                const res = await apiFetch(`/sync-chats/${activeTab.creatorId}?incremental=true&force=true`, { method: 'POST' })
                 await res.json()
                 delete conversationsCache.current[activeTab.creatorId]
                 updateTab(activeTab.id, { conversations: [] })

@@ -77,11 +77,8 @@ export default function FanPanel({ fan, creatorId, onHistoryLoaded, showToast }:
   const [showModelNote, setShowModelNote] = useState(false)
   const [creatorLegend, setCreatorLegend] = useState<string>('')
   const [needsReview, setNeedsReview] = useState<{ frozen: boolean; reason: string }>({ frozen: false, reason: '' })
-  const [salesLog, setSalesLog] = useState<{ date: string; item: string; amount: number; chatter: string }[]>([])
+  const [salesLog, setSalesLog] = useState<{ date: string; item: string; amount: number; chatter: string; media_id?: string; media_ids?: string[] }[]>([])
   const [notSoldLog, setNotSoldLog] = useState<{ date: string; item: string; amount: number; reason: string; chatter: string }[]>([])
-  const [newSale, setNewSale] = useState({ item: '', amount: '', chatter: '' })
-  const [newNotSold, setNewNotSold] = useState({ item: '', amount: '', reason: '', chatter: '' })
-  const [salesLoading, setSalesLoading] = useState(false)
   const [loadingHistory, setLoadingHistory] = useState(false)
   const [details, setDetails] = useState({
     age: '', payday: '', hobbies: '', relationship_status: '',
@@ -633,170 +630,63 @@ export default function FanPanel({ fan, creatorId, onHistoryLoaded, showToast }:
         {/* SALES TAB */}
         {activeTab === 'sales' && (
           <div>
-            {/* SOLD */}
-            <div style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>Sales</div>
-            {salesLog.length === 0 && (
-              <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 12 }}>No sales logged yet.</div>
-            )}
-            {salesLog.map((s, i) => (
-              <div key={i} style={{ ...CARD_STYLE, marginBottom: 8 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                  <div>
-                    <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-primary)' }}>{s.item}</div>
-                    <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>{s.date} · {s.chatter}</div>
-                  </div>
-                  <span style={{ fontFamily: 'var(--font-display)', fontSize: 15, fontWeight: 700, color: 'var(--green)', flexShrink: 0, marginLeft: 8 }}>
-                    ${s.amount}
-                  </span>
+            <div style={{ ...CARD_STYLE, marginBottom: 14 }}>
+              <div style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>Current sales state</div>
+              <div style={{ fontSize: 13, fontWeight: 650, color: 'var(--text-primary)' }}>{fullAutoStatus?.commercial_state.status ?? 'IDLE'}</div>
+              {fullAutoStatus?.pending_ppv && (
+                <div style={{ marginTop: 8, padding: '8px 10px', borderRadius: 6, background: 'rgba(224,180,109,0.08)', border: '1px solid rgba(224,180,109,0.3)' }}>
+                  <div style={{ color: '#e0b46d', fontSize: 11, fontWeight: 650 }}>Locked PPV awaiting payment · ${fullAutoStatus.pending_ppv.price ?? 0}</div>
+                  <div style={{ color: 'var(--text-muted)', fontSize: 10, marginTop: 3 }}>Expires {formatOperationalTime(fullAutoStatus.pending_ppv.expires_at)} · {fullAutoStatus.pending_ppv.verification_attempts ?? 0} checks</div>
                 </div>
-              </div>
-            ))}
-
-            {/* Add sale */}
-            <div style={{ marginBottom: 20, padding: 10, background: 'var(--bg-elevated)', borderRadius: 8, border: '1px solid var(--border)' }}>
-              <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 8 }}>+ Log sale</div>
-              <input
-                placeholder="Item (e.g. pussy photo)"
-                value={newSale.item}
-                onChange={e => setNewSale(p => ({ ...p, item: e.target.value }))}
-                style={{ width: '100%', background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: 6, padding: '6px 10px', fontSize: 12, color: 'var(--text-primary)', marginBottom: 6, boxSizing: 'border-box', outline: 'none' }}
-              />
-              <div style={{ display: 'flex', gap: 6, marginBottom: 6 }}>
-                <input
-                  placeholder="Amount $"
-                  type="number"
-                  value={newSale.amount}
-                  onChange={e => setNewSale(p => ({ ...p, amount: e.target.value }))}
-                  style={{ flex: 1, minWidth: 0, background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: 6, padding: '6px 10px', fontSize: 12, color: 'var(--text-primary)', outline: 'none', boxSizing: 'border-box' }}
-                />
-                <input
-                  placeholder="Your name"
-                  value={newSale.chatter}
-                  onChange={e => setNewSale(p => ({ ...p, chatter: e.target.value }))}
-                  style={{ flex: 1, minWidth: 0, background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: 6, padding: '6px 10px', fontSize: 12, color: 'var(--text-primary)', outline: 'none', boxSizing: 'border-box' }}
-                />
-              </div>
-              <button
-                type="button"
-                disabled={salesLoading || !newSale.item || !newSale.amount}
-                onClick={async () => {
-                  if (!fan?.id || !newSale.item || !newSale.amount) return
-                  setSalesLoading(true)
-                  const entry = {
-                    date: new Date().toLocaleDateString('en-GB'),
-                    item: newSale.item,
-                    amount: Number(newSale.amount),
-                    chatter: newSale.chatter || 'unknown',
-                  }
-                  const updated = [...salesLog, entry]
-                  await supabase.from('fans').update({
-                    sales_log: updated,
-                    total_spent: (fan.total_spent ?? 0) + entry.amount,
-                  }).eq('id', fan.id)
-                  setSalesLog(updated)
-                  setNewSale({ item: '', amount: '', chatter: '' })
-                  setSalesLoading(false)
-                }}
-                style={{
-                  width: '100%', padding: '6px', borderRadius: 6,
-                  background: 'rgba(76,175,130,0.15)', border: '1px solid var(--green)',
-                  color: 'var(--green)', fontSize: 12, cursor: 'pointer',
-                }}
-              >
-                {salesLoading ? 'Saving...' : 'Log Sale'}
-              </button>
+              )}
+              {fullAutoStatus?.session && (
+                <div style={{ color: 'var(--text-muted)', fontSize: 11, marginTop: 7 }}>Session step {(fullAutoStatus.session.current_index ?? 0) + 1} of {fullAutoStatus.session.plan?.length ?? 0} · {fullAutoStatus.session.payment_state ?? fullAutoStatus.session.status}</div>
+              )}
+              {fullAutoStatus?.commercial_state.next_followup_type && (
+                <div style={{ color: 'var(--text-muted)', fontSize: 11, marginTop: 7 }}>Next: {fullAutoStatus.commercial_state.next_followup_type} · {formatOperationalTime(fullAutoStatus.commercial_state.next_followup_at)}</div>
+              )}
             </div>
 
-            {/* NOT SOLD */}
-            <div style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>Not Sold</div>
-            {notSoldLog.length === 0 && (
-              <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 12 }}>No failed attempts logged yet.</div>
-            )}
-            {notSoldLog.map((s, i) => (
-              <div key={i} style={{ ...CARD_STYLE, marginBottom: 8 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                  <div style={{ flex: 1 }}>
-                    <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-primary)' }}>{s.item}</div>
-                    <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>{s.date} · {s.chatter}</div>
-                    <div style={{ fontSize: 11, color: 'rgba(255,120,120,0.8)', marginTop: 2 }}>{s.reason}</div>
-                    {s.item?.includes('PPV media') && s.item.split(' ')[2] && (
-                      <button
-                        onClick={() => openMediaPreview(s.item.split(' ')[2], creatorId)}
-                        style={{
-                          fontSize: 11, color: 'var(--purple)',
-                          background: 'none', border: 'none',
-                          cursor: 'pointer', padding: 0, marginTop: 4,
-                        }}
-                      >
-                        👁 Preview media
-                      </button>
+            <div style={{ padding: '9px 10px', marginBottom: 16, borderRadius: 7, background: 'var(--bg-elevated)', border: '1px solid var(--border)', color: 'var(--text-muted)', fontSize: 11, lineHeight: 1.45 }}>
+              Build and send locked PPVs from the conversation composer. Sales appear here only after the platform confirms payment; operators cannot manually inflate revenue or bypass purchase reconciliation.
+            </div>
+
+            <div style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>Confirmed purchases</div>
+            {salesLog.length === 0 ? (
+              <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 16 }}>No confirmed purchases yet.</div>
+            ) : salesLog.slice().reverse().map((sale, index) => (
+              <div key={`${sale.date}-${index}`} style={{ ...CARD_STYLE, marginBottom: 8 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
+                  <div>
+                    <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-primary)' }}>{sale.item}</div>
+                    <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>{sale.date} · {sale.chatter}</div>
+                    {(sale.media_ids?.length || sale.media_id) && (
+                      <button type='button' onClick={() => openMediaPreview(sale.media_ids?.[0] || sale.media_id || '', creatorId)} style={{ padding: 0, marginTop: 4, border: 0, background: 'transparent', color: 'var(--purple)', fontSize: 10, cursor: 'pointer' }}>Preview purchased media</button>
                     )}
                   </div>
-                  <span style={{ fontFamily: 'var(--font-display)', fontSize: 15, fontWeight: 700, color: 'var(--text-muted)', flexShrink: 0, marginLeft: 8 }}>
-                    ${s.amount}
-                  </span>
+                  <span style={{ fontFamily: 'var(--font-display)', fontSize: 15, fontWeight: 700, color: 'var(--green)' }}>${sale.amount}</span>
                 </div>
               </div>
             ))}
 
-            {/* Add not sold */}
-            <div style={{ padding: 10, background: 'var(--bg-elevated)', borderRadius: 8, border: '1px solid var(--border)' }}>
-              <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 8 }}>+ Log failed attempt</div>
-              <input
-                placeholder="Item you tried to sell"
-                value={newNotSold.item}
-                onChange={e => setNewNotSold(p => ({ ...p, item: e.target.value }))}
-                style={{ width: '100%', background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: 6, padding: '6px 10px', fontSize: 12, color: 'var(--text-primary)', marginBottom: 6, boxSizing: 'border-box', outline: 'none' }}
-              />
-              <input
-                placeholder="Reason (e.g. too expensive, limit $400)"
-                value={newNotSold.reason}
-                onChange={e => setNewNotSold(p => ({ ...p, reason: e.target.value }))}
-                style={{ width: '100%', background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: 6, padding: '6px 10px', fontSize: 12, color: 'var(--text-primary)', marginBottom: 6, boxSizing: 'border-box', outline: 'none' }}
-              />
-              <div style={{ display: 'flex', gap: 6, marginBottom: 6 }}>
-                <input
-                  placeholder="Amount $"
-                  type="number"
-                  value={newNotSold.amount}
-                  onChange={e => setNewNotSold(p => ({ ...p, amount: e.target.value }))}
-                  style={{ flex: 1, minWidth: 0, background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: 6, padding: '6px 10px', fontSize: 12, color: 'var(--text-primary)', outline: 'none', boxSizing: 'border-box' }}
-                />
-                <input
-                  placeholder="Your name"
-                  value={newNotSold.chatter}
-                  onChange={e => setNewNotSold(p => ({ ...p, chatter: e.target.value }))}
-                  style={{ flex: 1, minWidth: 0, background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: 6, padding: '6px 10px', fontSize: 12, color: 'var(--text-primary)', outline: 'none', boxSizing: 'border-box' }}
-                />
+            <div style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', margin: '18px 0 8px' }}>Abandoned or declined PPVs</div>
+            {notSoldLog.length === 0 ? (
+              <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>No abandoned PPVs recorded.</div>
+            ) : notSoldLog.slice().reverse().map((attempt, index) => (
+              <div key={`${attempt.date}-${index}`} style={{ ...CARD_STYLE, marginBottom: 8 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
+                  <div>
+                    <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-primary)' }}>{attempt.item}</div>
+                    <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>{attempt.date} · {attempt.chatter}</div>
+                    {attempt.reason && <div style={{ fontSize: 11, color: 'rgba(255,120,120,0.8)', marginTop: 3 }}>{attempt.reason}</div>}
+                    {attempt.item?.includes('PPV media') && attempt.item.split(' ')[2] && (
+                      <button type='button' onClick={() => openMediaPreview(attempt.item.split(' ')[2], creatorId)} style={{ padding: 0, marginTop: 4, border: 0, background: 'transparent', color: 'var(--purple)', fontSize: 10, cursor: 'pointer' }}>Preview offered media</button>
+                    )}
+                  </div>
+                  <span style={{ fontFamily: 'var(--font-display)', fontSize: 14, color: 'var(--text-muted)' }}>${attempt.amount}</span>
+                </div>
               </div>
-              <button
-                type="button"
-                disabled={salesLoading || !newNotSold.item}
-                onClick={async () => {
-                  if (!fan?.id || !newNotSold.item) return
-                  setSalesLoading(true)
-                  const entry = {
-                    date: new Date().toLocaleDateString('en-GB'),
-                    item: newNotSold.item,
-                    amount: Number(newNotSold.amount) || 0,
-                    reason: newNotSold.reason || '',
-                    chatter: newNotSold.chatter || 'unknown',
-                  }
-                  const updated = [...notSoldLog, entry]
-                  await supabase.from('fans').update({ not_sold_log: updated }).eq('id', fan.id)
-                  setNotSoldLog(updated)
-                  setNewNotSold({ item: '', amount: '', reason: '', chatter: '' })
-                  setSalesLoading(false)
-                }}
-                style={{
-                  width: '100%', padding: '6px', borderRadius: 6,
-                  background: 'rgba(255,80,80,0.1)', border: '1px solid rgba(255,80,80,0.3)',
-                  color: 'rgba(255,120,120,0.9)', fontSize: 12, cursor: 'pointer',
-                }}
-              >
-                {salesLoading ? 'Saving...' : 'Log Failed Attempt'}
-              </button>
-            </div>
+            ))}
           </div>
         )}
 

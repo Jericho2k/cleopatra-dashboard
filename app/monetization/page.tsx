@@ -463,9 +463,10 @@ function Metric({ label, value, alert = false }: { label: string; value: number;
 
 function Toggle({ label, checked, onChange }: { label: string; checked: boolean; onChange: (value: boolean) => void }) {
   return (
-    <label style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 14, cursor: 'pointer', color: 'var(--text-secondary)' }}>
+    <label title={FIELD_HELP[label]} style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 14, cursor: 'pointer', color: 'var(--text-secondary)' }}>
       <input type="checkbox" checked={checked} onChange={(event) => onChange(event.target.checked)} />
       {label}
+      {FIELD_HELP[label] && <span aria-label="More information" style={{ color: 'var(--text-muted)', fontSize: 11 }}>ⓘ</span>}
     </label>
   )
 }
@@ -486,7 +487,7 @@ function Invariant({ label }: { label: string }) {
 function NumberField({ label, value, min, max, onChange }: { label: string; value: number; min: number; max: number; onChange: (value: number) => void }) {
   return (
     <div>
-      <label style={labelStyle}>{label}</label>
+      <label title={FIELD_HELP[label]} style={labelStyle}>{label}{FIELD_HELP[label] && <span style={{ marginLeft: 5 }}>ⓘ</span>}</label>
       <input type="number" value={value} min={min} max={max} onChange={(event) => onChange(Number(event.target.value))} style={inputStyle} />
     </div>
   )
@@ -495,7 +496,7 @@ function NumberField({ label, value, min, max, onChange }: { label: string; valu
 function MoneyField({ label, cents, onChange, disabled = false }: { label: string; cents: number; onChange: (value: number) => void; disabled?: boolean }) {
   return (
     <div>
-      <label style={labelStyle}>{label}</label>
+      <label title={FIELD_HELP[label]} style={labelStyle}>{label}{FIELD_HELP[label] && <span style={{ marginLeft: 5 }}>ⓘ</span>}</label>
       <div style={{ position: 'relative' }}>
         <span style={{ position: 'absolute', left: 12, top: 10, color: 'var(--text-muted)' }}>$</span>
         <input disabled={disabled} type="number" min={1} step="1" value={(cents / 100).toFixed(0)} onChange={(event) => onChange(Math.max(0, Number(event.target.value) * 100))} style={{ ...inputStyle, paddingLeft: 26, opacity: disabled ? 0.5 : 1 }} />
@@ -507,3 +508,22 @@ function MoneyField({ label, cents, onChange, disabled = false }: { label: strin
 const labelStyle: React.CSSProperties = { display: 'block', marginBottom: 7, fontSize: 12, color: 'var(--text-muted)' }
 const inputStyle: React.CSSProperties = { width: '100%', boxSizing: 'border-box', padding: '10px 11px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg-main)', color: 'var(--text-primary)' }
 const buttonStyle: React.CSSProperties = { padding: '11px 18px', borderRadius: 9, border: '1px solid var(--silver)', background: 'var(--silver)', color: '#111', fontWeight: 700, cursor: 'pointer' }
+
+const FIELD_HELP: Record<string, string> = {
+  'Hybrid teaser messages': 'Maximum free teaser messages before the commercial layer must transition or stop.',
+  'Free text messages': 'Maximum text-only session allowance when Free text allowed is selected.',
+  'Free-session cooldown (hours)': 'How long the fan must wait before another free text allowance can begin.',
+  'Offer two packages': 'Present quick and full approved package choices instead of a single option.',
+  'Quick-session target': 'A soft pricing target. Vault minimums and the requested experience remain authoritative.',
+  'Full-session target': 'A soft pricing target for the larger package, not a universal content ceiling.',
+  'Minimum PPV steps': 'Minimum number of purchase-gated steps used when an approved sequence supports it.',
+  'Maximum PPV steps': 'Maximum number of purchase-gated steps the session planner may create.',
+  'Text messages between purchased PPV steps': 'Conversation turns to wait after a confirmed unlock before offering the next step.',
+  'Pause before every auto-generated locked PPV and wait for operator approval': 'Creates one exact, durable approval item. Nothing is sent until an operator accepts it.',
+  'Local send hour': 'Preferred hour in the creator timezone for a known-payday follow-up.',
+  'Purchase window (hours)': 'How long a locked PPV remains payment-pending before it is treated as abandoned.',
+  'Purchase recheck (minutes)': 'How often the durable worker checks the platform for an unlock.',
+  'Recent activity suppression (hours)': 'A scheduled follow-up is skipped when the fan has returned within this window.',
+  'Pending offer window (hours)': 'How long exact presented options remain pending when the fan disappears without choosing.',
+  'Abandoned offer follow-up delay (hours)': 'Delay after offer expiry before one contextual recovery message may be sent.',
+}
