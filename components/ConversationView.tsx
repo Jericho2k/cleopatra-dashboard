@@ -829,7 +829,7 @@ function ConversationView({
             </button>
           ))}
         </div>
-        <div style={{ display: 'flex', marginBottom: 12 }}>
+        <div style={{ display: 'flex', alignItems: 'center', marginBottom: 12 }}>
           <button
             type="button"
             onClick={refetchSuggestions}
@@ -865,6 +865,17 @@ function ConversationView({
               Scripts
             </button>
           )}
+          <button
+            type="button"
+            onClick={() => void openPpvComposer()}
+            style={{
+              marginLeft: 'auto', padding: '6px 10px', borderRadius: 6, cursor: 'pointer',
+              border: '1px solid rgba(155,143,212,0.4)',
+              background: 'rgba(155,143,212,0.1)', color: 'var(--purple)', fontSize: 12,
+            }}
+          >
+            Build locked PPV
+          </button>
         </div>
 
         {showScripts && (
@@ -942,21 +953,6 @@ function ConversationView({
             padding: '2px 8px',
           }}>
             + {queuedMessages.length} message{queuedMessages.length > 1 ? 's' : ''} queued
-          </div>
-        )}
-        {!((creatorAutoMode ?? false) || fan.auto_mode === true) && (
-          <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 8 }}>
-            <button
-              type="button"
-              onClick={() => void openPpvComposer()}
-              style={{
-                padding: '6px 10px', borderRadius: 6, cursor: 'pointer',
-                border: '1px solid rgba(155,143,212,0.4)',
-                background: 'rgba(155,143,212,0.1)', color: 'var(--purple)', fontSize: 12,
-              }}
-            >
-              Build locked PPV
-            </button>
           </div>
         )}
         <textarea

@@ -460,9 +460,9 @@ export default function FanPanel({ fan, creatorId, onHistoryLoaded, showToast }:
 
         {/* PROFILE TAB */}
         {activeTab === 'profile' && (
-          <div>
+          <div style={{ display: 'flex', flexDirection: 'column' }}>
             {fullAutoStatus && (
-              <div style={{ marginBottom: 20 }}>
+              <div style={{ order: 99, marginTop: 20 }}>
                 <div style={LABEL_STYLE}>FULL AUTO</div>
                 <div style={{ ...CARD_STYLE, borderColor: fullAutoStatus.scheduled_actions.some(action => action.status === 'FAILED') ? 'rgba(229,118,137,0.45)' : 'var(--border-subtle)' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, marginBottom: 10 }}>
