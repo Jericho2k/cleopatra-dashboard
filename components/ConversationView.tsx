@@ -284,9 +284,7 @@ function ConversationView({
     if (!suggestion.trim()) return
     const parts = suggestion.split(' | ').map(p => p.trim()).filter(Boolean)
     setInputValue(parts[0])
-    if (parts.length > 1) {
-      setQueuedMessages(parts.slice(1))
-    }
+    setQueuedMessages(parts.slice(1))
     textareaRef.current?.focus()
   }
 
@@ -949,10 +947,23 @@ function ConversationView({
         />
         {queuedMessages.length > 0 && (
           <div style={{
-            fontSize: 11, color: 'var(--green)',
-            padding: '2px 8px',
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10,
+            fontSize: 11, color: 'var(--green)', padding: '2px 8px 8px',
           }}>
-            + {queuedMessages.length} message{queuedMessages.length > 1 ? 's' : ''} queued
+            <span>+ {queuedMessages.length} message{queuedMessages.length > 1 ? 's' : ''} queued</span>
+            <button
+              type="button"
+              aria-label="Cancel queued messages"
+              title="Cancel queued messages"
+              onClick={() => setQueuedMessages([])}
+              style={{
+                padding: '2px 6px', borderRadius: 5, border: '1px solid var(--border)',
+                background: 'transparent', color: 'var(--text-muted)', fontSize: 10,
+                cursor: 'pointer',
+              }}
+            >
+              × clear
+            </button>
           </div>
         )}
         <textarea
