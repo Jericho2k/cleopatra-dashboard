@@ -24,6 +24,7 @@ type OperatorPPVMedia = {
 type OperatorPPVSet = {
   id: string
   title: string | null
+  description: string | null
   media_ids: string[]
   suggested_price: number | null
   base_price_cents: number | null
@@ -1097,6 +1098,11 @@ function ConversationView({
                         <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12 }}>
                           <div style={{ minWidth: 0, flex: 1 }}>
                             <div style={{ fontSize: 14, fontWeight: 650 }}>{set.title || 'Approved set'}</div>
+                            {set.description && (
+                              <div style={{ fontSize: 11, color: 'var(--text-secondary)', lineHeight: 1.4, marginTop: 5 }}>
+                                {set.description}
+                              </div>
+                            )}
                             <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 3 }}>
                               {set.media_ids?.length ?? 0} media · default ${(baseCents / 100).toFixed(0)}
                               {minCents > 0 && maxCents >= minCents ? ` · allowed $${(minCents / 100).toFixed(0)}–$${(maxCents / 100).toFixed(0)}` : ''}

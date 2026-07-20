@@ -7,11 +7,13 @@ import { apiFetch } from '../../lib/api'
 
 type VaultSet = {
   id: string; creator_id: string; title: string
+  description: string | null
   location: string | null; outfit: string | null
   explicit_min: number | null; explicit_max: number | null
   media_ids: string[]; preview_media_id: string | null
   suggested_price: number | null; tags: string[] | null
   status: 'draft' | 'approved' | 'archived'; source: 'ai' | 'manual'
+  metadata_version: number | null
 }
 type Thumb = { thumbnail_url: string | null; url: string | null; mimetype: string | null }
 type VaultMedia = { fansly_media_id: string; thumbnail_url: string | null; url: string | null; mimetype: string | null; explicitness_level: number | null; album_title: string | null }
@@ -112,7 +114,7 @@ export default function SetsPage() {
     if (!creatorId) return
     const { data } = await supabase.from('vault_sets').insert({
       creator_id: creatorId, title: 'New set', media_ids: [], status: 'draft',
-      source: 'manual', suggested_price: 30,
+      source: 'manual', suggested_price: 30, description: '', metadata_version: 2,
     }).select().single()
     if (data) { setSets(prev => [data as VaultSet, ...prev]); openPicker((data as VaultSet).id) }
   }
@@ -200,6 +202,18 @@ export default function SetsPage() {
                 {s.status}{s.source === 'manual' ? ' · manual' : ''}
               </span>
             </div>
+            <textarea
+              value={s.description ?? ''}
+              onChange={e => setSets(prev => prev.map(x => x.id === s.id ? { ...x, description: e.target.value } : x))}
+              onBlur={e => patchSet(s.id, { description: e.target.value })}
+              rows={3}
+              placeholder="Describe the complete set: setting, outfit, actions, progression, body focus, and distinguishing details. This is used to match fan requests."
+              style={{
+                width: '100%', boxSizing: 'border-box', resize: 'vertical', marginBottom: 10,
+                background: 'var(--bg-base)', border: '1px solid var(--border)', borderRadius: 7,
+                color: 'var(--text-secondary)', padding: '8px 10px', fontSize: 12, lineHeight: 1.45,
+              }}
+            />
             <div style={{ display: 'flex', gap: 16, alignItems: 'center', marginBottom: 10, fontSize: 12, color: 'var(--text-muted)' }}>
               <span>{s.media_ids.length} pcs</span>
               <label style={{ display: 'flex', alignItems: 'center', gap: 4 }}>

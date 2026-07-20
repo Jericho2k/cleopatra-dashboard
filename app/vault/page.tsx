@@ -8,6 +8,9 @@ type VaultCategorizationOverview = {
   initial_completed_at: string | null
   auto_categorize_new_media: boolean
   uncategorized: number
+  stale_classifications: number
+  stale_approved_classifications: number
+  classifier_version: number
   manual_reanalysis: {
     used: number
     remaining: number
@@ -71,7 +74,7 @@ export default function VaultPage() {
     while (true) {
       const { data } = await supabase
         .from('creator_vault_media')
-        .select('id, filename, url, album_title, mimetype, ai_description, thumbnail_url, media_type, title, price, is_active, content_category, price_min, price_max, scene_id, scene_location, scene_outfit, scene_lighting, explicitness_level, good_for, tags')
+        .select('id, filename, url, album_title, mimetype, ai_description, thumbnail_url, media_type, title, price, is_active, content_category, price_min, price_max, scene_id, scene_location, scene_outfit, scene_lighting, explicitness_level, good_for, tags, classification_version, classification_model, classification_source, classification_confidence, classified_at')
         .eq('creator_id', creatorId)
         .order('album_title')
         .range(from, from + pageSize - 1)
@@ -106,6 +109,70 @@ export default function VaultPage() {
       loadCategorizationOverview(selectedCreatorId),
     ])
   }, [selectedCreatorId])
+
+  const startCategorization = async (
+    mode: 'initial' | 'new' | 'upgrade',
+    confirmUpgrade = false,
+    upgradeScope: 'approved' | 'all' = 'all',
+  ) => {
+    if (!selectedCreatorId || categorizingVault) return
+    setCategorizingVault(true)
+    setCategorizeProgress({ done: 0, total: 0, status: 'starting' })
+    try {
+      const params = new URLSearchParams({ mode })
+      if (mode === 'upgrade') params.set('upgrade_scope', upgradeScope)
+      if (confirmUpgrade) params.set('confirm_upgrade', 'true')
+      const startRes = await apiFetch(
+        `/categorize-vault/${selectedCreatorId}?${params.toString()}`,
+        { method: 'POST' },
+      )
+      const startData = await startRes.json().catch(() => ({}))
+      if (!startRes.ok) {
+        showToast(startData.detail || 'Could not start vault categorization.', 'error')
+        setCategorizingVault(false)
+        return
+      }
+      if (startData.status === 'nothing_to_categorize') {
+        setCategorizingVault(false)
+        showToast('There is nothing in this category queue to process.')
+        await loadCategorizationOverview(selectedCreatorId)
+        return
+      }
+      if (startData.status === 'initial_already_completed') {
+        setCategorizingVault(false)
+        await loadCategorizationOverview(selectedCreatorId)
+        showToast('The one-time full-vault categorization is already complete.', 'error')
+        return
+      }
+
+      const interval = window.setInterval(async () => {
+        const response = await apiFetch(`/categorize-vault-status/${selectedCreatorId}`)
+        const state = await response.json()
+        setCategorizeProgress(state)
+        if (state.status === 'done' || state.status === 'error') {
+          window.clearInterval(interval)
+          setCategorizingVault(false)
+          await Promise.all([
+            loadVaultMedia(selectedCreatorId),
+            loadCategorizationOverview(selectedCreatorId),
+          ])
+          window.setTimeout(() => setCategorizeProgress(null), 2000)
+          if (state.status === 'done') {
+            showToast(
+              state.errors
+                ? `Updated ${state.done}; ${state.errors} item(s) remain stale and can be retried.`
+                : `Updated ${state.done} item(s).`,
+            )
+          } else {
+            showToast('Vault categorization stopped with an error.', 'error')
+          }
+        }
+      }, 2000)
+    } catch {
+      setCategorizingVault(false)
+      showToast('Could not reach the vault categorization service.', 'error')
+    }
+  }
 
   return (
     <div style={{ height: '100vh', overflowY: 'auto', boxSizing: 'border-box', padding: 32 }}>
@@ -192,45 +259,9 @@ export default function VaultPage() {
                   ↑ Add Media
                 </button>
                 <button
-                  onClick={async () => {
-                    if (!selectedCreatorId || categorizingVault) return
-                    setCategorizingVault(true)
-                    const mode = categorizationOverview?.initial_completed_at ? 'new' : 'initial'
-                    const startRes = await apiFetch(`/categorize-vault/${selectedCreatorId}?mode=${mode}`, { method: 'POST' })
-                    const startData = await startRes.json().catch(() => ({}))
-                    if (startData.status === 'nothing_to_categorize') {
-                      setCategorizingVault(false)
-                      showToast('Everything is already categorized — nothing new to process.')
-                      return
-                    }
-                    if (startData.status === 'initial_already_completed') {
-                      setCategorizingVault(false)
-                      await loadCategorizationOverview(selectedCreatorId)
-                      showToast('The one-time full-vault categorization is already complete.', 'error')
-                      return
-                    }
-                    const interval = setInterval(async () => {
-                      const res = await apiFetch(`/categorize-vault-status/${selectedCreatorId}`)
-                      const state = await res.json()
-                      setCategorizeProgress(state)
-                      if (state.status === 'done' || state.status === 'error') {
-                        clearInterval(interval)
-                        setCategorizingVault(false)
-                        await Promise.all([
-                          loadVaultMedia(selectedCreatorId),
-                          loadCategorizationOverview(selectedCreatorId),
-                        ])
-                        setTimeout(() => setCategorizeProgress(null), 2000)
-                        if (state.status === 'done') {
-                          showToast(
-                            state.errors
-                              ? `Categorized ${state.done}; ${state.errors} item(s) need a retry.`
-                              : `Categorized ${state.done} item(s).`
-                          )
-                        }
-                      }
-                    }, 2000)
-                  }}
+                  onClick={() => void startCategorization(
+                    categorizationOverview?.initial_completed_at ? 'new' : 'initial',
+                  )}
                   disabled={!selectedCreatorId || categorizingVault || Boolean(categorizationOverview?.initial_completed_at && !categorizationOverview.uncategorized)}
                   style={{
                     padding: '6px 14px', borderRadius: 6, cursor: categorizingVault ? 'not-allowed' : 'pointer',
@@ -245,6 +276,49 @@ export default function VaultPage() {
                       ? `✦ Categorize new (${categorizationOverview.uncategorized})`
                       : '✦ Run one-time setup'}
                 </button>
+                {Boolean(categorizationOverview?.stale_approved_classifications) && (
+                  <button
+                    onClick={() => {
+                      const count = categorizationOverview?.stale_approved_classifications ?? 0
+                      const confirmed = window.confirm(
+                        `Upgrade the ${count} legacy media item(s) currently used by approved sets to classifier v${categorizationOverview?.classifier_version}? This is the recommended first pass and does not rerun current items.`,
+                      )
+                      if (confirmed) void startCategorization('upgrade', true, 'approved')
+                    }}
+                    disabled={!selectedCreatorId || categorizingVault}
+                    style={{
+                      padding: '6px 14px', borderRadius: 6,
+                      cursor: categorizingVault ? 'not-allowed' : 'pointer',
+                      background: 'rgba(155,143,212,0.09)',
+                      border: '1px solid rgba(155,143,212,0.35)',
+                      color: 'var(--purple)', fontSize: 12,
+                      opacity: !selectedCreatorId || categorizingVault ? 0.5 : 1,
+                    }}
+                  >
+                    Upgrade approved sets ({categorizationOverview?.stale_approved_classifications})
+                  </button>
+                )}
+                {Boolean(categorizationOverview?.stale_classifications) && (
+                  <button
+                    onClick={() => {
+                      const count = categorizationOverview?.stale_classifications ?? 0
+                      const confirmed = window.confirm(
+                        `Upgrade all ${count} remaining legacy vault item(s) to classifier v${categorizationOverview?.classifier_version}? This is a paid AI analysis; current-version items will not run again.`,
+                      )
+                      if (confirmed) void startCategorization('upgrade', true, 'all')
+                    }}
+                    disabled={!selectedCreatorId || categorizingVault}
+                    style={{
+                      padding: '6px 14px', borderRadius: 6,
+                      cursor: categorizingVault ? 'not-allowed' : 'pointer',
+                      background: 'transparent', border: '1px solid var(--border)',
+                      color: 'var(--text-muted)', fontSize: 12,
+                      opacity: !selectedCreatorId || categorizingVault ? 0.5 : 1,
+                    }}
+                  >
+                    Upgrade entire vault ({categorizationOverview?.stale_classifications})
+                  </button>
+                )}
               </div>
 
               {categorizationOverview && (
@@ -258,6 +332,8 @@ export default function VaultPage() {
                   <div style={{ color: 'var(--text-muted)', lineHeight: 1.5 }}>
                     It is required only for automatic set building and semantic media matching. The full vault can be
                     processed once; later syncs process only newly imported media and never rerun the completed vault.
+                    Classifier upgrades are shown separately and require confirmation; current-version media is never
+                    charged twice by an upgrade.
                   </div>
                   <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 10, color: 'var(--text-secondary)', cursor: 'pointer' }}>
                     <input
@@ -283,6 +359,7 @@ export default function VaultPage() {
                   <div style={{ marginTop: 8, color: 'var(--text-muted)' }}>
                     Full-vault setup: {categorizationOverview.initial_completed_at ? 'completed and locked' : 'not run'} ·
                     {' '}{categorizationOverview.uncategorized} uncategorized ·
+                    {' '}{categorizationOverview.stale_approved_classifications} approved-set items on legacy metadata ·
                     {' '}{categorizationOverview.manual_reanalysis.remaining}/{categorizationOverview.manual_reanalysis.daily_limit} manual AI re-analyses remaining today
                   </div>
                 </div>
@@ -463,12 +540,15 @@ export default function VaultPage() {
                           <option value="lingerie_photo">Lingerie photo ($10-80)</option>
                           <option value="lingerie_video">Lingerie video ($15-90)</option>
                           <option value="nude_photo">Nude photo ($15-80)</option>
+                          <option value="nude_video">Nude video ($20-110)</option>
                           <option value="striptease_video">Striptease video ($15-100)</option>
                           <option value="closeup_photo">Closeup photo ($25-130)</option>
                           <option value="closeup_video">Closeup video ($25-130)</option>
                           <option value="dictate_video">Dictate / dirty talk video ($15-50)</option>
                           <option value="solo_toy_photo">Solo / toy photo ($20-80)</option>
                           <option value="solo_toy_video">Solo / toy / orgasm video ($30-150)</option>
+                          <option value="explicit_photo">Explicit solo photo ($25-130)</option>
+                          <option value="explicit_video">Explicit solo video ($35-170)</option>
                           <option value="bg_content">BG content ($50-300)</option>
                           <option value="task">Task / custom ($10-50)</option>
                           <option value="other">Other</option>
@@ -548,6 +628,22 @@ export default function VaultPage() {
                         <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{previewItem.album_title || '—'}</div>
                       </div>
 
+                      <div style={{ marginBottom: 14, padding: '8px 10px', background: 'var(--bg-elevated)', borderRadius: 6 }}>
+                        <div style={{ fontSize: 10, color: 'var(--text-muted)', marginBottom: 4 }}>CLASSIFICATION QUALITY</div>
+                        <div style={{ fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.5 }}>
+                          Version {previewItem.classification_version ?? 0}
+                          {' · '}{previewItem.classification_source || 'legacy/unknown source'}
+                          {typeof previewItem.classification_confidence === 'number'
+                            ? ` · ${Math.round(previewItem.classification_confidence * 100)}% confidence`
+                            : ''}
+                        </div>
+                        {previewItem.classification_model && (
+                          <div style={{ fontSize: 10, color: 'var(--text-faint)', marginTop: 2 }}>
+                            {previewItem.classification_model}
+                          </div>
+                        )}
+                      </div>
+
                       {/* Re-categorize button */}
                       <button
                         onClick={async () => {
@@ -615,6 +711,10 @@ export default function VaultPage() {
                             scene_outfit: previewEdits.scene_outfit,
                             scene_lighting: previewEdits.scene_lighting,
                             scene_id: previewEdits.scene_id,
+                            classification_version: categorizationOverview?.classifier_version ?? 2,
+                            classification_source: 'manual',
+                            classification_confidence: 1,
+                            classified_at: new Date().toISOString(),
                           }).eq('id', previewItem.id)
                           // Update local state
                           setVaultAlbums(prev => {
