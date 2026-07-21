@@ -322,9 +322,10 @@ export default function FanPanel({ fan, creatorId, onHistoryLoaded, showToast }:
     }
   }
 
-  async function resolveReview(resolution: 'repair_ppv' | 'mark_purchased' | 'mark_not_sent' | 'resume_ai') {
+  async function resolveReview(resolution: 'repair_ppv' | 'mark_purchased' | 'mark_not_sent' | 'mark_not_purchased' | 'resume_ai') {
     if (!fan?.id || reviewResolution) return
     if (resolution === 'mark_not_sent' && !window.confirm('Confirm that this PPV did not reach the fan. This will make the session eligible to send again.')) return
+    if (resolution === 'mark_not_purchased' && !window.confirm('Confirm on Fansly that this locked PPV was not purchased. It will be recorded as abandoned and may receive the configured follow-up.')) return
     setReviewResolution(resolution)
     try {
       const response = await apiFetch(`/fan/${fan.id}/resolve-review`, {
@@ -340,6 +341,7 @@ export default function FanPanel({ fan, creatorId, onHistoryLoaded, showToast }:
         resolution === 'repair_ppv' ? 'Payment tracking repaired — AI resumed'
         : resolution === 'mark_purchased' ? 'Purchase recorded — AI resumed'
         : resolution === 'mark_not_sent' ? 'PPV marked not sent — AI resumed'
+        : resolution === 'mark_not_purchased' ? 'PPV marked not purchased — AI resumed'
         : 'AI resumed for this fan'
       )
     } catch (error) {
@@ -471,11 +473,22 @@ export default function FanPanel({ fan, creatorId, onHistoryLoaded, showToast }:
               ⚠ Auto mode paused — needs a human
             </div>
             <div style={{ fontSize: 12.5, color: 'var(--text-muted)', marginBottom: 10 }}>
-              {needsReview.reason === 'ppv_sent_but_reconciliation_not_persisted' || needsReview.reason === 'delivery_sent_but_not_persisted'
+              {needsReview.reason === 'ppv_purchase_verification_unavailable'
+                ? 'The PPV was sent, but Fansly purchase verification is unavailable. Check the fan on Fansly, then record whether it was purchased.'
+                : needsReview.reason === 'ppv_sent_but_reconciliation_not_persisted' || needsReview.reason === 'delivery_sent_but_not_persisted'
                 ? 'The PPV may have reached the fan, but payment tracking was not fully saved. Choose the outcome below before AI can resume.'
                 : `This conversation was frozen${needsReview.reason ? ` (${needsReview.reason})` : ''}. Review it, then resume AI when you're ready.`}
             </div>
-            {needsReview.reason === 'ppv_sent_but_reconciliation_not_persisted' || needsReview.reason === 'delivery_sent_but_not_persisted' ? (
+            {needsReview.reason === 'ppv_purchase_verification_unavailable' ? (
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                <button type="button" disabled={!!reviewResolution} onClick={() => void resolveReview('mark_purchased')} style={{ padding: '8px 12px', borderRadius: 8, fontSize: 12, fontWeight: 600, background: 'rgba(155,143,212,0.12)', border: '1px solid var(--purple)', color: 'var(--purple)', cursor: reviewResolution ? 'wait' : 'pointer', opacity: reviewResolution ? 0.55 : 1 }}>
+                  {reviewResolution === 'mark_purchased' ? 'Recording…' : 'Mark purchased'}
+                </button>
+                <button type="button" disabled={!!reviewResolution} onClick={() => void resolveReview('mark_not_purchased')} style={{ padding: '8px 12px', borderRadius: 8, fontSize: 12, fontWeight: 600, background: 'transparent', border: '1px solid var(--border)', color: 'var(--text-secondary)', cursor: reviewResolution ? 'wait' : 'pointer', opacity: reviewResolution ? 0.55 : 1 }}>
+                  {reviewResolution === 'mark_not_purchased' ? 'Updating…' : 'Confirm not purchased'}
+                </button>
+              </div>
+            ) : needsReview.reason === 'ppv_sent_but_reconciliation_not_persisted' || needsReview.reason === 'delivery_sent_but_not_persisted' ? (
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
                 <button type="button" disabled={!!reviewResolution} onClick={() => void resolveReview('repair_ppv')} style={{ padding: '8px 12px', borderRadius: 8, fontSize: 12, fontWeight: 600, background: 'rgba(94,214,154,0.12)', border: '1px solid var(--green)', color: 'var(--green)', cursor: reviewResolution ? 'wait' : 'pointer', opacity: reviewResolution ? 0.55 : 1 }}>
                   {reviewResolution === 'repair_ppv' ? 'Repairing…' : 'Repair payment tracking'}

@@ -39,6 +39,10 @@ type Policy = {
   post_session_followup_enabled: boolean
   post_session_followup_delay_hours: number
   followup_recent_activity_suppression_hours: number
+  inactivity_reengagement_enabled: boolean
+  inactivity_reengagement_delay_hours: number
+  inactivity_reengagement_cooldown_hours: number
+  inactivity_reengagement_max_per_30_days: number
 }
 
 type FullAutoHealth = {
@@ -98,6 +102,10 @@ const DEFAULT_POLICY: Policy = {
   post_session_followup_enabled: true,
   post_session_followup_delay_hours: 18,
   followup_recent_activity_suppression_hours: 6,
+  inactivity_reengagement_enabled: false,
+  inactivity_reengagement_delay_hours: 48,
+  inactivity_reengagement_cooldown_hours: 168,
+  inactivity_reengagement_max_per_30_days: 2,
 }
 
 export default function MonetizationPage() {
@@ -366,6 +374,16 @@ export default function MonetizationPage() {
                 </Grid>
                 <Toggle label="Follow up once after an unselected offer expires" checked={policy.abandoned_offer_followup_enabled} onChange={(value) => update('abandoned_offer_followup_enabled', value)} />
               </div>
+              <div style={{ marginTop: 18, paddingTop: 16, borderTop: '1px solid var(--border)' }}>
+                <div style={{ fontSize: 13, fontWeight: 650, marginBottom: 4 }}>Inactive Auto chats</div>
+                <Hint>Optional, conservative re-engagement for an otherwise idle eligible Full Auto chat. Payday, offer, payment, and post-session follow-ups always take priority.</Hint>
+                <Toggle label="Re-engage eligible Full Auto fans who go quiet" checked={policy.inactivity_reengagement_enabled} onChange={(value) => update('inactivity_reengagement_enabled', value)} />
+                <Grid>
+                  <NumberField label="Inactive before follow-up (hours)" value={policy.inactivity_reengagement_delay_hours} min={6} max={720} onChange={(value) => update('inactivity_reengagement_delay_hours', value)} />
+                  <NumberField label="Minimum time between inactivity messages (hours)" value={policy.inactivity_reengagement_cooldown_hours} min={24} max={2160} onChange={(value) => update('inactivity_reengagement_cooldown_hours', value)} />
+                  <NumberField label="Maximum inactivity messages per 30 days" value={policy.inactivity_reengagement_max_per_30_days} min={1} max={10} onChange={(value) => update('inactivity_reengagement_max_per_30_days', value)} />
+                </Grid>
+              </div>
               <Hint>Failed purchase checks are retried. A locked PPV and an unselected offer have separate durable recovery paths.</Hint>
             </Card>
 
@@ -571,4 +589,7 @@ const FIELD_HELP: Record<string, string> = {
   'Recent activity suppression (hours)': 'A scheduled follow-up is skipped when the fan has returned within this window.',
   'Pending offer window (hours)': 'How long exact presented options remain pending when the fan disappears without choosing.',
   'Abandoned offer follow-up delay (hours)': 'Delay after offer expiry before one contextual recovery message may be sent.',
+  'Inactive before follow-up (hours)': 'How long an eligible idle Full Auto chat must remain unanswered before one casual re-engagement message.',
+  'Minimum time between inactivity messages (hours)': 'Global per-fan cooldown between generic inactivity messages, even across separate silence episodes.',
+  'Maximum inactivity messages per 30 days': 'Hard per-fan limit for generic inactivity re-engagement. Commercial lifecycle follow-ups are separate.',
 }
