@@ -101,6 +101,7 @@ export default function SettingsPage() {
   const [autoAvailable, setAutoAvailable] = useState<boolean | null>(null)
   const [approvedSetsCount, setApprovedSetsCount] = useState<number>(0)
   const [showAddCreator, setShowAddCreator] = useState(false)
+  const [reconnectCreatorId, setReconnectCreatorId] = useState<string | null>(null)
   const [connectStep, setConnectStep] = useState<'credentials' | '2fa' | 'done'>('credentials')
   const [twofaToken, setTwofaToken] = useState('')
   const [twofaCode, setTwofaCode] = useState('')
@@ -123,6 +124,27 @@ export default function SettingsPage() {
   function showToast(message: string, type: 'success' | 'error' = 'success') {
     setToast({ message, type })
     setTimeout(() => setToast(null), 3000)
+  }
+
+  function openAddCreator() {
+    setReconnectCreatorId(null)
+    setNewCreator({ name: '', email: '', password: '', countryCode: 'US' })
+    setConnectStep('credentials')
+    setShowAddCreator(true)
+  }
+
+  function openReconnectCreator() {
+    const creator = creators.find(c => c.id === selectedCreatorId)
+    if (!creator) return
+    setReconnectCreatorId(creator.id)
+    setNewCreator({
+      name: creator.platform_username ?? '',
+      email: '',
+      password: '',
+      countryCode: 'US',
+    })
+    setConnectStep('credentials')
+    setShowAddCreator(true)
   }
 
   async function fetchCreators() {
@@ -172,6 +194,7 @@ export default function SettingsPage() {
         body: JSON.stringify({
           ...newCreator,
           user_id: user?.id,
+          creator_id: reconnectCreatorId,
         }),
       })
       const data = await res.json()
@@ -182,12 +205,17 @@ export default function SettingsPage() {
         setConnectStep('2fa')
       } else if (data.success) {
         sessionStorage.removeItem('creators')
-        showToast('Creator connected successfully')
+        showToast(reconnectCreatorId ? 'Fansly connection refreshed' : 'Creator connected successfully')
         window.dispatchEvent(new CustomEvent('creator-added'))
-        setCreators(prev => [...prev, data.creator])
+        setCreators(prev => reconnectCreatorId
+          ? prev.map(creator => creator.id === reconnectCreatorId ? data.creator : creator)
+          : [...prev, data.creator])
         setSelectedCreatorId(data.creator.id)
         setShowAddCreator(false)
+        setReconnectCreatorId(null)
         setConnectStep('credentials')
+      } else {
+        showToast(data.error || 'Could not connect this Fansly account', 'error')
       }
     } finally {
       setConnecting(false)
@@ -209,12 +237,13 @@ export default function SettingsPage() {
           password: newCreator.password,
           countryCode: newCreator.countryCode,
           user_id: user?.id,
+          creator_id: reconnectCreatorId,
         }),
       })
       const data = await res.json()
       if (data.success) {
         sessionStorage.removeItem('creators')
-        showToast('Creator connected successfully')
+        showToast(reconnectCreatorId ? 'Fansly connection refreshed' : 'Creator connected successfully')
         window.dispatchEvent(new CustomEvent('creator-added'))
         const { data: creatorsData } = await supabase
           .from('creators')
@@ -226,8 +255,11 @@ export default function SettingsPage() {
           setSelectedCreatorId(data.creator.id)
         }
         setShowAddCreator(false)
+        setReconnectCreatorId(null)
         setConnectStep('credentials')
         setTwofaCode('')
+      } else {
+        showToast(data.error || 'Could not verify this Fansly account', 'error')
       }
     } finally {
       setConnecting(false)
@@ -506,11 +538,18 @@ export default function SettingsPage() {
           </div>
           {/* Add / Delete creator */}
           <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
-            <button type="button" onClick={() => setShowAddCreator(true)} style={{
+            <button type="button" onClick={openAddCreator} style={{
               flex: 1, padding: '5px', fontSize: 11,
               background: 'var(--bg-elevated)', border: '1px solid var(--border)',
               borderRadius: 6, color: 'var(--text-secondary)', cursor: 'pointer',
             }}>+ Add Creator</button>
+            <button type="button" onClick={openReconnectCreator} disabled={!selectedCreatorId} style={{
+              flex: 1, padding: '5px', fontSize: 11,
+              background: 'var(--bg-elevated)', border: '1px solid var(--border)',
+              borderRadius: 6, color: 'var(--text-secondary)',
+              cursor: selectedCreatorId ? 'pointer' : 'not-allowed',
+              opacity: selectedCreatorId ? 1 : 0.5,
+            }}>Reconnect Fansly</button>
             <button type="button" onClick={() => selectedCreatorId && deleteCreator(selectedCreatorId)} style={{
               padding: '5px 10px', fontSize: 11,
               background: 'transparent', border: '1px solid var(--border)',
@@ -1102,9 +1141,13 @@ export default function SettingsPage() {
           }}>
             {connectStep === 'credentials' ? (
               <>
-                <div style={{ fontSize: 16, fontWeight: 600, marginBottom: 4 }}>Connect Fansly Account</div>
+                <div style={{ fontSize: 16, fontWeight: 600, marginBottom: 4 }}>
+                  {reconnectCreatorId ? 'Reconnect Fansly Account' : 'Connect Fansly Account'}
+                </div>
                 <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 16 }}>
-                  Enter the creator&apos;s Fansly login credentials
+                  {reconnectCreatorId
+                    ? 'Refresh this creator under the current API Fansly key without creating a duplicate.'
+                    : 'Enter the creator’s Fansly login credentials.'}
                 </div>
                 {[
                   { label: 'Creator Name', key: 'name', placeholder: 'Display name', type: 'text' },
@@ -1181,9 +1224,12 @@ export default function SettingsPage() {
                     fontSize: 13, cursor: connecting ? 'default' : 'pointer',
                     opacity: connecting ? 0.7 : 1,
                   }}>
-                    {connecting ? 'Connecting...' : 'Connect Account'}
+                    {connecting ? 'Connecting...' : reconnectCreatorId ? 'Reconnect Account' : 'Connect Account'}
                   </button>
-                  <button type="button" onClick={() => setShowAddCreator(false)} style={{
+                  <button type="button" onClick={() => {
+                    setShowAddCreator(false)
+                    setReconnectCreatorId(null)
+                  }} style={{
                     padding: '8px 16px', background: 'transparent',
                     border: '1px solid var(--border)', borderRadius: 6,
                     color: 'var(--text-muted)', fontSize: 13, cursor: 'pointer',
