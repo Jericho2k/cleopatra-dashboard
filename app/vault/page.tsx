@@ -141,7 +141,7 @@ export default function VaultPage() {
       if (startData.status === 'initial_already_completed') {
         setCategorizingVault(false)
         await loadCategorizationOverview(selectedCreatorId)
-        showToast('The one-time full-vault categorization is already complete.', 'error')
+        showToast('Existing-media categorization is already complete.', 'error')
         return
       }
 
@@ -164,7 +164,7 @@ export default function VaultPage() {
                 : `Updated ${state.done} item(s).`,
             )
           } else {
-            showToast('Vault categorization stopped with an error.', 'error')
+            showToast(state.error || 'Vault categorization stopped with an error.', 'error')
           }
         }
       }, 2000)
@@ -274,14 +274,14 @@ export default function VaultPage() {
                     ? `✦ ${categorizeProgress?.done ?? 0}/${categorizeProgress?.total ?? '?'}`
                     : categorizationOverview?.initial_completed_at
                       ? `✦ Categorize new (${categorizationOverview.uncategorized})`
-                      : '✦ Run one-time setup'}
+                      : `✦ Categorize existing media (${categorizationOverview?.uncategorized ?? 0})`}
                 </button>
                 {Boolean(categorizationOverview?.stale_approved_classifications) && (
                   <button
                     onClick={() => {
                       const count = categorizationOverview?.stale_approved_classifications ?? 0
                       const confirmed = window.confirm(
-                        `Upgrade the ${count} legacy media item(s) currently used by approved sets to classifier v${categorizationOverview?.classifier_version}? This is the recommended first pass and does not rerun current items.`,
+                        `Re-analyze the ${count} media item(s) in approved sets that still use old metadata? This paid analysis updates them to classifier v${categorizationOverview?.classifier_version} and does not rerun current items.`,
                       )
                       if (confirmed) void startCategorization('upgrade', true, 'approved')
                     }}
@@ -295,7 +295,7 @@ export default function VaultPage() {
                       opacity: !selectedCreatorId || categorizingVault ? 0.5 : 1,
                     }}
                   >
-                    Upgrade approved sets ({categorizationOverview?.stale_approved_classifications})
+                    Re-analyze old approved-set media ({categorizationOverview?.stale_approved_classifications})
                   </button>
                 )}
                 {Boolean(categorizationOverview?.stale_classifications) && (
@@ -303,7 +303,7 @@ export default function VaultPage() {
                     onClick={() => {
                       const count = categorizationOverview?.stale_classifications ?? 0
                       const confirmed = window.confirm(
-                        `Upgrade all ${count} remaining legacy vault item(s) to classifier v${categorizationOverview?.classifier_version}? This is a paid AI analysis; current-version items will not run again.`,
+                        `Re-analyze all ${count} remaining media item(s) that still use old or failed metadata? This is a paid analysis; current-version items will not run again.`,
                       )
                       if (confirmed) void startCategorization('upgrade', true, 'all')
                     }}
@@ -316,7 +316,7 @@ export default function VaultPage() {
                       opacity: !selectedCreatorId || categorizingVault ? 0.5 : 1,
                     }}
                   >
-                    Upgrade entire vault ({categorizationOverview?.stale_classifications})
+                    Re-analyze remaining old metadata ({categorizationOverview?.stale_classifications})
                   </button>
                 )}
               </div>
@@ -332,8 +332,8 @@ export default function VaultPage() {
                   <div style={{ color: 'var(--text-muted)', lineHeight: 1.5 }}>
                     It is required only for automatic set building and semantic media matching. The full vault can be
                     processed once; later syncs process only newly imported media and never rerun the completed vault.
-                    Classifier upgrades are shown separately and require confirmation; current-version media is never
-                    charged twice by an upgrade.
+                    Older or failed classifications are shown separately and require confirmation; current-version
+                    media is never charged twice.
                   </div>
                   <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 10, color: 'var(--text-secondary)', cursor: 'pointer' }}>
                     <input
@@ -357,8 +357,9 @@ export default function VaultPage() {
                     Automatically categorize media imported by future syncs and uploads
                   </label>
                   <div style={{ marginTop: 8, color: 'var(--text-muted)' }}>
-                    Full-vault setup: {categorizationOverview.initial_completed_at ? 'completed and locked' : 'not run'} ·
+                    Existing-media categorization: {categorizationOverview.initial_completed_at ? 'completed' : 'not run'} ·
                     {' '}{categorizationOverview.uncategorized} uncategorized ·
+                    {' '}{categorizationOverview.stale_classifications} on old or failed metadata ·
                     {' '}{categorizationOverview.stale_approved_classifications} approved-set items on legacy metadata ·
                     {' '}{categorizationOverview.manual_reanalysis.remaining}/{categorizationOverview.manual_reanalysis.daily_limit} manual AI re-analyses remaining today
                   </div>
