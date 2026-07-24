@@ -635,7 +635,7 @@ export default function VaultPage() {
                           Version {previewItem.classification_version ?? 0}
                           {' · '}{previewItem.classification_source || 'legacy/unknown source'}
                           {typeof previewItem.classification_confidence === 'number'
-                            ? ` · ${Math.round(previewItem.classification_confidence * 100)}% confidence`
+                            ? ` · ${Math.round(previewItem.classification_confidence * 100)}% evidence confidence`
                             : ''}
                         </div>
                         {previewItem.classification_model && (
