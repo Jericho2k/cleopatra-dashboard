@@ -642,7 +642,12 @@ function ConversationView({
                           return (
                             <div key={mid} style={{ position: 'relative', cursor: 'pointer', width: w, maxWidth: 220, aspectRatio: '3/4', overflow: 'hidden' }}
                               onClick={async () => {
-                                const { data } = await supabase.from('creator_vault_media').select('url, mimetype, filename').eq('fansly_media_id', mid).single()
+                                const { data } = await supabase
+                                  .from('creator_vault_media')
+                                  .select('url, mimetype, filename')
+                                  .eq('creator_id', creatorId)
+                                  .eq('fansly_media_id', mid)
+                                  .maybeSingle()
                                 if (data?.url) setMediaPreview(data as any)
                               }}>
                               <img src={thumbSrc} alt="PPV preview" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} onError={e => { (e.target as HTMLImageElement).style.display = 'none' }} />

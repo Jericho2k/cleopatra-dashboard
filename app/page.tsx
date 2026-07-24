@@ -226,23 +226,11 @@ export default function Page() {
         oldestMessageTime: null,
       }
 
-      // Restore stale cache immediately for faster first paint.
-      try {
-        const cached = localStorage.getItem(`convos_${first.id}`)
-        if (cached) {
-          const parsed = JSON.parse(cached) as { data: ConversationSummary[]; ts: number }
-          if (Date.now() - parsed.ts < 5 * 60 * 1000 && Array.isArray(parsed.data)) {
-            conversationsCache.current[first.id] = parsed.data
-            setTabs([{ ...baseTab, conversations: parsed.data }])
-            setActiveTabId(tabId)
-          }
-        }
-      } catch {}
-
-      if (!conversationsCache.current[first.id]) {
-        setTabs([baseTab])
-        setActiveTabId(tabId)
-      }
+      // Fan conversations are deliberately memory-only. Persisting them in
+      // browser storage could expose one agency account's chat data after a
+      // different operator signs into the same browser profile.
+      setTabs([baseTab])
+      setActiveTabId(tabId)
 
       setConversationsLoading(true)
       try {
@@ -269,13 +257,6 @@ export default function Page() {
         }))
 
         conversationsCache.current[first.id] = conversations
-        try {
-          localStorage.setItem(
-            `convos_${first.id}`,
-            JSON.stringify({ data: conversations, ts: Date.now() })
-          )
-        } catch {}
-
         setFanLists((fanListsResult.data ?? []).map((l: any) => ({
           ...l,
           member_fan_ids: (l.fan_list_members ?? []).map((m: any) => m.fan_id),
@@ -364,20 +345,6 @@ export default function Page() {
       return
     }
 
-    // Restore from localStorage for instant paint
-    try {
-      const raw = localStorage.getItem(`convos_${activeTab.creatorId}`)
-      if (raw) {
-        const { data, ts } = JSON.parse(raw)
-        const fiveMinutes = 5 * 60 * 1000
-        if (Date.now() - ts < fiveMinutes && data?.length > 0) {
-          conversationsCache.current[activeTab.creatorId] = data
-          updateTab(activeTab.id, { conversations: data })
-          return
-        }
-      }
-    } catch {}
-
     async function load() {
       const { data } = await supabase
         .from('fan_conversation_summaries')
@@ -395,14 +362,6 @@ export default function Page() {
 
       conversationsCache.current[activeTab!.creatorId] = summaries
       updateTab(activeTab!.id, { conversations: summaries })
-
-      // Persist to localStorage so next visit is instant
-      try {
-        localStorage.setItem(
-          `convos_${activeTab!.creatorId}`,
-          JSON.stringify({ data: summaries, ts: Date.now() })
-        )
-      } catch {}
     }
     load()
   }, [activeTabId, activeTab?.conversations.length])
@@ -412,7 +371,6 @@ export default function Page() {
       const ce = e as CustomEvent<{ creatorId?: string }>
       const creatorId = ce.detail?.creatorId ?? activeTab?.creatorId
       if (creatorId) delete conversationsCache.current[creatorId]
-      try { if (creatorId) localStorage.removeItem(`convos_${creatorId}`) } catch {}
       setTabs(prev => prev.map(tab => {
         if (tab.creatorId !== creatorId) return tab
         return { ...tab, conversations: [] }
@@ -591,18 +549,6 @@ export default function Page() {
                 : c
               )
               .sort((a, b) => new Date(b.last_message_time).getTime() - new Date(a.last_message_time).getTime())
-
-            try {
-              const cacheKey = `convos_${tab.creatorId}`
-              const raw = localStorage.getItem(cacheKey)
-              if (raw) {
-                const parsed = JSON.parse(raw)
-                localStorage.setItem(cacheKey, JSON.stringify({
-                  ...parsed,
-                  data: updatedConversations,
-                }))
-              }
-            } catch {}
 
             return {
               ...tab,

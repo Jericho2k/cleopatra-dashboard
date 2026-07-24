@@ -182,6 +182,11 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
                 )
                 await supabase.auth.signOut()
+                sessionStorage.removeItem('creators')
+                for (let index = localStorage.length - 1; index >= 0; index -= 1) {
+                  const key = localStorage.key(index)
+                  if (key?.startsWith('convos_')) localStorage.removeItem(key)
+                }
                 window.location.href = '/login'
               }}
               title="Sign out"

@@ -148,16 +148,6 @@ export default function SettingsPage() {
   }
 
   async function fetchCreators() {
-    const cached = sessionStorage.getItem('creators')
-    if (cached) {
-      const list = JSON.parse(cached)
-      setCreators(list)
-      if (list.length > 0) setSelectedCreatorId(list[0].id)
-      else setSelectedCreatorId(null)
-      setCreatorsLoading(false)
-      return
-    }
-
     setCreatorsLoading(true)
     try {
       const { data: { user } } = await supabase.auth.getUser()
@@ -166,10 +156,9 @@ export default function SettingsPage() {
         setSelectedCreatorId(null)
         return
       }
-      const res = await apiFetch(`/my-creators?user_id=${user.id}`)
+      const res = await apiFetch('/my-creators')
       const data = await res.json()
       const next = data.creators ?? []
-      sessionStorage.setItem('creators', JSON.stringify(next))
       setCreators(next)
       if (next.length > 0) setSelectedCreatorId(next[0].id)
       else setSelectedCreatorId(null)

@@ -179,7 +179,7 @@ export default function OverviewPage() {
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
               {health.fans.map(fan => (
-                <a key={fan.fan_id} href='/' onClick={() => localStorage.setItem('open-fan', fan.display_name)} style={{ textDecoration: 'none', padding: 12, borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg-elevated)', display: 'flex', justifyContent: 'space-between', gap: 14 }}>
+                <a key={fan.fan_id} href='/' style={{ textDecoration: 'none', padding: 12, borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg-elevated)', display: 'flex', justifyContent: 'space-between', gap: 14 }}>
                   <div>
                     <div style={{ color: 'var(--text-primary)', fontSize: 13, fontWeight: 650 }}>{fan.display_name}</div>
                     <div style={{ color: 'var(--text-muted)', fontSize: 11, marginTop: 3 }}>{fan.commercial_state}{fan.next_followup_type ? ` · ${fan.next_followup_type}` : ''}</div>
