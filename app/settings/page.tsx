@@ -5,9 +5,9 @@ import { Eye, EyeOff } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { apiFetch } from '../../lib/api'
 
-type Section = 'Creator Persona' | 'Blocked Words' | 'Auto Audience' | 'Sleep Hours' | 'Limits'
+type Section = 'Creator Persona' | 'Voice Calibration' | 'Blocked Words' | 'Auto Audience' | 'Sleep Hours' | 'Limits'
 
-const SECTIONS: Section[] = ['Creator Persona', 'Blocked Words', 'Auto Audience', 'Sleep Hours', 'Limits']
+const SECTIONS: Section[] = ['Creator Persona', 'Voice Calibration', 'Blocked Words', 'Auto Audience', 'Sleep Hours', 'Limits']
 type AutoAudiencePolicy = {
   scope: 'all' | 'new_only' | 'matching'
   match_mode: 'any' | 'all'
@@ -28,6 +28,27 @@ type AutoAudiencePreview = {
   eligible_if_creator_on?: number
   ineligible_if_creator_on?: number
   reasons_if_creator_on?: Record<string, number>
+}
+
+type VoiceCalibrationCandidate = {
+  id: string
+  content: string
+  sent_at: string | null
+  approved: boolean
+}
+
+type VoiceCalibration = {
+  enabled: boolean
+  approved_message_ids: string[]
+  approved_samples: string[]
+  candidates: VoiceCalibrationCandidate[]
+}
+
+const DEFAULT_VOICE_CALIBRATION: VoiceCalibration = {
+  enabled: false,
+  approved_message_ids: [],
+  approved_samples: [],
+  candidates: [],
 }
 
 const DEFAULT_AUTO_AUDIENCE: AutoAudiencePolicy = {
@@ -120,6 +141,8 @@ export default function SettingsPage() {
   const [audiencePreview, setAudiencePreview] = useState<AutoAudiencePreview | null>(null)
   const [audienceSaving, setAudienceSaving] = useState(false)
   const [fullAutoSaving, setFullAutoSaving] = useState(false)
+  const [voiceCalibration, setVoiceCalibration] = useState<VoiceCalibration>(DEFAULT_VOICE_CALIBRATION)
+  const [voiceCalibrationSaving, setVoiceCalibrationSaving] = useState(false)
 
   function showToast(message: string, type: 'success' | 'error' = 'success') {
     setToast({ message, type })
@@ -335,6 +358,22 @@ export default function SettingsPage() {
     setAudienceLists(listsResponse.data ?? [])
   }
 
+  const loadVoiceCalibration = async (creatorId: string) => {
+    try {
+      const response = await apiFetch(`/creator/${creatorId}/voice-calibration`)
+      if (!response.ok) throw new Error(await response.text())
+      const body = await response.json()
+      setVoiceCalibration({
+        enabled: Boolean(body.enabled),
+        approved_message_ids: body.approved_message_ids ?? [],
+        approved_samples: body.approved_samples ?? [],
+        candidates: body.candidates ?? [],
+      })
+    } catch {
+      setVoiceCalibration(DEFAULT_VOICE_CALIBRATION)
+    }
+  }
+
   const loadScripts = (_creatorId: string) => {
     // Placeholder for scripts/storylines settings loading.
   }
@@ -350,6 +389,7 @@ export default function SettingsPage() {
           loadBlockedWords(creatorId),
           Promise.resolve(loadScripts(creatorId)),
           loadAutoAudience(creatorId),
+          loadVoiceCalibration(creatorId),
         ])
       } finally {
         setContentLoading(false)
@@ -405,6 +445,45 @@ export default function SettingsPage() {
     } finally {
       setAudienceSaving(false)
     }
+  }
+
+  const saveVoiceCalibration = async () => {
+    if (!selectedCreatorId) return
+    setVoiceCalibrationSaving(true)
+    try {
+      const response = await apiFetch(`/creator/${selectedCreatorId}/voice-calibration`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          enabled: voiceCalibration.enabled,
+          approved_message_ids: voiceCalibration.approved_message_ids,
+        }),
+      })
+      const body = await response.json()
+      if (!response.ok) throw new Error(body.detail || 'Could not save voice calibration')
+      await loadVoiceCalibration(selectedCreatorId)
+      showToast(body.enabled ? 'Voice calibration enabled' : 'Voice calibration saved')
+    } catch (error) {
+      showToast(String(error instanceof Error ? error.message : error), 'error')
+    } finally {
+      setVoiceCalibrationSaving(false)
+    }
+  }
+
+  const toggleVoiceSample = (messageId: string) => {
+    setVoiceCalibration(previous => {
+      const selected = previous.approved_message_ids.includes(messageId)
+      if (!selected && previous.approved_message_ids.length >= 30) {
+        showToast('Voice calibration supports up to 30 approved messages', 'error')
+        return previous
+      }
+      return {
+        ...previous,
+        approved_message_ids: selected
+          ? previous.approved_message_ids.filter(id => id !== messageId)
+          : [...previous.approved_message_ids, messageId],
+      }
+    })
   }
 
   const setCreatorFullAuto = async (enabled: boolean) => {
@@ -582,6 +661,11 @@ export default function SettingsPage() {
                 }}
               >
                 {section}
+                {section === 'Voice Calibration' && (
+                  <span style={{ marginLeft: 7, padding: '1px 5px', borderRadius: 4, fontSize: 8, letterSpacing: '0.06em', background: 'rgba(155,143,212,0.14)', color: 'var(--purple)' }}>
+                    BETA
+                  </span>
+                )}
               </button>
             </li>
           ))}
@@ -678,6 +762,100 @@ export default function SettingsPage() {
                 }}
               >
                 {personaSaved ? '✓ Saved' : personaSaving ? 'Saving...' : 'Save Persona'}
+              </button>
+            </div>
+          )}
+
+          {/* Voice Calibration */}
+          {activeSection === 'Voice Calibration' && (
+            <div>
+              <div style={{ marginBottom: 22 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                  <div style={{ fontSize: 18, fontWeight: 600 }}>Voice Calibration</div>
+                  <span style={{ padding: '2px 7px', borderRadius: 5, fontSize: 9, letterSpacing: '0.08em', background: 'rgba(155,143,212,0.14)', color: 'var(--purple)' }}>
+                    BETA
+                  </span>
+                </div>
+                <div style={{ fontSize: 13, color: 'var(--text-muted)', lineHeight: 1.55 }}>
+                  Approve real messages written by this creator or an operator. When enabled, Cleopatra uses their combined rhythm, casing, punctuation, question frequency, and emoji habits as style evidence.
+                </div>
+              </div>
+
+              <div style={{
+                display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 18,
+                padding: '14px 15px', marginBottom: 16, borderRadius: 9,
+                border: `1px solid ${voiceCalibration.enabled ? 'rgba(155,143,212,0.5)' : 'var(--border)'}`,
+                background: voiceCalibration.enabled ? 'rgba(155,143,212,0.08)' : 'var(--bg-elevated)',
+              }}>
+                <div>
+                  <div style={{ fontSize: 13, fontWeight: 650 }}>Influence generated replies</div>
+                  <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 3, lineHeight: 1.45 }}>
+                    Turning this off keeps your approvals but removes their influence immediately.
+                  </div>
+                </div>
+                <button type="button" onClick={() => {
+                  if (!voiceCalibration.enabled && voiceCalibration.approved_message_ids.length === 0) {
+                    showToast('Approve at least one real message first', 'error')
+                    return
+                  }
+                  setVoiceCalibration(previous => ({ ...previous, enabled: !previous.enabled }))
+                }} style={{
+                  flexShrink: 0, minWidth: 72, padding: '7px 12px', borderRadius: 7, cursor: 'pointer',
+                  border: voiceCalibration.enabled ? '1px solid var(--purple)' : '1px solid var(--border)',
+                  background: voiceCalibration.enabled ? 'rgba(155,143,212,0.14)' : 'var(--bg-main)',
+                  color: voiceCalibration.enabled ? 'var(--purple)' : 'var(--text-secondary)',
+                }}>
+                  {voiceCalibration.enabled ? 'On' : 'Off'}
+                </button>
+              </div>
+
+              <div style={{ padding: '11px 13px', marginBottom: 14, borderRadius: 8, border: '1px solid rgba(224,168,58,0.35)', background: 'rgba(224,168,58,0.07)', color: 'var(--text-secondary)', fontSize: 11.5, lineHeight: 1.5 }}>
+                Select only messages you know were written by a real creator or operator. Imported history can include unknown authorship; nothing is used until you approve it. Fan facts, prices, and topics inside a sample are never treated as current-conversation facts.
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 8 }}>
+                <div style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Recent eligible messages</div>
+                <div style={{ fontSize: 11, color: voiceCalibration.approved_message_ids.length >= 3 ? 'var(--green)' : 'var(--text-muted)' }}>
+                  {voiceCalibration.approved_message_ids.length}/30 approved
+                  {voiceCalibration.approved_message_ids.length < 3 ? ' · 3+ recommended' : ''}
+                </div>
+              </div>
+
+              {voiceCalibration.candidates.length === 0 ? (
+                <div style={{ padding: 16, borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg-elevated)', color: 'var(--text-muted)', fontSize: 12, lineHeight: 1.5 }}>
+                  No eligible creator messages are available yet. Sync conversation history or send operator-written messages first.
+                </div>
+              ) : (
+                <div style={{ maxHeight: 430, overflowY: 'auto', border: '1px solid var(--border)', borderRadius: 9, background: 'var(--bg-elevated)' }}>
+                  {voiceCalibration.candidates.slice(0, 80).map((candidate, index) => {
+                    const checked = voiceCalibration.approved_message_ids.includes(candidate.id)
+                    return (
+                      <label key={candidate.id} style={{
+                        display: 'flex', gap: 10, alignItems: 'flex-start', padding: '10px 12px', cursor: 'pointer',
+                        borderBottom: index === Math.min(voiceCalibration.candidates.length, 80) - 1 ? 'none' : '1px solid var(--border-subtle)',
+                        background: checked ? 'rgba(155,143,212,0.08)' : 'transparent',
+                      }}>
+                        <input type="checkbox" checked={checked} onChange={() => toggleVoiceSample(candidate.id)} style={{ marginTop: 3 }} />
+                        <div style={{ minWidth: 0 }}>
+                          <div style={{ fontSize: 12.5, color: 'var(--text-primary)', lineHeight: 1.45, overflowWrap: 'anywhere' }}>{candidate.content}</div>
+                          {candidate.sent_at && (
+                            <div style={{ fontSize: 10, color: 'var(--text-faint)', marginTop: 4 }}>{new Date(candidate.sent_at).toLocaleString()}</div>
+                          )}
+                        </div>
+                      </label>
+                    )
+                  })}
+                </div>
+              )}
+
+              <button type="button" onClick={() => void saveVoiceCalibration()} disabled={voiceCalibrationSaving} style={{
+                marginTop: 16, padding: '8px 20px', borderRadius: 6,
+                background: voiceCalibrationSaving ? 'var(--bg-elevated)' : 'rgba(155,143,212,0.12)',
+                border: '1px solid var(--purple)', color: 'var(--purple)',
+                fontSize: 13, cursor: voiceCalibrationSaving ? 'wait' : 'pointer',
+                opacity: voiceCalibrationSaving ? 0.6 : 1,
+              }}>
+                {voiceCalibrationSaving ? 'Saving…' : 'Save voice calibration'}
               </button>
             </div>
           )}
