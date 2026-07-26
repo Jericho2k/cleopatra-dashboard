@@ -20,6 +20,20 @@ type VaultCategorizationOverview = {
   active_run: { status: string; mode?: string; done: number; total: number; errors?: number }
 }
 
+// Why an item is flagged for review. The backend reconciles the adult
+// classifier's explicitness against the vision model's category; a mismatch
+// means the price band may be wrong in either direction.
+const DISAGREEMENT_LABELS: Record<string, string> = {
+  classifier_above_category:
+    'Rated more explicit than its category allows — repriced to a higher tier.',
+  classifier_below_category:
+    'Rated less explicit than its category implies — category kept, price unchanged.',
+  classifier_unconfident: 'The classifier was not confident about this one.',
+  vision_unavailable: 'Categorized from explicitness alone; the vision model was unreachable.',
+  no_evidence: 'Neither the classifier nor the vision model could read this media.',
+  error: 'Classification failed for this item.',
+}
+
 export default function VaultPage() {
   const [creators, setCreators] = useState<{ id: string; name: string }[]>([])
   const [selectedCreatorId, setSelectedCreatorId] = useState<string | null>(null)
@@ -74,7 +88,7 @@ export default function VaultPage() {
     while (true) {
       const { data } = await supabase
         .from('creator_vault_media')
-        .select('id, filename, url, album_title, mimetype, ai_description, thumbnail_url, media_type, title, price, is_active, content_category, price_min, price_max, scene_id, scene_location, scene_outfit, scene_lighting, explicitness_level, good_for, tags, classification_version, classification_model, classification_source, classification_confidence, classified_at')
+        .select('id, filename, url, album_title, mimetype, ai_description, thumbnail_url, media_type, title, price, is_active, content_category, price_min, price_max, scene_id, scene_location, scene_outfit, scene_lighting, explicitness_level, good_for, tags, classification_version, classification_model, classification_source, classification_confidence, classified_at, classification_evidence, classification_needs_review, classification_disagreement, classifier_explicitness, vision_explicitness, analyzed_frame_count')
         .eq('creator_id', creatorId)
         .order('album_title')
         .range(from, from + pageSize - 1)
@@ -641,6 +655,28 @@ export default function VaultPage() {
                         {previewItem.classification_model && (
                           <div style={{ fontSize: 10, color: 'var(--text-faint)', marginTop: 2 }}>
                             {previewItem.classification_model}
+                          </div>
+                        )}
+                        {typeof previewItem.analyzed_frame_count === 'number' && previewItem.analyzed_frame_count > 1 && (
+                          <div style={{ fontSize: 10, color: 'var(--text-faint)', marginTop: 2 }}>
+                            {previewItem.analyzed_frame_count} frames analyzed
+                          </div>
+                        )}
+                        {previewItem.classification_needs_review && (
+                          <div style={{ marginTop: 6, padding: '6px 8px', borderRadius: 5, background: 'rgba(224,168,86,0.10)', border: '1px solid rgba(224,168,86,0.35)' }}>
+                            <div style={{ fontSize: 11, color: 'var(--amber, #e0a856)' }}>
+                              {DISAGREEMENT_LABELS[previewItem.classification_disagreement as string]
+                                || 'The classifier and the vision model read this differently.'}
+                            </div>
+                            {typeof previewItem.classifier_explicitness === 'number' && (
+                              <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 3 }}>
+                                Classifier rated {previewItem.classifier_explicitness}/5
+                                {typeof previewItem.vision_explicitness === 'number'
+                                  ? `, vision model rated ${previewItem.vision_explicitness}/5`
+                                  : ''}
+                                {'. '}Check the category and price before selling.
+                              </div>
+                            )}
                           </div>
                         )}
                       </div>
