@@ -34,12 +34,17 @@ export async function sendReply(
   creatorId: string,
   content: string,
   wasAiSuggested: boolean
-) {
-  await apiFetch('/reply', {
+): Promise<{ status: string; message_id: string }> {
+  const response = await apiFetch('/reply', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ fan_id: fanId, creator_id: creatorId, content, was_ai_suggested: wasAiSuggested }),
   })
+  const body = await response.json().catch(() => ({}))
+  if (!response.ok) {
+    throw new Error(body.detail || `Message delivery failed (${response.status})`)
+  }
+  return body as { status: string; message_id: string }
 }
 
 export async function generateSuggestions(
@@ -47,7 +52,7 @@ export async function generateSuggestions(
   creatorId: string,
   fanMessage: string,
 ): Promise<void> {
-  await apiFetch('/regenerate-suggestions', {
+  const response = await apiFetch('/regenerate-suggestions', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -56,6 +61,10 @@ export async function generateSuggestions(
       message: fanMessage,
     }),
   })
+  if (!response.ok) {
+    const body = await response.json().catch(() => ({}))
+    throw new Error(body.detail || `Suggestion generation failed (${response.status})`)
+  }
   // Response comes via Supabase realtime subscription
 }
 

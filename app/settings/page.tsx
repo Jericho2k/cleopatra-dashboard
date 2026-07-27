@@ -731,7 +731,7 @@ export default function SettingsPage() {
                   Welcome Message
                 </div>
                 <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 8, fontStyle: 'italic' }}>
-                  Sent automatically to new subscribers. Also helps the AI understand the creator's opening style.
+                  Sent automatically to new subscribers. Also helps the AI understand the creator&apos;s opening style.
                 </div>
                 <textarea
                   value={persona.welcome_message ?? ''}

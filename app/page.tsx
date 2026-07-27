@@ -459,11 +459,11 @@ export default function Page() {
   // Stable handlers for the memoized chat panels. They read live state from refs
   // instead of closing over activeTab/tabs, so their identity never changes and
   // ConversationView / FanPanel can skip re-rendering on unrelated realtime events.
-  const handleReplySent = useCallback((content: string) => {
+  const handleReplySent = useCallback((content: string, messageId: string) => {
     const tab = tabsRef.current.find(t => t.id === activeTabIdRef.current)
     if (!tab?.activeFan) return
     const newMsg: Message = {
-      id: `temp-${Date.now()}-${content.slice(0, 10)}`,
+      id: messageId,
       fan_id: tab.activeFan.id,
       creator_id: tab.creatorId,
       role: 'creator',
@@ -472,7 +472,11 @@ export default function Page() {
       was_ai_suggested: false,
       was_selected: false,
     }
-    updateTab(tab.id, { messages: [...tab.messages, newMsg] })
+    const nextMessages = tab.messages.some(message => message.id === messageId)
+      ? tab.messages
+      : [...tab.messages, newMsg]
+    messagesCache.current[tab.activeFan.id] = nextMessages
+    updateTab(tab.id, { messages: nextMessages })
   }, [updateTab])
 
   const handleClearPending = useCallback(() => {
@@ -515,12 +519,15 @@ export default function Page() {
   }, [updateTab])
 
   useEffect(() => {
+    if (!activeTab?.creatorId) return
+    const cid = activeTab.creatorId
     const channel = supabase
       .channel('messages-realtime')
       .on('postgres_changes', {
         event: 'INSERT',
         schema: 'public',
         table: 'messages',
+        filter: `creator_id=eq.${cid}`,
       }, (payload) => {
         const msg = rowToMessage(payload.new as Record<string, unknown>)
 
@@ -537,18 +544,16 @@ export default function Page() {
               messagesCache.current[msg.fan_id] = [...currentCached, msg]
             }
 
-            const updatedConversations = tab.conversations
-              .map(c => c.fan.id === msg.fan_id
-                ? {
-                    ...c,
-                    last_message: msg.content,
-                    last_message_time: msg.sent_at,
-                    unread: !isActiveFan,
-                    unread_count: isActiveFan ? 0 : (c.unread_count ?? 0) + 1,
-                  }
-                : c
-              )
-              .sort((a, b) => new Date(b.last_message_time).getTime() - new Date(a.last_message_time).getTime())
+            const currentConversation = tab.conversations.find(c => c.fan.id === msg.fan_id)
+            const updatedConversations = currentConversation
+              ? [{
+                  ...currentConversation,
+                  last_message: msg.content,
+                  last_message_time: msg.sent_at,
+                  unread: !isActiveFan,
+                  unread_count: isActiveFan ? 0 : (currentConversation.unread_count ?? 0) + 1,
+                }, ...tab.conversations.filter(c => c.fan.id !== msg.fan_id)]
+              : tab.conversations
 
             return {
               ...tab,
@@ -562,9 +567,7 @@ export default function Page() {
         })
       })
 
-    if (activeTab?.creatorId) {
-      const cid = activeTab.creatorId
-      channel.on('postgres_changes', {
+    channel.on('postgres_changes', {
         event: 'INSERT',
         schema: 'public',
         table: 'fans',
@@ -589,7 +592,7 @@ export default function Page() {
           }
         }))
       })
-      channel.on('postgres_changes', {
+    channel.on('postgres_changes', {
         event: 'UPDATE',
         schema: 'public',
         table: 'fans',
@@ -609,7 +612,6 @@ export default function Page() {
           }
         }))
       })
-    }
 
     channel.subscribe()
     return () => { supabase.removeChannel(channel) }

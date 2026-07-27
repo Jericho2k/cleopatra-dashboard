@@ -18,7 +18,7 @@ type OperatorPPVMedia = {
   ai_description: string | null
   price_min: number | null
   price_max: number | null
-  fan_sale_status: 'unused' | 'sent' | 'payment_pending' | 'sold'
+  fan_sale_status: 'unused' | 'sent' | 'payment_pending' | 'abandoned' | 'voided' | 'sold'
 }
 
 type OperatorPPVSet = {
@@ -39,13 +39,13 @@ type OperatorPPVOptions = {
 }
 
 type OperatorPPVMode = 'set' | 'manual'
-type OperatorPPVStatusFilter = 'all' | 'unused' | 'not_sold' | 'sold'
+type OperatorPPVStatusFilter = 'all' | 'unused' | 'payment_pending' | 'not_sold' | 'sold'
 
 export interface ConversationViewProps {
   fan: Fan | null
   creatorId: string
   messages: Message[]
-  onReplySent: (content: string) => void
+  onReplySent: (content: string, messageId: string) => void
   messagesLoading?: boolean
   pendingMessage?: string
   onClearPending?: () => void
@@ -81,6 +81,8 @@ function ConversationView({
   const [stage, setStage] = useState<string>('WARMING_UP')
   const [loading, setLoading] = useState(false)
   const [inputValue, setInputValue] = useState('')
+  const [replySending, setReplySending] = useState(false)
+  const [replyError, setReplyError] = useState('')
   const [hoveredSuggestion, setHoveredSuggestion] = useState<number | null>(null)
   const [scripts, setScripts] = useState<{ id: string; title: string; content: string; category: string }[]>([])
   const [showScripts, setShowScripts] = useState(false)
@@ -95,6 +97,7 @@ function ConversationView({
   const [ppvSelectedSetId, setPpvSelectedSetId] = useState<string | null>(null)
   const [ppvAlbumFilter, setPpvAlbumFilter] = useState('all')
   const [ppvStatusFilter, setPpvStatusFilter] = useState<OperatorPPVStatusFilter>('all')
+  const [ppvVisibleLimit, setPpvVisibleLimit] = useState(180)
   const [ppvPrice, setPpvPrice] = useState('')
   const [ppvMessage, setPpvMessage] = useState('just for you...')
   const [ppvSending, setPpvSending] = useState(false)
@@ -118,7 +121,9 @@ function ConversationView({
     if (!fan) return
     setSuggestions(['', '', ''])
     setLoading(false)
+    let cancelled = false
     getLatestSuggestions(fan.id, creatorId).then((res) => {
+      if (cancelled) return
       if (res.suggestions.length > 0) setSuggestions(res.suggestions)
       setStage(res.stage)
     })
@@ -143,6 +148,7 @@ function ConversationView({
       )
       .subscribe()
     return () => {
+      cancelled = true
       supabase.removeChannel(channel)
     }
   }, [fan?.id, creatorId, recoveryTick])
@@ -156,8 +162,11 @@ function ConversationView({
     setPpvSelectedSetId(null)
     setPpvAlbumFilter('all')
     setPpvStatusFilter('all')
+    setPpvVisibleLimit(180)
     setPpvPrice('')
     setPpvError('')
+    setPpvMediaMap({})
+    setReplyError('')
   }, [fan?.id])
 
   useEffect(() => {
@@ -259,21 +268,31 @@ function ConversationView({
 
     const uniqueIds = [...new Set(unresolved)]
 
-    Promise.all(
-      uniqueIds.map(mediaId =>
-        apiFetch(`/vault-media-url/${creatorId}/${mediaId}`)
-          .then(r => r.json())
-          .then(data => ({ mediaId, data }))
-          .catch(() => ({ mediaId, data: { url: null, thumbnail_url: null, mimetype: null } }))
-      )
-    ).then(results => {
-      const updates: typeof ppvMediaMap = {}
-      for (const { mediaId, data } of results) {
-        updates[mediaId] = data
-      }
-      setPpvMediaMap(prev => ({ ...prev, ...updates }))
+    let cancelled = false
+    apiFetch(`/vault-media-urls/${creatorId}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ media_ids: uniqueIds }),
     })
-  }, [messages, creatorId])
+      .then(async response => {
+        if (!response.ok) throw new Error(`Media lookup failed (${response.status})`)
+        return response.json()
+      })
+      .then(body => {
+        if (!cancelled) {
+          setPpvMediaMap(prev => ({ ...prev, ...(body.media ?? {}) }))
+        }
+      })
+      .catch(() => {
+        if (cancelled) return
+        const missing = Object.fromEntries(uniqueIds.map(mediaId => [
+          mediaId,
+          { url: null, thumbnail_url: null, mimetype: null },
+        ]))
+        setPpvMediaMap(prev => ({ ...prev, ...missing }))
+      })
+    return () => { cancelled = true }
+  }, [messages, creatorId, ppvMediaMap])
 
   const getBlockedMatches = (text: string): string[] => {
     const lower = text.toLowerCase()
@@ -302,7 +321,11 @@ function ConversationView({
     const lastFanMessage = [...messages].reverse().find(m => m.role === 'fan')
     if (!lastFanMessage) return
     setLoading(true)
-    generateSuggestions(fan.id, creatorId, lastFanMessage.content)
+    setReplyError('')
+    void generateSuggestions(fan.id, creatorId, lastFanMessage.content).catch(error => {
+      setLoading(false)
+      setReplyError(String(error instanceof Error ? error.message : error))
+    })
     // New suggestions will arrive via Supabase realtime subscription
     // which already sets setSuggestions and setLoading(false)
   }
@@ -317,6 +340,7 @@ function ConversationView({
     setPpvSelectedSetId(null)
     setPpvAlbumFilter('all')
     setPpvStatusFilter('all')
+    setPpvVisibleLimit(180)
     setPpvPrice('')
     setPpvError('')
     try {
@@ -375,7 +399,6 @@ function ConversationView({
       })
       const body = await response.json().catch(() => ({}))
       if (!response.ok) throw new Error(body.detail || 'PPV could not be sent')
-      onReplySent(ppvMessage.trim() || 'just for you...')
       setPpvComposerOpen(false)
       setPpvSelectedIds([])
       setPpvSelectedSetId(null)
@@ -387,20 +410,28 @@ function ConversationView({
     }
   }
 
-  const handleTextareaKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+  const handleTextareaKeyDown = async (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key !== 'Enter' || e.shiftKey) return
     e.preventDefault()
     const value = inputValue.trim()
-    if (!value || !fan) return
+    if (!value || !fan || replySending) return
     const blocked = getBlockedMatches(value)
     if (blocked.length > 0) {
       const confirmed = window.confirm(`⚠️ Message contains blocked word(s): ${blocked.join(', ')}\n\nSend anyway?`)
       if (!confirmed) return
     }
-    sendReply(fan.id, creatorId, value, false)
-    onReplySent(value)
-    setInputValue('')
-    handleAfterSend()
+    setReplySending(true)
+    setReplyError('')
+    try {
+      const result = await sendReply(fan.id, creatorId, value, false)
+      onReplySent(value, result.message_id)
+      setInputValue('')
+      handleAfterSend()
+    } catch (error) {
+      setReplyError(String(error instanceof Error ? error.message : error))
+    } finally {
+      setReplySending(false)
+    }
   }
 
   const handleTextareaInput = (e: React.FormEvent<HTMLTextAreaElement>) => {
@@ -440,15 +471,17 @@ function ConversationView({
   const ppvVisibleMedia = (ppvOptions?.media ?? []).filter(media => {
     const inAlbum = ppvAlbumFilter === 'all' || (media.album_title || 'Uncategorized') === ppvAlbumFilter
     const inStatus = ppvStatusFilter === 'all'
-      || (ppvStatusFilter === 'unused' && media.fan_sale_status === 'unused')
+      || (ppvStatusFilter === 'unused' && ['unused', 'voided'].includes(media.fan_sale_status))
+      || (ppvStatusFilter === 'payment_pending' && media.fan_sale_status === 'payment_pending')
       || (ppvStatusFilter === 'sold' && media.fan_sale_status === 'sold')
-      || (ppvStatusFilter === 'not_sold' && ['sent', 'payment_pending'].includes(media.fan_sale_status))
+      || (ppvStatusFilter === 'not_sold' && ['sent', 'abandoned'].includes(media.fan_sale_status))
     return inAlbum && inStatus
   })
   const ppvStatusCounts: Record<OperatorPPVStatusFilter, number> = {
     all: ppvOptions?.media.length ?? 0,
-    unused: ppvOptions?.media.filter(media => media.fan_sale_status === 'unused').length ?? 0,
-    not_sold: ppvOptions?.media.filter(media => ['sent', 'payment_pending'].includes(media.fan_sale_status)).length ?? 0,
+    unused: ppvOptions?.media.filter(media => ['unused', 'voided'].includes(media.fan_sale_status)).length ?? 0,
+    payment_pending: ppvOptions?.media.filter(media => media.fan_sale_status === 'payment_pending').length ?? 0,
+    not_sold: ppvOptions?.media.filter(media => ['sent', 'abandoned'].includes(media.fan_sale_status)).length ?? 0,
     sold: ppvOptions?.media.filter(media => media.fan_sale_status === 'sold').length ?? 0,
   }
 
@@ -1027,6 +1060,7 @@ function ConversationView({
           onKeyDown={handleTextareaKeyDown}
           rows={1}
           placeholder="type your own reply..."
+          disabled={replySending}
           style={{
             width: '100%',
             padding: '10px 14px',
@@ -1041,6 +1075,9 @@ function ConversationView({
             minHeight: 40,
           }}
         />
+        {replyError && (
+          <div style={{ color: '#e57689', fontSize: 11, marginTop: 6 }}>{replyError}</div>
+        )}
       </div>
     </div>
     {ppvComposerOpen && (
@@ -1145,9 +1182,9 @@ function ConversationView({
                                   cursor: media?.url ? 'zoom-in' : 'default', color: 'var(--text-muted)',
                                 }}>
                                 {source && !media?.mimetype?.startsWith('video') ? (
-                                  <img src={source} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                                  <img src={source} alt="" loading="lazy" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                                 ) : media?.thumbnail_url ? (
-                                  <img src={media.thumbnail_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                                  <img src={media.thumbnail_url} alt="" loading="lazy" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                                 ) : (
                                   <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20 }}>
                                     {media?.mimetype?.startsWith('video') ? '🎬' : 'Media'}
@@ -1170,11 +1207,15 @@ function ConversationView({
                 <>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap', marginBottom: 14 }}>
                     <span style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginRight: 3 }}>Sale history</span>
-                    {(['all', 'unused', 'not_sold', 'sold'] as OperatorPPVStatusFilter[]).map(status => {
+                    {(['all', 'unused', 'payment_pending', 'not_sold', 'sold'] as OperatorPPVStatusFilter[]).map(status => {
                       const active = ppvStatusFilter === status
-                      const label = status === 'not_sold' ? 'Not sold' : status[0].toUpperCase() + status.slice(1)
+                      const label = status === 'not_sold'
+                        ? 'Not sold'
+                        : status === 'payment_pending'
+                          ? 'Pending'
+                          : status[0].toUpperCase() + status.slice(1)
                       return (
-                        <button key={status} type="button" onClick={() => setPpvStatusFilter(status)} style={{
+                        <button key={status} type="button" onClick={() => { setPpvStatusFilter(status); setPpvVisibleLimit(180) }} style={{
                           padding: '5px 10px', borderRadius: 999, cursor: 'pointer', fontSize: 11,
                           border: active ? '1px solid var(--purple)' : '1px solid var(--border)',
                           background: active ? 'rgba(155,143,212,0.13)' : 'transparent',
@@ -1193,7 +1234,7 @@ function ConversationView({
                     }))].map(album => {
                       const active = ppvAlbumFilter === album.value
                       return (
-                        <button key={album.value} type="button" onClick={() => setPpvAlbumFilter(album.value)} style={{
+                        <button key={album.value} type="button" onClick={() => { setPpvAlbumFilter(album.value); setPpvVisibleLimit(180) }} style={{
                           flex: '0 0 126px', minHeight: 76, padding: '10px 9px', borderRadius: 8, cursor: 'pointer',
                           border: active ? '1px solid var(--purple)' : '1px solid var(--border)',
                           background: active ? 'rgba(155,143,212,0.11)' : 'var(--bg-elevated)',
@@ -1217,7 +1258,7 @@ function ConversationView({
                     </div>
                   ) : (
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(118px, 1fr))', gap: 8, maxHeight: 330, overflow: 'auto', paddingRight: 4 }}>
-                      {ppvVisibleMedia.map(media => {
+                      {ppvVisibleMedia.slice(0, ppvVisibleLimit).map(media => {
                         const active = ppvSelectedIds.includes(media.external_media_id)
                         const statusColor = media.fan_sale_status === 'sold' ? 'var(--green)'
                           : media.fan_sale_status === 'payment_pending' ? '#e0b46d'
@@ -1235,9 +1276,9 @@ function ConversationView({
                             }}>
                             <div style={{ aspectRatio: '1/1', background: 'var(--bg-main)', overflow: 'hidden', position: 'relative' }}>
                               {source && !media.mimetype?.startsWith('video') ? (
-                                <img src={source} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                                <img src={source} alt="" loading="lazy" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                               ) : media.thumbnail_url ? (
-                                <img src={media.thumbnail_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                                <img src={media.thumbnail_url} alt="" loading="lazy" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                               ) : (
                                 <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)', fontSize: 20 }}>
                                   {media.mimetype?.startsWith('video') ? '🎬' : 'Media'}
@@ -1261,6 +1302,19 @@ function ConversationView({
                         )
                       })}
                     </div>
+                  )}
+                  {ppvVisibleMedia.length > ppvVisibleLimit && (
+                    <button
+                      type="button"
+                      onClick={() => setPpvVisibleLimit(limit => limit + 180)}
+                      style={{
+                        marginTop: 10, padding: '6px 10px', borderRadius: 6,
+                        border: '1px solid var(--border)', background: 'var(--bg-elevated)',
+                        color: 'var(--text-secondary)', cursor: 'pointer',
+                      }}
+                    >
+                      Show 180 more ({ppvVisibleMedia.length - ppvVisibleLimit} remaining)
+                    </button>
                   )}
                 </>
               )}

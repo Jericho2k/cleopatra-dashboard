@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import { supabase } from '../../lib/supabase'
 import { apiFetch } from '../../lib/api'
 
@@ -73,6 +73,7 @@ export default function VaultPage() {
 
   const [vaultAlbums, setVaultAlbums] = useState<Record<string, any[]>>({})
   const [selectedAlbum, setSelectedAlbum] = useState<string | null>(null)
+  const [vaultVisibleLimit, setVaultVisibleLimit] = useState(200)
   const [previewItem, setPreviewItem] = useState<any>(null)
   const [previewEdits, setPreviewEdits] = useState<{ content_category: string; ai_description: string; price_min: string; price_max: string; scene_location: string; scene_outfit: string; scene_lighting: string; scene_id: string } | null>(null)
   const [previewSaving, setPreviewSaving] = useState(false)
@@ -91,6 +92,19 @@ export default function VaultPage() {
   const [uploadNotesMode, setUploadNotesMode] = useState<'manual' | 'ai'>('ai')
   const [uploadDragOver, setUploadDragOver] = useState(false)
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null)
+  const categorizeIntervalRef = useRef<number | null>(null)
+  const syncIntervalRef = useRef<number | null>(null)
+  const categorizePollInFlight = useRef(false)
+  const syncPollInFlight = useRef(false)
+
+  useEffect(() => () => {
+    if (categorizeIntervalRef.current !== null) {
+      window.clearInterval(categorizeIntervalRef.current)
+    }
+    if (syncIntervalRef.current !== null) {
+      window.clearInterval(syncIntervalRef.current)
+    }
+  }, [])
 
   function showToast(message: string, type: 'success' | 'error' = 'success') {
     setToast({ message, type })
@@ -192,27 +206,39 @@ export default function VaultPage() {
         return
       }
 
-      const interval = window.setInterval(async () => {
-        const response = await apiFetch(`/categorize-vault-status/${selectedCreatorId}`)
-        const state = await response.json()
-        setCategorizeProgress(state)
-        if (state.status === 'done' || state.status === 'error') {
-          window.clearInterval(interval)
-          setCategorizingVault(false)
-          await Promise.all([
-            loadVaultMedia(selectedCreatorId),
-            loadCategorizationOverview(selectedCreatorId),
-          ])
-          window.setTimeout(() => setCategorizeProgress(null), 2000)
-          if (state.status === 'done') {
-            showToast(
-              state.errors
-                ? `Updated ${state.done}; ${state.errors} item(s) remain stale and can be retried.`
-                : `Updated ${state.done} item(s).`,
-            )
-          } else {
-            showToast(state.error || 'Vault categorization stopped with an error.', 'error')
+      if (categorizeIntervalRef.current !== null) {
+        window.clearInterval(categorizeIntervalRef.current)
+      }
+      categorizeIntervalRef.current = window.setInterval(async () => {
+        if (categorizePollInFlight.current) return
+        categorizePollInFlight.current = true
+        try {
+          const response = await apiFetch(`/categorize-vault-status/${selectedCreatorId}`)
+          const state = await response.json()
+          setCategorizeProgress(state)
+          if (state.status === 'done' || state.status === 'error') {
+            if (categorizeIntervalRef.current !== null) {
+              window.clearInterval(categorizeIntervalRef.current)
+              categorizeIntervalRef.current = null
+            }
+            setCategorizingVault(false)
+            await Promise.all([
+              loadVaultMedia(selectedCreatorId),
+              loadCategorizationOverview(selectedCreatorId),
+            ])
+            window.setTimeout(() => setCategorizeProgress(null), 2000)
+            if (state.status === 'done') {
+              showToast(
+                state.errors
+                  ? `Updated ${state.done}; ${state.errors} item(s) remain stale and can be retried.`
+                  : `Updated ${state.done} item(s).`,
+              )
+            } else {
+              showToast(state.error || 'Vault categorization stopped with an error.', 'error')
+            }
           }
+        } finally {
+          categorizePollInFlight.current = false
         }
       }, 2000)
     } catch {
@@ -220,6 +246,12 @@ export default function VaultPage() {
       showToast('Could not reach the vault categorization service.', 'error')
     }
   }
+
+  const selectedVaultItems = selectedAlbum === '__all__'
+    ? Object.values(vaultAlbums).flat()
+    : selectedAlbum
+      ? vaultAlbums[selectedAlbum] || []
+      : []
 
   return (
     <div style={{ height: '100vh', overflowY: 'auto', boxSizing: 'border-box', padding: 32 }}>
@@ -251,13 +283,21 @@ export default function VaultPage() {
                       showToast(`Vault was synced recently — next sync available in ${startData.days_remaining} day(s).`, 'error')
                       return
                     }
-                    const interval = setInterval(async () => {
+                    if (syncIntervalRef.current !== null) {
+                      window.clearInterval(syncIntervalRef.current)
+                    }
+                    syncIntervalRef.current = window.setInterval(async () => {
+                      if (syncPollInFlight.current) return
+                      syncPollInFlight.current = true
                       try {
                         const res = await apiFetch(`/sync-vault-status/${creatorId}`)
                         const state = await res.json()
                         setVaultProgress({ synced: state.synced, total: state.total, album: state.album })
                         if (state.status === 'done' || state.status === 'error') {
-                          clearInterval(interval)
+                          if (syncIntervalRef.current !== null) {
+                            window.clearInterval(syncIntervalRef.current)
+                            syncIntervalRef.current = null
+                          }
                           await Promise.all([
                             loadVaultMedia(creatorId),
                             loadCategorizationOverview(creatorId),
@@ -274,9 +314,14 @@ export default function VaultPage() {
                           }
                         }
                       } catch {
-                        clearInterval(interval)
+                        if (syncIntervalRef.current !== null) {
+                          window.clearInterval(syncIntervalRef.current)
+                          syncIntervalRef.current = null
+                        }
                         setSyncingVault(false)
                         setVaultProgress(null)
+                      } finally {
+                        syncPollInFlight.current = false
                       }
                     }, 1000)
                   }}
@@ -423,7 +468,7 @@ export default function VaultPage() {
               {!selectedAlbum && (
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
                   <div
-                    onClick={() => setSelectedAlbum('__all__')}
+                    onClick={() => { setSelectedAlbum('__all__'); setVaultVisibleLimit(200) }}
                     style={{
                       width: 140, padding: '16px 12px', borderRadius: 8,
                       border: '1px solid var(--border)', cursor: 'pointer',
@@ -441,7 +486,7 @@ export default function VaultPage() {
                   {Object.entries(vaultAlbums).map(([albumTitle, items]: [string, any[]]) => (
                     <div
                       key={albumTitle}
-                      onClick={() => setSelectedAlbum(albumTitle)}
+                      onClick={() => { setSelectedAlbum(albumTitle); setVaultVisibleLimit(200) }}
                       style={{
                         width: 140, padding: '16px 12px', borderRadius: 8,
                         border: '1px solid var(--border)', cursor: 'pointer',
@@ -475,10 +520,7 @@ export default function VaultPage() {
                     {selectedAlbum === '__all__' ? 'All Media' : selectedAlbum}
                   </div>
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-                    {(selectedAlbum === '__all__'
-                      ? Object.values(vaultAlbums).flat()
-                      : vaultAlbums[selectedAlbum] || []
-                    ).map((item: any) => (
+                    {selectedVaultItems.slice(0, vaultVisibleLimit).map((item: any) => (
                       <div
                         key={item.id}
                         onClick={() => {
@@ -505,7 +547,7 @@ export default function VaultPage() {
                             fontSize: 24,
                           }}>🎥</div>
                         ) : item.url ? (
-                          <img src={item.url} style={{
+                          <img src={item.url} alt="" loading="lazy" style={{
                             width: 100, height: 100, objectFit: 'cover',
                             borderRadius: 6, border: '1px solid var(--border)',
                           }} onError={(e) => {
@@ -522,6 +564,19 @@ export default function VaultPage() {
                       </div>
                     ))}
                   </div>
+                  {selectedVaultItems.length > vaultVisibleLimit && (
+                    <button
+                      type="button"
+                      onClick={() => setVaultVisibleLimit(limit => limit + 200)}
+                      style={{
+                        marginTop: 16, padding: '7px 12px', borderRadius: 6,
+                        border: '1px solid var(--border)', background: 'var(--bg-elevated)',
+                        color: 'var(--text-secondary)', cursor: 'pointer',
+                      }}
+                    >
+                      Show 200 more ({selectedVaultItems.length - vaultVisibleLimit} remaining)
+                    </button>
+                  )}
                 </div>
               )}
 

@@ -1,6 +1,7 @@
 'use client'
 
 import React, { useEffect, useState } from 'react'
+import Link from 'next/link'
 import { apiFetch } from '../../lib/api'
 import { supabase } from '../../lib/supabase'
 
@@ -179,14 +180,14 @@ export default function OverviewPage() {
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
               {health.fans.map(fan => (
-                <a key={fan.fan_id} href='/' style={{ textDecoration: 'none', padding: 12, borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg-elevated)', display: 'flex', justifyContent: 'space-between', gap: 14 }}>
+                <Link key={fan.fan_id} href='/' style={{ textDecoration: 'none', padding: 12, borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg-elevated)', display: 'flex', justifyContent: 'space-between', gap: 14 }}>
                   <div>
                     <div style={{ color: 'var(--text-primary)', fontSize: 13, fontWeight: 650 }}>{fan.display_name}</div>
                     <div style={{ color: 'var(--text-muted)', fontSize: 11, marginTop: 3 }}>{fan.commercial_state}{fan.next_followup_type ? ` · ${fan.next_followup_type}` : ''}</div>
                     {fan.failed_actions[0]?.last_error && <div style={{ color: '#e57689', fontSize: 11, marginTop: 5 }}>{fan.failed_actions[0].action_type}: {fan.failed_actions[0].last_error}</div>}
                   </div>
                   <div style={{ color: fan.needs_human_review || fan.failed_actions.length ? '#e57689' : 'var(--text-secondary)', fontSize: 11 }}>Open chat →</div>
-                </a>
+                </Link>
               ))}
             </div>
           )}
