@@ -4,6 +4,53 @@ import React, { useEffect, useState } from 'react'
 import { supabase } from '../../lib/supabase'
 import { apiFetch } from '../../lib/api'
 
+const VAULT_CATEGORY_RANGES: Record<string, { min: number; max: number }> = {
+  teaser_clothed: { min: 0, max: 0 },
+  teaser_bundle: { min: 0, max: 0 },
+  legs_feet: { min: 15, max: 70 },
+  lingerie_photo: { min: 10, max: 80 },
+  lingerie_video: { min: 15, max: 90 },
+  nude_photo: { min: 15, max: 80 },
+  nude_video: { min: 20, max: 110 },
+  striptease_video: { min: 15, max: 100 },
+  closeup_photo: { min: 25, max: 130 },
+  closeup_video: { min: 25, max: 130 },
+  dictate_video: { min: 15, max: 50 },
+  solo_toy_photo: { min: 20, max: 80 },
+  solo_toy_video: { min: 30, max: 150 },
+  explicit_photo: { min: 25, max: 130 },
+  explicit_video: { min: 35, max: 170 },
+  bg_content: { min: 50, max: 300 },
+  task: { min: 10, max: 50 },
+  other: { min: 0, max: 0 },
+}
+
+function normalizedCategoryPrices(category: string, minValue: string, maxValue: string) {
+  const range = VAULT_CATEGORY_RANGES[category]
+  if (!range) {
+    return {
+      min: Math.max(Number(minValue) || 0, 0),
+      max: Math.max(Number(maxValue) || 0, 0),
+      adjusted: false,
+    }
+  }
+  const requestedMin = Number(minValue)
+  const requestedMax = Number(maxValue)
+  const min = Math.min(
+    Math.max(Number.isFinite(requestedMin) ? requestedMin : range.min, range.min),
+    range.max,
+  )
+  const max = Math.min(
+    Math.max(Number.isFinite(requestedMax) ? requestedMax : range.max, min),
+    range.max,
+  )
+  return {
+    min,
+    max,
+    adjusted: min !== requestedMin || max !== requestedMax,
+  }
+}
+
 type VaultCategorizationOverview = {
   initial_completed_at: string | null
   auto_categorize_new_media: boolean
@@ -526,7 +573,17 @@ export default function VaultPage() {
                         <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 5, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Category</div>
                         <select
                           value={previewEdits.content_category}
-                          onChange={e => setPreviewEdits(p => p ? { ...p, content_category: e.target.value } : p)}
+                          onChange={e => setPreviewEdits(p => {
+                            if (!p) return p
+                            const category = e.target.value
+                            const range = VAULT_CATEGORY_RANGES[category]
+                            return {
+                              ...p,
+                              content_category: category,
+                              price_min: range ? String(range.min) : p.price_min,
+                              price_max: range ? String(range.max) : p.price_max,
+                            }
+                          })}
                           style={{
                             width: '100%', background: 'var(--bg-elevated)',
                             border: '1px solid var(--border)', borderRadius: 6,
@@ -563,6 +620,8 @@ export default function VaultPage() {
                           <input
                             type="number"
                             placeholder="Min"
+                            min={VAULT_CATEGORY_RANGES[previewEdits.content_category]?.min ?? 0}
+                            max={VAULT_CATEGORY_RANGES[previewEdits.content_category]?.max}
                             value={previewEdits.price_min}
                             onChange={e => setPreviewEdits(p => p ? { ...p, price_min: e.target.value } : p)}
                             style={{ flex: 1, minWidth: 0, background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: 6, padding: '7px 10px', fontSize: 12, color: 'var(--text-primary)', outline: 'none', boxSizing: 'border-box' }}
@@ -570,6 +629,8 @@ export default function VaultPage() {
                           <input
                             type="number"
                             placeholder="Max"
+                            min={VAULT_CATEGORY_RANGES[previewEdits.content_category]?.min ?? 0}
+                            max={VAULT_CATEGORY_RANGES[previewEdits.content_category]?.max}
                             value={previewEdits.price_max}
                             onChange={e => setPreviewEdits(p => p ? { ...p, price_max: e.target.value } : p)}
                             style={{ flex: 1, minWidth: 0, background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: 6, padding: '7px 10px', fontSize: 12, color: 'var(--text-primary)', outline: 'none', boxSizing: 'border-box' }}
@@ -665,6 +726,8 @@ export default function VaultPage() {
                                 ...prev,
                                 content_category: data.item.content_category || prev.content_category,
                                 ai_description: data.item.ai_description || prev.ai_description,
+                                price_min: String(data.item.price_min ?? prev.price_min),
+                                price_max: String(data.item.price_max ?? prev.price_max),
                                 scene_location: data.item.scene_location || prev.scene_location,
                                 scene_outfit: data.item.scene_outfit || prev.scene_outfit,
                                 scene_lighting: data.item.scene_lighting || prev.scene_lighting,
@@ -703,11 +766,16 @@ export default function VaultPage() {
                         onClick={async () => {
                           if (!previewItem?.id || previewSaving) return
                           setPreviewSaving(true)
-                          await supabase.from('creator_vault_media').update({
+                          const prices = normalizedCategoryPrices(
+                            previewEdits.content_category,
+                            previewEdits.price_min,
+                            previewEdits.price_max,
+                          )
+                          const { error } = await supabase.from('creator_vault_media').update({
                             content_category: previewEdits.content_category,
                             ai_description: previewEdits.ai_description,
-                            price_min: Number(previewEdits.price_min) || 0,
-                            price_max: Number(previewEdits.price_max) || 0,
+                            price_min: prices.min,
+                            price_max: prices.max,
                             scene_location: previewEdits.scene_location,
                             scene_outfit: previewEdits.scene_outfit,
                             scene_lighting: previewEdits.scene_lighting,
@@ -717,21 +785,36 @@ export default function VaultPage() {
                             classification_confidence: 1,
                             classified_at: new Date().toISOString(),
                           }).eq('id', previewItem.id)
+                          if (error) {
+                            setPreviewSaving(false)
+                            showToast('Could not save the media details.', 'error')
+                            return
+                          }
                           // Update local state
                           setVaultAlbums(prev => {
                             const next: Record<string, any[]> = {}
                             Object.entries(prev).forEach(([album, items]) => {
                               next[album] = items.map(m => m.id === previewItem.id
-                                ? { ...m, ...previewEdits, price_min: Number(previewEdits.price_min) || 0, price_max: Number(previewEdits.price_max) || 0 }
+                                ? { ...m, ...previewEdits, price_min: prices.min, price_max: prices.max }
                                 : m
                               )
                             })
                             return next
                           })
-                          setPreviewItem((prev: any) => ({ ...prev, ...previewEdits }))
+                          setPreviewItem((prev: any) => ({
+                            ...prev,
+                            ...previewEdits,
+                            price_min: prices.min,
+                            price_max: prices.max,
+                          }))
                           setPreviewSaving(false)
                           setPreviewItem(null)
                           setPreviewEdits(null)
+                          if (prices.adjusted) {
+                            showToast(
+                              'Price range was adjusted to match the selected category.',
+                            )
+                          }
                         }}
                         disabled={previewSaving}
                         style={{
