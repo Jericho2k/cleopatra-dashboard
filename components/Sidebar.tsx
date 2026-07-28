@@ -27,6 +27,7 @@ export interface SidebarProps {
 }
 
 const LIST_COLORS = ['#9b8fd4', '#4caf82', '#ff6b6b', '#f0a500', '#4fc3f7', '#f48fb1', '#aaa', '#fff']
+const INITIAL_NOW = Date.now()
 
 type FilterId = 'all' | 'unread' | 'whale' | 'active' | 'casual' | 'cold' | 'auto_on' | 'auto_off'
 const FILTER_OPTIONS: { id: FilterId; label: string }[] = [
@@ -60,7 +61,7 @@ export default function Sidebar({
   onSyncChats,
   onMarkAllRead,
 }: SidebarProps) {
-  const [now, setNow] = useState(Date.now())
+  const [now, setNow] = useState(INITIAL_NOW)
   const [activeFilter, setActiveFilter] = useState<FilterId>('all')
   const [listModal, setListModal] = useState<ListModal | null>(null)
   const [showListsPanel, setShowListsPanel] = useState(false)
@@ -149,7 +150,7 @@ export default function Sidebar({
             }}>
               <div>
                 <div style={{ fontSize: 12, color: 'var(--text-primary)' }}>Exclude from Auto Mode</div>
-                <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>AI won't auto-reply to fans in this list</div>
+                <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>AI won&apos;t auto-reply to fans in this list</div>
               </div>
               <div
                 onClick={() => setListModal(prev => prev ? { ...prev, excludeFromAuto: !prev.excludeFromAuto } : null)}

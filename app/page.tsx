@@ -126,8 +126,17 @@ export default function Page() {
     const tab = tabs.find(t => t.id === tabId)
     if (!tab) return
     const next = !tab.autoMode
-    updateTab(tabId, { autoMode: next })
-    await supabase.from('creators').update({ auto_mode: next }).eq('id', tab.creatorId)
+    const response = await apiFetch(`/creator/${tab.creatorId}/auto-mode`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ enabled: next }),
+    })
+    const body = await response.json().catch(() => ({}))
+    if (!response.ok) {
+      window.alert(body.detail || 'Could not update creator auto mode.')
+      return
+    }
+    updateTab(tabId, { autoMode: Boolean(body.auto_mode) })
   }
 
   const toggleFanAutoMode = useCallback(async (tabId: string, fanId: string) => {
@@ -147,17 +156,23 @@ export default function Page() {
         ? false
         : null
 
-    await supabase
-      .from('fans')
-      .update({ auto_mode: next })
-      .eq('id', fanId)
+    const response = await apiFetch(`/fan/${fanId}/auto-mode`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ auto_mode: next }),
+    })
+    const body = await response.json().catch(() => ({}))
+    if (!response.ok) {
+      throw new Error(body.detail || 'Could not update fan auto mode.')
+    }
+    const savedMode = body.auto_mode as boolean | null
 
     updateTab(tabId, {
       conversations: tab.conversations.map(c =>
-        c.fan.id === fanId ? { ...c, fan: { ...c.fan, auto_mode: next } } : c
+        c.fan.id === fanId ? { ...c, fan: { ...c.fan, auto_mode: savedMode } } : c
       ),
       activeFan: tab.activeFan?.id === fanId
-        ? { ...tab.activeFan, auto_mode: next }
+        ? { ...tab.activeFan, auto_mode: savedMode }
         : tab.activeFan,
     })
   }, [updateTab])
@@ -459,11 +474,11 @@ export default function Page() {
   // Stable handlers for the memoized chat panels. They read live state from refs
   // instead of closing over activeTab/tabs, so their identity never changes and
   // ConversationView / FanPanel can skip re-rendering on unrelated realtime events.
-  const handleReplySent = useCallback((content: string) => {
+  const handleReplySent = useCallback((content: string, messageId: string) => {
     const tab = tabsRef.current.find(t => t.id === activeTabIdRef.current)
     if (!tab?.activeFan) return
     const newMsg: Message = {
-      id: `temp-${Date.now()}-${content.slice(0, 10)}`,
+      id: messageId,
       fan_id: tab.activeFan.id,
       creator_id: tab.creatorId,
       role: 'creator',
@@ -472,7 +487,11 @@ export default function Page() {
       was_ai_suggested: false,
       was_selected: false,
     }
-    updateTab(tab.id, { messages: [...tab.messages, newMsg] })
+    const nextMessages = tab.messages.some(message => message.id === messageId)
+      ? tab.messages
+      : [...tab.messages, newMsg]
+    messagesCache.current[tab.activeFan.id] = nextMessages
+    updateTab(tab.id, { messages: nextMessages })
   }, [updateTab])
 
   const handleClearPending = useCallback(() => {
@@ -480,9 +499,11 @@ export default function Page() {
     if (tabId) updateTab(tabId, { pendingMessage: '' })
   }, [updateTab])
 
-  const handleToggleFanAuto = useCallback(() => {
+  const handleToggleFanAuto = useCallback(async () => {
     const tab = tabsRef.current.find(t => t.id === activeTabIdRef.current)
-    if (tab?.activeFan) toggleFanAutoMode(tab.id, tab.activeFan.id)
+    if (tab?.activeFan) {
+      await toggleFanAutoMode(tab.id, tab.activeFan.id)
+    }
   }, [toggleFanAutoMode])
 
   const handleHistoryLoaded = useCallback(async () => {
@@ -515,12 +536,49 @@ export default function Page() {
   }, [updateTab])
 
   useEffect(() => {
+    const creatorId = activeTab?.creatorId
+    const fanId = activeTab?.activeFan?.id
+    if (!creatorId || !fanId) return
+
+    let cancelled = false
+    let inFlight = false
+    const reconcile = async () => {
+      if (cancelled || inFlight) return
+      inFlight = true
+      try {
+        const response = await apiFetch(`/sync-fan-messages/${creatorId}/${fanId}`, {
+          method: 'POST',
+        })
+        const body = await response.json().catch(() => ({}))
+        const changed = Number(body.imported ?? 0) + Number(body.media_updated ?? 0)
+        if (response.ok && changed > 0 && !cancelled) {
+          await handleHistoryLoaded()
+        }
+      } catch {
+        // Realtime and the ten-minute backend reconciler remain as fallbacks.
+      } finally {
+        inFlight = false
+      }
+    }
+
+    void reconcile()
+    const interval = window.setInterval(() => void reconcile(), 20_000)
+    return () => {
+      cancelled = true
+      window.clearInterval(interval)
+    }
+  }, [activeTab?.creatorId, activeTab?.activeFan?.id, handleHistoryLoaded])
+
+  useEffect(() => {
+    if (!activeTab?.creatorId) return
+    const cid = activeTab.creatorId
     const channel = supabase
       .channel('messages-realtime')
       .on('postgres_changes', {
         event: 'INSERT',
         schema: 'public',
         table: 'messages',
+        filter: `creator_id=eq.${cid}`,
       }, (payload) => {
         const msg = rowToMessage(payload.new as Record<string, unknown>)
 
@@ -537,18 +595,16 @@ export default function Page() {
               messagesCache.current[msg.fan_id] = [...currentCached, msg]
             }
 
-            const updatedConversations = tab.conversations
-              .map(c => c.fan.id === msg.fan_id
-                ? {
-                    ...c,
-                    last_message: msg.content,
-                    last_message_time: msg.sent_at,
-                    unread: !isActiveFan,
-                    unread_count: isActiveFan ? 0 : (c.unread_count ?? 0) + 1,
-                  }
-                : c
-              )
-              .sort((a, b) => new Date(b.last_message_time).getTime() - new Date(a.last_message_time).getTime())
+            const currentConversation = tab.conversations.find(c => c.fan.id === msg.fan_id)
+            const updatedConversations = currentConversation
+              ? [{
+                  ...currentConversation,
+                  last_message: msg.content,
+                  last_message_time: msg.sent_at,
+                  unread: !isActiveFan,
+                  unread_count: isActiveFan ? 0 : (currentConversation.unread_count ?? 0) + 1,
+                }, ...tab.conversations.filter(c => c.fan.id !== msg.fan_id)]
+              : tab.conversations
 
             return {
               ...tab,
@@ -562,9 +618,7 @@ export default function Page() {
         })
       })
 
-    if (activeTab?.creatorId) {
-      const cid = activeTab.creatorId
-      channel.on('postgres_changes', {
+    channel.on('postgres_changes', {
         event: 'INSERT',
         schema: 'public',
         table: 'fans',
@@ -589,7 +643,7 @@ export default function Page() {
           }
         }))
       })
-      channel.on('postgres_changes', {
+    channel.on('postgres_changes', {
         event: 'UPDATE',
         schema: 'public',
         table: 'fans',
@@ -609,7 +663,6 @@ export default function Page() {
           }
         }))
       })
-    }
 
     channel.subscribe()
     return () => { supabase.removeChannel(channel) }

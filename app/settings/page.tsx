@@ -494,13 +494,19 @@ export default function SettingsPage() {
     }
     setFullAutoSaving(true)
     try {
-      const { error } = await supabase
-        .from('creators')
-        .update({ auto_mode: enabled })
-        .eq('id', selectedCreatorId)
-      if (error) throw error
+      const response = await apiFetch(`/creator/${selectedCreatorId}/auto-mode`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ enabled }),
+      })
+      const body = await response.json().catch(() => ({}))
+      if (!response.ok) {
+        throw new Error(body.detail || 'Could not update creator auto mode.')
+      }
       setCreators(current => current.map(creator => (
-        creator.id === selectedCreatorId ? { ...creator, auto_mode: enabled } : creator
+        creator.id === selectedCreatorId
+          ? { ...creator, auto_mode: Boolean(body.auto_mode) }
+          : creator
       )))
       await loadAutoAudience(selectedCreatorId)
       showToast(`Creator Full Auto ${enabled ? 'enabled' : 'disabled'}`)
@@ -731,7 +737,7 @@ export default function SettingsPage() {
                   Welcome Message
                 </div>
                 <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 8, fontStyle: 'italic' }}>
-                  Sent automatically to new subscribers. Also helps the AI understand the creator's opening style.
+                  Sent automatically to new subscribers. Also helps the AI understand the creator&apos;s opening style.
                 </div>
                 <textarea
                   value={persona.welcome_message ?? ''}
