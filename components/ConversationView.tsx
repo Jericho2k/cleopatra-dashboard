@@ -1170,12 +1170,6 @@ function ConversationView({
             <div style={{ padding: 30, color: 'var(--text-muted)', textAlign: 'center' }}>Loading vault…</div>
           ) : ppvOptions ? (
             <>
-              {ppvOptions.has_payment_pending && (
-                <div style={{ padding: '10px 12px', marginBottom: 14, borderRadius: 8, color: '#e57689', border: '1px solid rgba(229,118,137,0.45)', background: 'rgba(229,118,137,0.08)', fontSize: 12 }}>
-                  This fan already has a locked PPV awaiting payment. Resolve it before sending another one.
-                </div>
-              )}
-
               {ppvComposerMode === 'set' ? (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 12, maxHeight: 480, overflowY: 'auto', paddingRight: 4 }}>
                   {ppvOptions.approved_sets.length === 0 ? (
@@ -1395,11 +1389,11 @@ function ConversationView({
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginTop: 16 }}>
                 <div style={{ color: 'var(--text-muted)', fontSize: 11 }}>{ppvSelectedIds.length} media selected</div>
                 <button type="button" onClick={() => void sendOperatorPpv()}
-                  disabled={ppvSending || ppvOptions.has_payment_pending || !ppvSelectedIds.length}
+                  disabled={ppvSending || !ppvSelectedIds.length}
                   style={{
                     padding: '9px 16px', borderRadius: 8, fontWeight: 700,
                     border: '1px solid var(--silver)', background: 'var(--silver)', color: '#111',
-                    cursor: ppvSending ? 'wait' : 'pointer', opacity: ppvSending || ppvOptions.has_payment_pending || !ppvSelectedIds.length ? 0.5 : 1,
+                    cursor: ppvSending ? 'wait' : 'pointer', opacity: ppvSending || !ppvSelectedIds.length ? 0.5 : 1,
                   }}>
                   {ppvSending ? 'Sending…' : 'Send locked PPV'}
                 </button>
