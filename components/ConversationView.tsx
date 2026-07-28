@@ -62,6 +62,47 @@ function getInitials(displayName: string): string {
   return displayName.slice(0, 2).toUpperCase() || '?'
 }
 
+function ChatAttachment({ attachment }: { attachment: any }) {
+  const [failed, setFailed] = useState(false)
+  const url = typeof attachment?.url === 'string' ? attachment.url : ''
+  const mediaType = String(attachment?.mimetype || attachment?.filename || url).toLowerCase()
+  const isVideo = mediaType.startsWith('video/') || /\.(mp4|mov|webm)(?:\?|$)/.test(mediaType)
+  const isAudio = mediaType.startsWith('audio/') || /\.(mp3|m4a|wav|ogg)(?:\?|$)/.test(mediaType)
+
+  if (!url || failed) {
+    return (
+      <div style={{
+        padding: '8px 12px', background: 'var(--bg-elevated)',
+        border: '1px solid var(--border)', borderRadius: 8,
+        fontSize: 12, color: 'var(--text-muted)',
+        display: 'flex', alignItems: 'center', gap: 6,
+      }}>
+        <span>{isVideo ? '🎬' : isAudio ? '🎧' : '🖼'}</span>
+        <span>{attachment?.filename || (failed ? 'Media preview unavailable' : 'Media')}</span>
+      </div>
+    )
+  }
+  if (isVideo) {
+    return (
+      <video controls preload="metadata" src={url} onError={() => setFailed(true)}
+        style={{ maxWidth: 280, maxHeight: 360, borderRadius: 8, display: 'block' }} />
+    )
+  }
+  if (isAudio) {
+    return (
+      <audio controls preload="metadata" src={url} onError={() => setFailed(true)}
+        style={{ maxWidth: 280, display: 'block' }} />
+    )
+  }
+  return (
+    <img src={url} alt={attachment?.filename || 'Chat media'} onError={() => setFailed(true)}
+      style={{
+        maxWidth: 220, maxHeight: 360, objectFit: 'contain', borderRadius: 8,
+        border: '1px solid var(--border)', display: 'block',
+      }} />
+  )
+}
+
 function ConversationView({
   fan,
   creatorId,
@@ -690,24 +731,7 @@ function ConversationView({
               {msg.media_context?.attachments && msg.media_context.attachments.length > 0 && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 8 }}>
                   {msg.media_context.attachments.map((att: any, i: number) => (
-                    att.url ? (
-                      <img key={i} src={att.url} alt="" style={{
-                        maxWidth: 220, borderRadius: 8,
-                        border: '1px solid var(--border)', display: 'block',
-                      }} onError={(e) => {
-                        (e.target as HTMLImageElement).parentElement!.innerHTML =
-                          '<div style="padding:8px;color:var(--text-muted);font-size:12px">🖼 Media</div>'
-                      }} />
-                    ) : (
-                      <div key={i} style={{
-                        padding: '8px 12px', background: 'var(--bg-elevated)',
-                        border: '1px solid var(--border)', borderRadius: 8,
-                        fontSize: 12, color: 'var(--text-muted)',
-                        display: 'flex', alignItems: 'center', gap: 6,
-                      }}>
-                        <span>🖼</span><span>Media</span>
-                      </div>
-                    )
+                    <ChatAttachment key={`${att.contentId || 'media'}-${i}`} attachment={att} />
                   ))}
                 </div>
               )}
