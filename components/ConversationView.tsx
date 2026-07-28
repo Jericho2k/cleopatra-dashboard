@@ -51,7 +51,7 @@ export interface ConversationViewProps {
   onClearPending?: () => void
   /** Creator-level auto (hides suggestions when on, independent of fan override). */
   creatorAutoMode?: boolean
-  onToggleAutoMode?: () => void
+  onToggleAutoMode?: () => void | Promise<void>
   hasMoreMessages?: boolean
   onLoadMore?: () => void | Promise<void>
 }
@@ -83,6 +83,9 @@ function ConversationView({
   const [inputValue, setInputValue] = useState('')
   const [replySending, setReplySending] = useState(false)
   const [replyError, setReplyError] = useState('')
+  const [autoModeSaving, setAutoModeSaving] = useState(false)
+  const [autoModeError, setAutoModeError] = useState('')
+  const [autoAvailable, setAutoAvailable] = useState<boolean | null>(null)
   const [hoveredSuggestion, setHoveredSuggestion] = useState<number | null>(null)
   const [scripts, setScripts] = useState<{ id: string; title: string; content: string; category: string }[]>([])
   const [showScripts, setShowScripts] = useState(false)
@@ -154,6 +157,23 @@ function ConversationView({
   }, [fan?.id, creatorId, recoveryTick])
 
   useEffect(() => {
+    if (!creatorId) {
+      setAutoAvailable(null)
+      return
+    }
+    let cancelled = false
+    apiFetch(`/creator/${creatorId}/auto-availability`)
+      .then(async response => {
+        const body = await response.json().catch(() => ({}))
+        if (!cancelled && response.ok) {
+          setAutoAvailable(Boolean(body.auto_available))
+        }
+      })
+      .catch(() => undefined)
+    return () => { cancelled = true }
+  }, [creatorId, recoveryTick])
+
+  useEffect(() => {
     prevMessagesLenRef.current = 0
     prevLastMessageIdRef.current = undefined
     setPpvComposerOpen(false)
@@ -167,6 +187,7 @@ function ConversationView({
     setPpvError('')
     setPpvMediaMap({})
     setReplyError('')
+    setAutoModeError('')
   }, [fan?.id])
 
   useEffect(() => {
@@ -486,7 +507,13 @@ function ConversationView({
   }
 
   const fanAutoMode = fan.auto_mode
-  const buttonLabel = fanAutoMode === true ? '● Auto' : fanAutoMode === false ? '○ Off' : 'Auto'
+  const buttonLabel = autoAvailable === false
+    ? '🔒 Locked'
+    : fanAutoMode === true
+      ? '● Auto'
+      : fanAutoMode === false
+        ? '○ Off'
+        : 'Auto'
   const buttonColor = fanAutoMode === true ? 'var(--green)' : fanAutoMode === false ? '#ff6b6b' : 'var(--text-muted)'
   const buttonBg = fanAutoMode === true ? 'rgba(76,175,130,0.15)' : fanAutoMode === false ? 'rgba(255,80,80,0.1)' : 'transparent'
   const buttonBorder = fanAutoMode === true ? '1px solid rgba(76,175,130,0.4)' : fanAutoMode === false ? '1px solid rgba(255,80,80,0.3)' : '1px solid var(--border)'
@@ -530,17 +557,46 @@ function ConversationView({
           </span>
           <button
             type="button"
-            onClick={() => onToggleAutoMode?.()}
+            disabled={autoModeSaving || autoAvailable === false}
+            onClick={() => {
+              if (!onToggleAutoMode || autoModeSaving || autoAvailable === false) return
+              setAutoModeSaving(true)
+              setAutoModeError('')
+              void Promise.resolve(onToggleAutoMode())
+                .catch(error => {
+                  setAutoModeError(String(
+                    error instanceof Error ? error.message : error
+                  ))
+                })
+                .finally(() => setAutoModeSaving(false))
+            }}
+            title={
+              autoModeError
+              || (autoAvailable === false
+                ? 'Approve at least one vault set before enabling auto mode.'
+                : undefined)
+            }
             style={{
-              fontSize: 11, padding: '4px 10px', borderRadius: 4, cursor: 'pointer',
+              fontSize: 11, padding: '4px 10px', borderRadius: 4,
+              cursor: autoModeSaving
+                ? 'wait'
+                : autoAvailable === false
+                  ? 'not-allowed'
+                  : 'pointer',
               background: buttonBg,
               color: buttonColor,
               border: buttonBorder,
               letterSpacing: '0.04em', textTransform: 'uppercase',
+              opacity: autoModeSaving || autoAvailable === false ? 0.6 : 1,
             }}
           >
-            {buttonLabel}
+            {autoModeSaving ? 'Saving…' : buttonLabel}
           </button>
+          {autoModeError && (
+            <span style={{ maxWidth: 240, fontSize: 10, color: '#ff8b8b' }}>
+              {autoModeError}
+            </span>
+          )}
         </div>
         <span style={{
           fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.04em',
