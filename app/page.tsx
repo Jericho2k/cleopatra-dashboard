@@ -619,6 +619,30 @@ export default function Page() {
       })
 
     channel.on('postgres_changes', {
+        event: 'UPDATE',
+        schema: 'public',
+        table: 'messages',
+        filter: `creator_id=eq.${cid}`,
+      }, (payload) => {
+        const msg = rowToMessage(payload.new as Record<string, unknown>)
+        const cached = messagesCache.current[msg.fan_id]
+        if (cached) {
+          messagesCache.current[msg.fan_id] = cached.map(existing =>
+            existing.id === msg.id ? msg : existing
+          )
+        }
+        setTabs(prev => prev.map(tab => {
+          if (tab.creatorId !== msg.creator_id) return tab
+          return {
+            ...tab,
+            messages: tab.messages.map(existing =>
+              existing.id === msg.id ? msg : existing
+            ),
+          }
+        }))
+      })
+
+    channel.on('postgres_changes', {
         event: 'INSERT',
         schema: 'public',
         table: 'fans',
