@@ -3,6 +3,7 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { supabase } from '../../lib/supabase'
 import { apiFetch } from '../../lib/api'
+import ConfirmDialog from '../../components/ConfirmDialog'
 
 const VAULT_CATEGORY_RANGES: Record<string, { min: number; max: number }> = {
   teaser_clothed: { min: 0, max: 0 },
@@ -57,6 +58,7 @@ type VaultCategorizationOverview = {
   uncategorized: number
   stale_classifications: number
   stale_approved_classifications: number
+  video_frame_upgrades: number
   classifier_version: number
   manual_reanalysis: {
     used: number
@@ -64,7 +66,31 @@ type VaultCategorizationOverview = {
     daily_limit: number
     allowed: boolean
   }
-  active_run: { status: string; mode?: string; done: number; total: number; errors?: number }
+  active_run: {
+    status: string
+    mode?: string
+    done: number
+    total: number
+    errors?: number
+    elapsed_seconds?: number
+    estimated_seconds_remaining?: number | null
+    items_per_minute?: number
+  }
+}
+
+type PendingUpgrade = {
+  count: number
+  scope: 'approved' | 'videos' | 'all'
+  title: string
+  description: string
+}
+
+function shortDuration(seconds?: number | null) {
+  if (seconds === null || seconds === undefined || seconds < 1) return ''
+  if (seconds < 60) return `${Math.ceil(seconds)}s`
+  const minutes = Math.floor(seconds / 60)
+  const remainder = Math.ceil(seconds % 60)
+  return remainder ? `${minutes}m ${remainder}s` : `${minutes}m`
 }
 
 export default function VaultPage() {
@@ -81,8 +107,16 @@ export default function VaultPage() {
   const [vaultProgress, setVaultProgress] = useState<{ synced: number; total: number; album: string } | null>(null)
   const [uploadingVault, setUploadingVault] = useState(false)
   const [categorizingVault, setCategorizingVault] = useState(false)
-  const [categorizeProgress, setCategorizeProgress] = useState<{ done: number; total: number; status: string } | null>(null)
+  const [categorizeProgress, setCategorizeProgress] = useState<{
+    done: number
+    total: number
+    status: string
+    elapsed_seconds?: number
+    estimated_seconds_remaining?: number | null
+    items_per_minute?: number
+  } | null>(null)
   const [categorizationOverview, setCategorizationOverview] = useState<VaultCategorizationOverview | null>(null)
+  const [pendingUpgrade, setPendingUpgrade] = useState<PendingUpgrade | null>(null)
   const [uploadAlbum, setUploadAlbum] = useState('')
   const [newAlbumName, setNewAlbumName] = useState('')
   const [showUploadModal, setShowUploadModal] = useState(false)
@@ -174,7 +208,7 @@ export default function VaultPage() {
   const startCategorization = async (
     mode: 'initial' | 'new' | 'upgrade',
     confirmUpgrade = false,
-    upgradeScope: 'approved' | 'all' = 'all',
+    upgradeScope: 'approved' | 'videos' | 'all' = 'all',
   ) => {
     if (!selectedCreatorId || categorizingVault) return
     setCategorizingVault(true)
@@ -363,19 +397,49 @@ export default function VaultPage() {
                   }}
                 >
                   {categorizingVault
-                    ? `✦ ${categorizeProgress?.done ?? 0}/${categorizeProgress?.total ?? '?'}`
+                    ? `✦ ${categorizeProgress?.done ?? 0}/${categorizeProgress?.total ?? '?'}${
+                      categorizeProgress?.estimated_seconds_remaining
+                        ? ` · ${shortDuration(categorizeProgress.estimated_seconds_remaining)} left`
+                        : ''
+                    }`
                     : categorizationOverview?.initial_completed_at
                       ? `✦ Categorize new (${categorizationOverview.uncategorized})`
                       : `✦ Categorize existing media (${categorizationOverview?.uncategorized ?? 0})`}
                 </button>
+                {Boolean(categorizationOverview?.video_frame_upgrades) && (
+                  <button
+                    onClick={() => {
+                      const count = categorizationOverview?.video_frame_upgrades ?? 0
+                      setPendingUpgrade({
+                        count,
+                        scope: 'videos',
+                        title: `Analyze ${count} video${count === 1 ? '' : 's'} from real frames?`,
+                        description: 'Cleopatra will sample four moments across each clip and classify the sequence as video—not from a poster image. Videos that cannot provide readable frames stay queued for a safe retry.',
+                      })
+                    }}
+                    disabled={!selectedCreatorId || categorizingVault}
+                    style={{
+                      padding: '6px 14px', borderRadius: 6,
+                      cursor: categorizingVault ? 'not-allowed' : 'pointer',
+                      background: 'rgba(76,175,130,0.09)',
+                      border: '1px solid rgba(76,175,130,0.38)',
+                      color: 'var(--green)', fontSize: 12,
+                      opacity: !selectedCreatorId || categorizingVault ? 0.5 : 1,
+                    }}
+                  >
+                    ▶ Analyze video frames ({categorizationOverview?.video_frame_upgrades})
+                  </button>
+                )}
                 {Boolean(categorizationOverview?.stale_approved_classifications) && (
                   <button
                     onClick={() => {
                       const count = categorizationOverview?.stale_approved_classifications ?? 0
-                      const confirmed = window.confirm(
-                        `Re-analyze the ${count} media item(s) in approved sets that still use old metadata? This paid analysis updates them to classifier v${categorizationOverview?.classifier_version} and does not rerun current items.`,
-                      )
-                      if (confirmed) void startCategorization('upgrade', true, 'approved')
+                      setPendingUpgrade({
+                        count,
+                        scope: 'approved',
+                        title: `Re-analyze ${count} approved-set item${count === 1 ? '' : 's'}?`,
+                        description: `This paid analysis updates only old or failed metadata to classifier v${categorizationOverview?.classifier_version}. Current-version media will not run again.`,
+                      })
                     }}
                     disabled={!selectedCreatorId || categorizingVault}
                     style={{
@@ -394,10 +458,12 @@ export default function VaultPage() {
                   <button
                     onClick={() => {
                       const count = categorizationOverview?.stale_classifications ?? 0
-                      const confirmed = window.confirm(
-                        `Re-analyze all ${count} remaining media item(s) that still use old or failed metadata? This is a paid analysis; current-version items will not run again.`,
-                      )
-                      if (confirmed) void startCategorization('upgrade', true, 'all')
+                      setPendingUpgrade({
+                        count,
+                        scope: 'all',
+                        title: `Re-analyze ${count} remaining item${count === 1 ? '' : 's'}?`,
+                        description: `This paid analysis processes only media with old or failed metadata. Anything already on classifier v${categorizationOverview?.classifier_version} is automatically excluded.`,
+                      })
                     }}
                     disabled={!selectedCreatorId || categorizingVault}
                     style={{
@@ -1119,6 +1185,18 @@ export default function VaultPage() {
           {toast.message}
         </div>
       )}
+      <ConfirmDialog
+        open={Boolean(pendingUpgrade)}
+        title={pendingUpgrade?.title ?? ''}
+        description={pendingUpgrade?.description ?? ''}
+        confirmLabel={`Analyze ${pendingUpgrade?.count ?? 0} item${pendingUpgrade?.count === 1 ? '' : 's'}`}
+        onCancel={() => setPendingUpgrade(null)}
+        onConfirm={() => {
+          const request = pendingUpgrade
+          setPendingUpgrade(null)
+          if (request) void startCategorization('upgrade', true, request.scope)
+        }}
+      />
     </div>
   )
 }
