@@ -8,6 +8,7 @@ import { apiFetch } from '../lib/api'
 import type { Fan, Message, ConversationSummary, FanList } from '../types'
 import { warmBackend } from '../lib/api'
 import { useRealtimeRecovery } from '../lib/realtime-recovery'
+import { dedupeMessages } from '../lib/messages'
 import Sidebar from '../components/Sidebar'
 import ConversationView from '../components/ConversationView'
 import FanPanel from '../components/FanPanel'
@@ -53,6 +54,7 @@ function rowToFan(row: Record<string, unknown>): Fan {
 function rowToMessage(row: Record<string, unknown>): Message {
   return {
     id: row.id as string,
+    fansly_message_id: (row.fansly_message_id as string) ?? null,
     fan_id: row.fan_id as string,
     creator_id: row.creator_id as string,
     role: row.role as Message['role'],
@@ -425,7 +427,7 @@ export default function Page() {
           updateTab(activeTab.id, { messagesLoading: false })
           return
         }
-        const msgs = (data ?? []).reverse().map(rowToMessage)
+        const msgs = dedupeMessages((data ?? []).reverse().map(rowToMessage))
         messagesCache.current[fanId] = msgs
         const hasMore = (data ?? []).length === 50
         const oldest = msgs[0]?.sent_at ?? null
@@ -458,7 +460,7 @@ export default function Page() {
     if (error || !data) return
 
     const olderMsgs = data.reverse().map(rowToMessage)
-    const combined = [...olderMsgs, ...tab.messages]
+    const combined = dedupeMessages([...olderMsgs, ...tab.messages])
 
     messagesCache.current[fanId] = combined
     const hasMore = data.length === 50
@@ -487,9 +489,7 @@ export default function Page() {
       was_ai_suggested: false,
       was_selected: false,
     }
-    const nextMessages = tab.messages.some(message => message.id === messageId)
-      ? tab.messages
-      : [...tab.messages, newMsg]
+    const nextMessages = dedupeMessages([...tab.messages, newMsg])
     messagesCache.current[tab.activeFan.id] = nextMessages
     updateTab(tab.id, { messages: nextMessages })
   }, [updateTab])
@@ -522,7 +522,7 @@ export default function Page() {
       .order('sent_at', { ascending: false })
       .limit(50)
     if (data) {
-      const msgs = data.reverse().map(rowToMessage)
+      const msgs = dedupeMessages(data.reverse().map(rowToMessage))
       messagesCache.current[fanId] = msgs
       const hasMore = data.length === 50
       const oldest = msgs[0]?.sent_at ?? null
@@ -593,11 +593,22 @@ export default function Page() {
             const isActiveTab = tab.id === activeTabIdRef.current
             const isActiveFan = tab.activeFan?.id === msg.fan_id
 
-            if (tab.messages.some(m => m.id === msg.id)) return tab
-
             const currentCached = messagesCache.current[msg.fan_id]
-            if (currentCached !== undefined && !currentCached.some(m => m.id === msg.id)) {
-              messagesCache.current[msg.fan_id] = [...currentCached, msg]
+            if (currentCached !== undefined) {
+              messagesCache.current[msg.fan_id] = dedupeMessages([
+                ...currentCached,
+                msg,
+              ])
+            }
+            const mergedMessages = isActiveTab && isActiveFan
+              ? dedupeMessages([...tab.messages, msg])
+              : tab.messages
+            if (
+              isActiveTab
+              && isActiveFan
+              && mergedMessages.length === tab.messages.length
+            ) {
+              return { ...tab, messages: mergedMessages }
             }
 
             const currentConversation = tab.conversations.find(c => c.fan.id === msg.fan_id)
@@ -613,9 +624,7 @@ export default function Page() {
 
             return {
               ...tab,
-              messages: isActiveTab && isActiveFan
-                ? [...tab.messages, msg]
-                : tab.messages,
+              messages: mergedMessages,
               conversations: updatedConversations,
             }
           })
@@ -728,7 +737,7 @@ export default function Page() {
         const have = new Set(t.messages.map(m => m.id))
         const missed = data.map(rowToMessage).filter(m => !have.has(m.id))
         if (missed.length === 0) return t
-        const combined = [...t.messages, ...missed]
+        const combined = dedupeMessages([...t.messages, ...missed])
         messagesCache.current[fanId] = combined
         return { ...t, messages: combined }
       }))
