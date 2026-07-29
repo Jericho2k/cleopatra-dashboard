@@ -31,6 +31,7 @@ export interface Fan {
 
 export interface Message {
   id: string
+  fansly_message_id?: string | null
   fan_id: string
   creator_id: string
   role: 'fan' | 'creator'
