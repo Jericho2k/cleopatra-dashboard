@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useEffect, useMemo, useState } from 'react'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { supabase } from '../../lib/supabase'
 import { apiFetch } from '../../lib/api'
 
@@ -34,6 +34,9 @@ export default function SetsPage() {
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [albumFilter, setAlbumFilter] = useState<string>('all')
   const [pickerLimit, setPickerLimit] = useState<number>(60)
+  const [descriptionBusy, setDescriptionBusy] = useState<Set<string>>(new Set())
+  const [setNotices, setSetNotices] = useState<Record<string, { message: string; error?: boolean }>>({})
+  const currentCreatorRef = useRef<string | null>(null)
 
   // creators — matches app/page.tsx (chatter_creators scoped to the user)
   useEffect(() => {
@@ -56,9 +59,23 @@ export default function SetsPage() {
     setLoading(true)
     const { data } = await supabase.from('vault_sets').select('*').eq('creator_id', cid)
       .order('status', { ascending: true }).order('explicit_max', { ascending: false })
-    setSets((data ?? []) as VaultSet[]); setLoading(false)
+    if (currentCreatorRef.current === cid) {
+      setSets((data ?? []) as VaultSet[])
+      setLoading(false)
+    }
   }
-  useEffect(() => { if (creatorId) loadSets(creatorId) }, [creatorId])
+  useEffect(() => {
+    currentCreatorRef.current = creatorId
+    setSets([])
+    setVault([])
+    setThumbs({})
+    setLoading(false)
+    setVaultLoading(false)
+    setPicker(null)
+    setSelected(new Set())
+    setSetNotices({})
+    if (creatorId) void loadSets(creatorId)
+  }, [creatorId])
 
   useEffect(() => {
     if (!creatorId) return
@@ -98,6 +115,51 @@ export default function SetsPage() {
     const preview_media_id = s.preview_media_id === mid ? (media_ids[0] ?? null) : s.preview_media_id
     await patchSet(s.id, { media_ids, preview_media_id })
   }
+  async function generateDescription(setId: string): Promise<boolean> {
+    if (!creatorId || descriptionBusy.has(setId)) return false
+    setDescriptionBusy(prev => new Set(prev).add(setId))
+    setSetNotices(prev => ({ ...prev, [setId]: { message: 'Reading the selected media…' } }))
+    try {
+      const response = await apiFetch(
+        `/creator/${creatorId}/vault-sets/${setId}/generate-description`,
+        { method: 'POST' },
+      )
+      const body = await response.json().catch(() => ({}))
+      if (!response.ok) throw new Error(body.detail || 'Could not generate this description.')
+      setSets(prev => prev.map(s => s.id === setId ? {
+        ...s,
+        description: body.description,
+        metadata_version: body.metadata_version,
+      } : s))
+      setSetNotices(prev => ({
+        ...prev,
+        [setId]: { message: `AI description generated from ${body.media_count} selected item${body.media_count === 1 ? '' : 's'}.` },
+      }))
+      return true
+    } catch (error) {
+      setSetNotices(prev => ({
+        ...prev,
+        [setId]: {
+          message: error instanceof Error ? error.message : 'Could not generate this description.',
+          error: true,
+        },
+      }))
+      return false
+    } finally {
+      setDescriptionBusy(prev => {
+        const next = new Set(prev)
+        next.delete(setId)
+        return next
+      })
+    }
+  }
+  async function approveSet(s: VaultSet) {
+    if (!s.description?.trim()) {
+      const generated = await generateDescription(s.id)
+      if (!generated) return
+    }
+    await patchSet(s.id, { status: 'approved' })
+  }
   async function del(id: string) {
     setSets(prev => prev.filter(s => s.id !== id)); await supabase.from('vault_sets').delete().eq('id', id)
   }
@@ -114,7 +176,7 @@ export default function SetsPage() {
     if (!creatorId) return
     const { data } = await supabase.from('vault_sets').insert({
       creator_id: creatorId, title: 'New set', media_ids: [], status: 'draft',
-      source: 'manual', suggested_price: 30, description: '', metadata_version: 2,
+      source: 'manual', suggested_price: 30, description: '', metadata_version: null,
     }).select().single()
     if (data) { setSets(prev => [data as VaultSet, ...prev]); openPicker((data as VaultSet).id) }
   }
@@ -131,7 +193,10 @@ export default function SetsPage() {
       if (!data || data.length < 1000) break
       from += 1000
     }
-    setVault(all); setVaultLoading(false)
+    if (currentCreatorRef.current === cid) {
+      setVault(all)
+      setVaultLoading(false)
+    }
   }
   function openPicker(setId: string) { setSelected(new Set()); setAlbumFilter('all'); setPickerLimit(60); setPicker({ setId }); if (creatorId) loadVault(creatorId) }
 
@@ -145,7 +210,12 @@ export default function SetsPage() {
     const levels = merged.map(id => vaultMap[id]?.explicitness_level).filter((x): x is number => typeof x === 'number')
     const patch: Partial<VaultSet> = { media_ids: merged, preview_media_id: s.preview_media_id ?? merged[0] ?? null }
     if (levels.length) { patch.explicit_min = Math.min(...levels); patch.explicit_max = Math.max(...levels) }
-    await patchSet(s.id, patch); setPicker(null); setSelected(new Set())
+    await patchSet(s.id, patch)
+    setPicker(null)
+    setSelected(new Set())
+    if (!s.description?.trim() && merged.length >= 2) {
+      await generateDescription(s.id)
+    }
   }
 
   const shown = sets.filter(s => (filter === 'all' ? true : s.status === filter))
@@ -214,6 +284,36 @@ export default function SetsPage() {
                 color: 'var(--text-secondary)', padding: '8px 10px', fontSize: 12, lineHeight: 1.45,
               }}
             />
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: -2, marginBottom: 10 }}>
+              <button
+                type="button"
+                onClick={() => void generateDescription(s.id)}
+                disabled={s.media_ids.length === 0 || descriptionBusy.has(s.id)}
+                style={{
+                  padding: '5px 10px',
+                  borderRadius: 6,
+                  border: '1px solid rgba(155,143,212,0.38)',
+                  background: 'rgba(155,143,212,0.09)',
+                  color: 'var(--purple)',
+                  fontSize: 11,
+                  cursor: s.media_ids.length === 0 || descriptionBusy.has(s.id) ? 'not-allowed' : 'pointer',
+                  opacity: s.media_ids.length === 0 ? 0.45 : 1,
+                }}
+              >
+                {descriptionBusy.has(s.id) ? '✦ Generating…' : '✦ Generate description'}
+              </button>
+              {setNotices[s.id] && (
+                <span
+                  role="status"
+                  style={{
+                    color: setNotices[s.id].error ? '#ef7d98' : 'var(--text-faint)',
+                    fontSize: 11,
+                  }}
+                >
+                  {setNotices[s.id].message}
+                </span>
+              )}
+            </div>
             <div style={{ display: 'flex', gap: 16, alignItems: 'center', marginBottom: 10, fontSize: 12, color: 'var(--text-muted)' }}>
               <span>{s.media_ids.length} pcs</span>
               <label style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
@@ -263,7 +363,7 @@ export default function SetsPage() {
             <div style={{ display: 'flex', gap: 8 }}>
               {s.status === 'approved'
                 ? <button onClick={() => patchSet(s.id, { status: 'draft' })} style={{ padding: '6px 12px', borderRadius: 6, border: '1px solid var(--border)', background: 'transparent', color: 'var(--text-muted)', fontSize: 12, cursor: 'pointer' }}>Unapprove</button>
-                : <button onClick={() => patchSet(s.id, { status: 'approved' })} disabled={s.media_ids.length < 2} style={{ padding: '6px 12px', borderRadius: 6, border: '1px solid var(--green)', background: 'rgba(76,175,130,0.15)', color: 'var(--green)', fontSize: 12, cursor: 'pointer', opacity: s.media_ids.length < 2 ? 0.5 : 1 }}>Approve</button>}
+                : <button onClick={() => void approveSet(s)} disabled={s.media_ids.length < 2 || descriptionBusy.has(s.id)} style={{ padding: '6px 12px', borderRadius: 6, border: '1px solid var(--green)', background: 'rgba(76,175,130,0.15)', color: 'var(--green)', fontSize: 12, cursor: 'pointer', opacity: s.media_ids.length < 2 || descriptionBusy.has(s.id) ? 0.5 : 1 }}>Approve</button>}
               <div style={{ flex: 1 }} />
               <button onClick={() => del(s.id)} style={{ padding: '6px 12px', borderRadius: 6, border: 'none', background: 'transparent', color: 'var(--text-faint)', fontSize: 12, cursor: 'pointer' }}>Delete</button>
             </div>
