@@ -543,7 +543,7 @@ export default function Page() {
     let cancelled = false
     let inFlight = false
     const reconcile = async () => {
-      if (cancelled || inFlight) return
+      if (cancelled || inFlight || document.visibilityState !== 'visible') return
       inFlight = true
       try {
         const response = await apiFetch(`/sync-fan-messages/${creatorId}/${fanId}`, {
@@ -563,9 +563,14 @@ export default function Page() {
 
     void reconcile()
     const interval = window.setInterval(() => void reconcile(), 20_000)
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'visible') void reconcile()
+    }
+    document.addEventListener('visibilitychange', onVisibilityChange)
     return () => {
       cancelled = true
       window.clearInterval(interval)
+      document.removeEventListener('visibilitychange', onVisibilityChange)
     }
   }, [activeTab?.creatorId, activeTab?.activeFan?.id, handleHistoryLoaded])
 
