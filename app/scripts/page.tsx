@@ -12,6 +12,7 @@ type VaultSet = {
   explicit_min: number | null; explicit_max: number | null
   media_ids: string[]; preview_media_id: string | null
   suggested_price: number | null; tags: string[] | null
+  base_price_cents: number | null; min_price_cents: number | null; max_price_cents: number | null
   status: 'draft' | 'approved' | 'archived'; source: 'ai' | 'manual'
   metadata_version: number | null
 }
@@ -103,7 +104,12 @@ export default function SetsPage() {
   async function generate() {
     if (!creatorId) return
     setGenerating(true)
-    try { await apiFetch(`/generate-sets/${creatorId}`, { method: 'POST' }); await loadSets(creatorId) }
+    try {
+      const response = await apiFetch(`/generate-sets/${creatorId}`, { method: 'POST' })
+      const body = await response.json().catch(() => ({}))
+      if (!response.ok) throw new Error(body.detail || 'Could not generate sellable assets.')
+      await loadSets(creatorId)
+    }
     finally { setGenerating(false) }
   }
   async function patchSet(id: string, patch: Partial<VaultSet>) {
@@ -159,6 +165,24 @@ export default function SetsPage() {
       if (!generated) return
     }
     await patchSet(s.id, { status: 'approved' })
+  }
+  function isIndividualVideo(s: VaultSet) {
+    return s.media_ids.length === 1 && (
+      s.tags?.includes('individual_video')
+      || thumbs[s.media_ids[0]]?.mimetype?.startsWith('video')
+    )
+  }
+  function canApprove(s: VaultSet) {
+    return s.media_ids.length >= 2 || isIndividualVideo(s)
+  }
+  async function updateSuggestedPrice(s: VaultSet, value: number) {
+    const suggested_price = Math.max(0, value)
+    await patchSet(s.id, {
+      suggested_price,
+      base_price_cents: Math.round(suggested_price * 100),
+      min_price_cents: Math.round(suggested_price * 100),
+      max_price_cents: Math.round(suggested_price * 100),
+    })
   }
   async function del(id: string) {
     setSets(prev => prev.filter(s => s.id !== id)); await supabase.from('vault_sets').delete().eq('id', id)
@@ -234,13 +258,13 @@ export default function SetsPage() {
         </select>
       </div>
       <div style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 20 }}>
-        Curate consistent photo sets the AI can send. Only <b>approved</b> sets are sellable in auto-mode.
+        Curate photo sets and individual videos the AI can sell. Only <b>approved</b> assets are available in auto-mode.
       </div>
 
       <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 20 }}>
         <button onClick={generate} disabled={generating || !creatorId}
           style={{ padding: '8px 14px', borderRadius: 8, border: '1px solid var(--silver)', background: 'rgba(200,200,200,0.1)', color: 'var(--silver)', fontSize: 13, cursor: 'pointer' }}>
-          {generating ? 'Generating…' : '✦ Generate sets from vault'}
+          {generating ? 'Generating…' : '✦ Generate sellable assets'}
         </button>
         <button onClick={newSet} disabled={!creatorId}
           style={{ padding: '8px 14px', borderRadius: 8, border: '1px dashed var(--border)', background: 'transparent', color: 'var(--text-muted)', fontSize: 13, cursor: 'pointer' }}>
@@ -258,7 +282,7 @@ export default function SetsPage() {
       </div>
 
       {loading ? <div style={{ color: 'var(--text-muted)' }}>Loading…</div>
-        : shown.length === 0 ? <div style={{ color: 'var(--text-muted)', fontSize: 13 }}>No sets yet — generate from vault, or “+ New set” to build one by hand.</div>
+        : shown.length === 0 ? <div style={{ color: 'var(--text-muted)', fontSize: 13 }}>No sellable assets yet — generate from the vault, or “+ New set” to build one by hand.</div>
         : shown.map(s => (
           <div key={s.id} style={{ border: '1px solid var(--border)', borderRadius: 10, padding: 14, marginBottom: 14, background: 'var(--bg-elevated)' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
@@ -269,7 +293,7 @@ export default function SetsPage() {
               <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 999,
                 background: s.status === 'approved' ? 'rgba(76,175,130,0.15)' : 'rgba(200,200,200,0.1)',
                 color: s.status === 'approved' ? 'var(--green)' : 'var(--text-muted)' }}>
-                {s.status}{s.source === 'manual' ? ' · manual' : ''}
+                {s.status}{isIndividualVideo(s) ? ' · video' : ''}{s.source === 'manual' ? ' · manual' : ''}
               </span>
             </div>
             <textarea
@@ -315,7 +339,7 @@ export default function SetsPage() {
               )}
             </div>
             <div style={{ display: 'flex', gap: 16, alignItems: 'center', marginBottom: 10, fontSize: 12, color: 'var(--text-muted)' }}>
-              <span>{s.media_ids.length} pcs</span>
+              <span>{isIndividualVideo(s) ? '1 video' : `${s.media_ids.length} pcs`}</span>
               <label style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
                 explicit
                 <select value={s.explicit_max ?? ''}
@@ -327,10 +351,10 @@ export default function SetsPage() {
               </label>
               <label style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
                 $<input type="number" defaultValue={s.suggested_price ?? 0}
-                  onBlur={e => patchSet(s.id, { suggested_price: Number(e.target.value) })}
+                  onBlur={e => updateSuggestedPrice(s, Number(e.target.value))}
                   style={{ width: 64, background: 'var(--bg-base)', border: '1px solid var(--border)', color: 'var(--text-primary)', borderRadius: 6, padding: '4px 6px', fontSize: 12 }} />
               </label>
-              <button onClick={() => openPicker(s.id)} style={{ marginLeft: 'auto', padding: '4px 10px', borderRadius: 6, border: '1px solid var(--border)', background: 'transparent', color: 'var(--text-muted)', fontSize: 12, cursor: 'pointer' }}>+ Add photos</button>
+              <button onClick={() => openPicker(s.id)} style={{ marginLeft: 'auto', padding: '4px 10px', borderRadius: 6, border: '1px solid var(--border)', background: 'transparent', color: 'var(--text-muted)', fontSize: 12, cursor: 'pointer' }}>+ Add media</button>
             </div>
             {s.tags && s.tags.length > 0 && (
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginBottom: 10 }}>
@@ -350,6 +374,7 @@ export default function SetsPage() {
                         style={{ width: '100%', height: '100%', objectFit: 'cover', cursor: 'pointer', display: 'block' }}
                         onError={e => { (e.target as HTMLImageElement).style.display = 'none' }} />
                       : <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-faint)' }}>🎬</div>}
+                    {t?.mimetype?.startsWith('video') && <span style={{ position: 'absolute', left: 4, bottom: 4, padding: '1px 5px', borderRadius: 4, background: 'rgba(0,0,0,0.72)', color: '#fff', fontSize: 9 }}>VIDEO</span>}
                     <button title="Preview image" onClick={() => patchSet(s.id, { preview_media_id: mid })}
                       style={{ position: 'absolute', left: 2, top: 2, border: 'none', borderRadius: 4, cursor: 'pointer',
                         background: isPreview ? 'var(--silver)' : 'rgba(0,0,0,0.5)', color: isPreview ? '#000' : '#fff', fontSize: 10, padding: '1px 4px' }}>★</button>
@@ -363,7 +388,7 @@ export default function SetsPage() {
             <div style={{ display: 'flex', gap: 8 }}>
               {s.status === 'approved'
                 ? <button onClick={() => patchSet(s.id, { status: 'draft' })} style={{ padding: '6px 12px', borderRadius: 6, border: '1px solid var(--border)', background: 'transparent', color: 'var(--text-muted)', fontSize: 12, cursor: 'pointer' }}>Unapprove</button>
-                : <button onClick={() => void approveSet(s)} disabled={s.media_ids.length < 2 || descriptionBusy.has(s.id)} style={{ padding: '6px 12px', borderRadius: 6, border: '1px solid var(--green)', background: 'rgba(76,175,130,0.15)', color: 'var(--green)', fontSize: 12, cursor: 'pointer', opacity: s.media_ids.length < 2 || descriptionBusy.has(s.id) ? 0.5 : 1 }}>Approve</button>}
+                : <button onClick={() => void approveSet(s)} disabled={!canApprove(s) || descriptionBusy.has(s.id)} style={{ padding: '6px 12px', borderRadius: 6, border: '1px solid var(--green)', background: 'rgba(76,175,130,0.15)', color: 'var(--green)', fontSize: 12, cursor: 'pointer', opacity: !canApprove(s) || descriptionBusy.has(s.id) ? 0.5 : 1 }}>Approve</button>}
               <div style={{ flex: 1 }} />
               <button onClick={() => del(s.id)} style={{ padding: '6px 12px', borderRadius: 6, border: 'none', background: 'transparent', color: 'var(--text-faint)', fontSize: 12, cursor: 'pointer' }}>Delete</button>
             </div>
