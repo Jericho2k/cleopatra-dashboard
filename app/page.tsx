@@ -7,7 +7,7 @@ import { supabase } from '../lib/supabase'
 import { apiFetch } from '../lib/api'
 import type { Fan, Message, ConversationSummary, FanList } from '../types'
 import { warmBackend } from '../lib/api'
-import { useRealtimeRecovery } from '../lib/realtime-recovery'
+import { recoverRealtime, useRealtimeRecovery } from '../lib/realtime-recovery'
 import { dedupeMessages } from '../lib/messages'
 import Sidebar from '../components/Sidebar'
 import ConversationView from '../components/ConversationView'
@@ -26,6 +26,34 @@ type Tab = {
   autoMode: boolean
   hasMoreMessages: boolean
   oldestMessageTime: string | null
+}
+
+const ACTIVE_CHAT_SYNC_TIMEOUT_MS = 15_000
+
+async function syncActiveFanMessages(creatorId: string, fanId: string) {
+  const controller = new AbortController()
+  const timeout = window.setTimeout(
+    () => controller.abort(),
+    ACTIVE_CHAT_SYNC_TIMEOUT_MS,
+  )
+  try {
+    const response = await apiFetch(`/sync-fan-messages/${creatorId}/${fanId}`, {
+      method: 'POST',
+      signal: controller.signal,
+    })
+    const body = await response.json().catch(() => ({}))
+    if (!response.ok) {
+      throw new Error(body.detail || `Chat refresh failed (${response.status})`)
+    }
+    return body as Record<string, unknown>
+  } catch (error) {
+    if (error instanceof DOMException && error.name === 'AbortError') {
+      throw new Error('Chat refresh timed out. Please try again.')
+    }
+    throw error
+  } finally {
+    window.clearTimeout(timeout)
+  }
 }
 
 //Latest adjustment
@@ -511,16 +539,21 @@ export default function Page() {
     if (!tab?.activeFan) return
 
     const fanId = tab.activeFan.id
+    updateTab(tab.id, { messagesLoading: true })
     delete messagesCache.current[fanId]
     delete messagesPaginationCache.current[fanId]
 
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from('messages')
       .select('*')
       .eq('fan_id', fanId)
       .eq('creator_id', tab.creatorId)
       .order('sent_at', { ascending: false })
       .limit(50)
+    if (error) {
+      updateTab(tab.id, { messagesLoading: false })
+      throw new Error(error.message || 'Could not reload this conversation.')
+    }
     if (data) {
       const msgs = dedupeMessages(data.reverse().map(rowToMessage))
       messagesCache.current[fanId] = msgs
@@ -529,11 +562,54 @@ export default function Page() {
       messagesPaginationCache.current[fanId] = { hasMoreMessages: hasMore, oldestMessageTime: oldest }
       updateTab(tab.id, {
         messages: msgs,
+        messagesLoading: false,
         hasMoreMessages: hasMore,
         oldestMessageTime: oldest,
       })
+    } else {
+      updateTab(tab.id, { messagesLoading: false })
     }
   }, [updateTab])
+
+  const handleRefreshConversation = useCallback(async () => {
+    const tab = tabsRef.current.find(t => t.id === activeTabIdRef.current)
+    if (!tab?.activeFan) return
+
+    await recoverRealtime()
+    let syncError: unknown = null
+    try {
+      await syncActiveFanMessages(tab.creatorId, tab.activeFan.id)
+    } catch (error) {
+      syncError = error
+    }
+
+    // Always reload Supabase, even if API Fansly reconciliation failed. A
+    // backend worker may already have imported messages while realtime was down.
+    await handleHistoryLoaded()
+
+    const { data, error } = await supabase
+      .from('fan_conversation_summaries')
+      .select('*')
+      .eq('creator_id', tab.creatorId)
+      .order('last_message_time', { ascending: false, nullsFirst: false })
+    if (!error && data) {
+      const conversations: ConversationSummary[] = data.map((row: any) => ({
+        fan: rowToFan(row),
+        last_message: row.last_message ?? '',
+        last_message_time: row.last_message_time ?? new Date(0).toISOString(),
+        unread: row.fan_id === tab.activeFan?.id
+          ? false
+          : Boolean(tab.conversations.find(c => c.fan.id === row.fan_id)?.unread),
+        unread_count: row.fan_id === tab.activeFan?.id
+          ? 0
+          : (tab.conversations.find(c => c.fan.id === row.fan_id)?.unread_count ?? 0),
+      }))
+      conversationsCache.current[tab.creatorId] = conversations
+      updateTab(tab.id, { conversations })
+    }
+
+    if (syncError) throw syncError
+  }, [handleHistoryLoaded, updateTab])
 
   useEffect(() => {
     const creatorId = activeTab?.creatorId
@@ -546,12 +622,9 @@ export default function Page() {
       if (cancelled || inFlight || document.visibilityState !== 'visible') return
       inFlight = true
       try {
-        const response = await apiFetch(`/sync-fan-messages/${creatorId}/${fanId}`, {
-          method: 'POST',
-        })
-        const body = await response.json().catch(() => ({}))
+        const body = await syncActiveFanMessages(creatorId, fanId)
         const changed = Number(body.imported ?? 0) + Number(body.media_updated ?? 0)
-        if (response.ok && changed > 0 && !cancelled) {
+        if (changed > 0 && !cancelled) {
           await handleHistoryLoaded()
         }
       } catch {
@@ -702,8 +775,16 @@ export default function Page() {
         }))
       })
 
-    channel.subscribe()
-    return () => { supabase.removeChannel(channel) }
+    let disposed = false
+    channel.subscribe((status) => {
+      if (!disposed && (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT')) {
+        void recoverRealtime()
+      }
+    })
+    return () => {
+      disposed = true
+      supabase.removeChannel(channel)
+    }
   }, [activeTab?.creatorId, recoveryTick])
 
   // After a realtime reconnect (tab refocus / network restored), the socket only
@@ -1044,6 +1125,7 @@ export default function Page() {
             onToggleAutoMode={handleToggleFanAuto}
             hasMoreMessages={activeTab?.hasMoreMessages ?? false}
             onLoadMore={loadMoreMessages}
+            onRefresh={handleRefreshConversation}
           />
         </div>
         <div style={{ height: '100%', overflow: 'hidden' }}>

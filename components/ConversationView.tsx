@@ -5,7 +5,7 @@ import type { Fan, Message } from '../types'
 import { sendReply, getLatestSuggestions, generateSuggestions, apiFetch } from '../lib/api'
 import { supabase } from '../lib/supabase'
 import { useRealtimeRecovery } from '../lib/realtime-recovery'
-import { ChevronDown } from 'lucide-react'
+import { ChevronDown, RefreshCw } from 'lucide-react'
 
 type OperatorPPVMedia = {
   id: string
@@ -54,6 +54,7 @@ export interface ConversationViewProps {
   onToggleAutoMode?: () => void | Promise<void>
   hasMoreMessages?: boolean
   onLoadMore?: () => void | Promise<void>
+  onRefresh?: () => void | Promise<void>
 }
 
 function getInitials(displayName: string): string {
@@ -115,6 +116,7 @@ function ConversationView({
   onToggleAutoMode,
   hasMoreMessages,
   onLoadMore,
+  onRefresh,
 }: ConversationViewProps) {
   const [suggestions, setSuggestions] = useState<string[]>(['', '', ''])
   const recoveryTick = useRealtimeRecovery()
@@ -124,6 +126,9 @@ function ConversationView({
   const [inputValue, setInputValue] = useState('')
   const [replySending, setReplySending] = useState(false)
   const [replyError, setReplyError] = useState('')
+  const [refreshing, setRefreshing] = useState(false)
+  const [refreshError, setRefreshError] = useState('')
+  const [lastRefreshedAt, setLastRefreshedAt] = useState<Date | null>(null)
   const [autoModeSaving, setAutoModeSaving] = useState(false)
   const [autoModeError, setAutoModeError] = useState('')
   const [autoAvailable, setAutoAvailable] = useState<boolean | null>(null)
@@ -228,6 +233,8 @@ function ConversationView({
     setPpvError('')
     setPpvMediaMap({})
     setReplyError('')
+    setRefreshError('')
+    setLastRefreshedAt(null)
     setAutoModeError('')
   }, [fan?.id])
 
@@ -593,6 +600,43 @@ function ConversationView({
 
         {/* Right: auto toggle + stage badge */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+          <button
+            type="button"
+            disabled={refreshing || !onRefresh}
+            onClick={() => {
+              if (!onRefresh || refreshing) return
+              setRefreshing(true)
+              setRefreshError('')
+              void Promise.resolve(onRefresh())
+                .then(() => setLastRefreshedAt(new Date()))
+                .catch(error => {
+                  setRefreshError(String(error instanceof Error ? error.message : error))
+                })
+                .finally(() => setRefreshing(false))
+            }}
+            title={refreshError || 'Refresh this conversation from Fansly'}
+            style={{
+              display: 'inline-flex', alignItems: 'center', gap: 5,
+              padding: '4px 9px', borderRadius: 4,
+              border: '1px solid var(--border)', background: 'transparent',
+              color: refreshError ? '#ff8b8b' : 'var(--text-muted)',
+              fontSize: 11, cursor: refreshing ? 'wait' : 'pointer',
+              opacity: refreshing ? 0.65 : 1,
+            }}
+          >
+            <RefreshCw size={12} />
+            {refreshing ? 'Refreshing…' : 'Refresh'}
+          </button>
+          {lastRefreshedAt && !refreshError && (
+            <span style={{ fontSize: 10, color: 'var(--text-faint)' }}>
+              Updated {lastRefreshedAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+            </span>
+          )}
+          {refreshError && (
+            <span style={{ maxWidth: 200, fontSize: 10, color: '#ff8b8b' }}>
+              {refreshError}
+            </span>
+          )}
           <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
             Auto mode for this fan
           </span>
