@@ -571,46 +571,6 @@ export default function Page() {
     }
   }, [updateTab])
 
-  const handleRefreshConversation = useCallback(async () => {
-    const tab = tabsRef.current.find(t => t.id === activeTabIdRef.current)
-    if (!tab?.activeFan) return
-
-    await recoverRealtime()
-    let syncError: unknown = null
-    try {
-      await syncActiveFanMessages(tab.creatorId, tab.activeFan.id)
-    } catch (error) {
-      syncError = error
-    }
-
-    // Always reload Supabase, even if API Fansly reconciliation failed. A
-    // backend worker may already have imported messages while realtime was down.
-    await handleHistoryLoaded()
-
-    const { data, error } = await supabase
-      .from('fan_conversation_summaries')
-      .select('*')
-      .eq('creator_id', tab.creatorId)
-      .order('last_message_time', { ascending: false, nullsFirst: false })
-    if (!error && data) {
-      const conversations: ConversationSummary[] = data.map((row: any) => ({
-        fan: rowToFan(row),
-        last_message: row.last_message ?? '',
-        last_message_time: row.last_message_time ?? new Date(0).toISOString(),
-        unread: row.fan_id === tab.activeFan?.id
-          ? false
-          : Boolean(tab.conversations.find(c => c.fan.id === row.fan_id)?.unread),
-        unread_count: row.fan_id === tab.activeFan?.id
-          ? 0
-          : (tab.conversations.find(c => c.fan.id === row.fan_id)?.unread_count ?? 0),
-      }))
-      conversationsCache.current[tab.creatorId] = conversations
-      updateTab(tab.id, { conversations })
-    }
-
-    if (syncError) throw syncError
-  }, [handleHistoryLoaded, updateTab])
-
   useEffect(() => {
     const creatorId = activeTab?.creatorId
     const fanId = activeTab?.activeFan?.id
@@ -1125,7 +1085,6 @@ export default function Page() {
             onToggleAutoMode={handleToggleFanAuto}
             hasMoreMessages={activeTab?.hasMoreMessages ?? false}
             onLoadMore={loadMoreMessages}
-            onRefresh={handleRefreshConversation}
           />
         </div>
         <div style={{ height: '100%', overflow: 'hidden' }}>
