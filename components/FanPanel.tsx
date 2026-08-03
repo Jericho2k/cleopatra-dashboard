@@ -573,8 +573,23 @@ export default function FanPanel({ fan, creatorId, onHistoryLoaded, showToast }:
                   )}
 
                   {fullAutoStatus.scheduled_actions.filter(action => action.status === 'FAILED').map(action => (
-                    <div key={action.id} style={{ fontSize: 10.5, color: '#e57689', marginTop: 6 }}>
-                      {action.action_type.replaceAll('_', ' ')} failed{action.last_error ? `: ${action.last_error}` : ''}
+                    <div key={action.id} style={{ fontSize: 10.5, color: '#e57689', marginTop: 8, paddingTop: 8, borderTop: '1px solid rgba(229,118,137,0.2)' }}>
+                      <div>{action.action_type.replaceAll('_', ' ')} failed{action.last_error ? `: ${action.last_error}` : ''}</div>
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          const response = await apiFetch(`/fan/${fan.id}/retry-followup/${action.id}`, { method: 'POST' })
+                          if (!response.ok) { showToast?.('Could not retry follow-up'); return }
+                          setFullAutoStatus(current => current ? {
+                            ...current,
+                            scheduled_actions: current.scheduled_actions.map(item => item.id === action.id ? { ...item, status: 'PENDING', last_error: null } : item),
+                          } : current)
+                          showToast?.('Follow-up requeued')
+                        }}
+                        style={{ marginTop: 6, padding: '4px 8px', borderRadius: 6, border: '1px solid rgba(229,118,137,0.45)', background: 'transparent', color: '#e57689', fontSize: 10.5, cursor: 'pointer' }}
+                      >
+                        Retry now
+                      </button>
                     </div>
                   ))}
                 </div>
