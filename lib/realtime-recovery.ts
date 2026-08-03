@@ -26,7 +26,7 @@ function emit() {
   listeners.forEach((fn) => fn())
 }
 
-async function recover() {
+export async function recoverRealtime() {
   if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return
   if (recovering) return
   recovering = true
@@ -54,9 +54,9 @@ function install() {
   if (installed || typeof window === 'undefined') return
   installed = true
   const onVisible = () => {
-    if (document.visibilityState === 'visible') void recover()
+    if (document.visibilityState === 'visible') void recoverRealtime()
   }
-  const onOnline = () => void recover()
+  const onOnline = () => void recoverRealtime()
   document.addEventListener('visibilitychange', onVisible)
   window.addEventListener('online', onOnline)
 
