@@ -52,7 +52,24 @@ type FullAutoHealth = {
     human_review: number
     failed_actions: number
     processing_actions: number
+    overdue_actions?: number
   }
+  worker?: {
+    last_run_started_at: string | null
+    last_run_completed_at: string | null
+    last_error: string | null
+    last_sent: number
+    poll_seconds: number
+  }
+  recent_deliveries?: Array<{
+    action_id: string
+    fan_id: string
+    display_name: string
+    action_type: string
+    scheduled_at: string
+    confirmed_at: string | null
+    platform_message_id: string
+  }>
   fans: Array<{
     fan_id: string
     display_name: string
@@ -93,7 +110,7 @@ const DEFAULT_POLICY: Policy = {
   require_purchase_before_next_step: true,
   require_operator_ppv_approval: false,
   ppv_recheck_minutes: 20,
-  ppv_payment_window_hours: 24,
+  ppv_payment_window_hours: 2,
   abandoned_ppv_followup_enabled: true,
   abandoned_ppv_followup_delay_hours: 18,
   pending_offer_expiry_hours: 24,
@@ -388,13 +405,23 @@ export default function MonetizationPage() {
             </Card>
 
             {health && (
-              <Card title="Pilot health">
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, minmax(0, 1fr))', gap: 10 }}>
+              <Card title="Production health">
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: 10 }}>
                   <Metric label="Payment pending" value={health.summary.payment_pending} />
                   <Metric label="PPV approvals" value={approvals.length} alert={approvals.length > 0} />
                   <Metric label="Follow-ups" value={health.summary.followups_pending} />
+                  <Metric label="Overdue" value={health.summary.overdue_actions ?? 0} alert={(health.summary.overdue_actions ?? 0) > 0} />
                   <Metric label="Needs human" value={health.summary.human_review} />
                   <Metric label="Failed actions" value={health.summary.failed_actions} alert={health.summary.failed_actions > 0} />
+                </div>
+                <div style={{ marginTop: 12, padding: '10px 12px', border: `1px solid ${health.worker?.last_error ? '#e57689' : 'var(--border)'}`, borderRadius: 8, fontSize: 12, color: 'var(--text-secondary)' }}>
+                  <div style={{ fontWeight: 650, color: health.worker?.last_error ? '#e57689' : 'var(--text-primary)' }}>
+                    Scheduled worker {health.worker?.last_error ? 'reported an error' : health.worker?.last_run_completed_at ? 'is running' : 'has not reported yet'}
+                  </div>
+                  <div style={{ marginTop: 3, color: 'var(--text-muted)' }}>
+                    {health.worker?.last_run_completed_at ? `Last pass ${new Date(health.worker.last_run_completed_at).toLocaleString()} · ${health.worker.last_sent} sent` : `Expected every ${health.worker?.poll_seconds ?? 60}s`}
+                  </div>
+                  {health.worker?.last_error && <div style={{ marginTop: 4, color: '#e57689' }}>{health.worker.last_error}</div>}
                 </div>
                 {health.fans.length > 0 && (
                   <div style={{ marginTop: 14, display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -409,6 +436,17 @@ export default function MonetizationPage() {
                         {(fan.needs_human_review || fan.failed_actions.length > 0) && (
                           <span style={{ color: '#e57689', fontSize: 11 }}>Needs attention</span>
                         )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {(health.recent_deliveries?.length ?? 0) > 0 && (
+                  <div style={{ marginTop: 16 }}>
+                    <div style={{ fontSize: 12, fontWeight: 650, color: 'var(--text-primary)', marginBottom: 8 }}>Recently confirmed scheduled deliveries</div>
+                    {(health.recent_deliveries ?? []).slice(0, 8).map((delivery) => (
+                      <div key={delivery.action_id} style={{ padding: '8px 10px', borderTop: '1px solid var(--border)', fontSize: 11.5, color: 'var(--text-secondary)', display: 'flex', justifyContent: 'space-between', gap: 12 }}>
+                        <span>{delivery.display_name} · {delivery.action_type.replaceAll('_', ' ')}</span>
+                        <span style={{ color: 'var(--text-muted)' }}>{delivery.confirmed_at ? new Date(delivery.confirmed_at).toLocaleString() : 'confirmed'}</span>
                       </div>
                     ))}
                   </div>
