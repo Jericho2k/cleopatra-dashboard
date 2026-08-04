@@ -29,6 +29,10 @@ type Tab = {
 }
 
 const ACTIVE_CHAT_SYNC_TIMEOUT_MS = 15_000
+const ACTIVE_CHAT_RECENT_WINDOW_MS = 10 * 60_000
+const ACTIVE_CHAT_RECENT_POLL_MS = 45_000
+const ACTIVE_CHAT_IDLE_POLL_MS = 3 * 60_000
+const ACTIVE_CHAT_BINDING_RETRY_MS = 15 * 60_000
 
 async function syncActiveFanMessages(creatorId: string, fanId: string) {
   const controller = new AbortController()
@@ -43,6 +47,12 @@ async function syncActiveFanMessages(creatorId: string, fanId: string) {
     })
     const body = await response.json().catch(() => ({}))
     if (!response.ok) {
+      if (response.status === 409) {
+        return {
+          status: 'binding_unavailable',
+          retry_after_seconds: ACTIVE_CHAT_BINDING_RETRY_MS / 1000,
+        }
+      }
       throw new Error(body.detail || `Chat refresh failed (${response.status})`)
     }
     return body as Record<string, unknown>
@@ -578,31 +588,65 @@ export default function Page() {
 
     let cancelled = false
     let inFlight = false
+    let timer: number | undefined
+
+    const normalDelay = () => {
+      const tab = tabsRef.current.find(candidate => candidate.id === activeTabIdRef.current)
+      const latest = tab?.messages[tab.messages.length - 1]?.sent_at
+      const latestMs = latest ? Date.parse(latest) : Number.NaN
+      return Number.isFinite(latestMs) && Date.now() - latestMs <= ACTIVE_CHAT_RECENT_WINDOW_MS
+        ? ACTIVE_CHAT_RECENT_POLL_MS
+        : ACTIVE_CHAT_IDLE_POLL_MS
+    }
+
+    const scheduleNext = (delay: number) => {
+      if (cancelled) return
+      if (timer !== undefined) window.clearTimeout(timer)
+      timer = window.setTimeout(() => void reconcile(), delay)
+    }
+
     const reconcile = async () => {
-      if (cancelled || inFlight || document.visibilityState !== 'visible') return
+      if (cancelled || inFlight) return
+      if (document.visibilityState !== 'visible') {
+        scheduleNext(ACTIVE_CHAT_IDLE_POLL_MS)
+        return
+      }
       inFlight = true
+      let nextDelay = normalDelay()
       try {
         const body = await syncActiveFanMessages(creatorId, fanId)
+        const retrySeconds = Number(body.retry_after_seconds ?? 0)
+        if (
+          (body.status === 'binding_pending' || body.status === 'binding_unavailable')
+          && retrySeconds > 0
+        ) {
+          nextDelay = Math.max(nextDelay, retrySeconds * 1000)
+        }
         const changed = Number(body.imported ?? 0) + Number(body.media_updated ?? 0)
         if (changed > 0 && !cancelled) {
           await handleHistoryLoaded()
         }
       } catch {
-        // Realtime and the ten-minute backend reconciler remain as fallbacks.
+        // Realtime and the ten-minute backend reconciler remain as fallbacks;
+        // do not hammer a failing upstream chat endpoint.
+        nextDelay = Math.max(nextDelay, ACTIVE_CHAT_IDLE_POLL_MS)
       } finally {
         inFlight = false
+        scheduleNext(nextDelay)
       }
     }
 
     void reconcile()
-    const interval = window.setInterval(() => void reconcile(), 20_000)
     const onVisibilityChange = () => {
-      if (document.visibilityState === 'visible') void reconcile()
+      if (document.visibilityState === 'visible') {
+        if (timer !== undefined) window.clearTimeout(timer)
+        void reconcile()
+      }
     }
     document.addEventListener('visibilitychange', onVisibilityChange)
     return () => {
       cancelled = true
-      window.clearInterval(interval)
+      if (timer !== undefined) window.clearTimeout(timer)
       document.removeEventListener('visibilitychange', onVisibilityChange)
     }
   }, [activeTab?.creatorId, activeTab?.activeFan?.id, handleHistoryLoaded])
