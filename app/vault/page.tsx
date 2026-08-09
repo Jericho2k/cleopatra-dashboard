@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useEffect, useRef, useState } from 'react'
+import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { supabase } from '../../lib/supabase'
 import { apiFetch } from '../../lib/api'
 import ConfirmDialog from '../../components/ConfirmDialog'
@@ -55,6 +55,14 @@ function normalizedCategoryPrices(category: string, minValue: string, maxValue: 
 type VaultCategorizationOverview = {
   initial_completed_at: string | null
   auto_categorize_new_media: boolean
+  last_vault_sync_at: string | null
+  vault_sync_interval_hours: number
+  active_sync: {
+    status: string
+    synced: number
+    total: number
+    album: string
+  }
   uncategorized: number
   stale_classifications: number
   stale_approved_classifications: number
@@ -91,6 +99,30 @@ function shortDuration(seconds?: number | null) {
   const minutes = Math.floor(seconds / 60)
   const remainder = Math.ceil(seconds % 60)
   return remainder ? `${minutes}m ${remainder}s` : `${minutes}m`
+}
+
+const VAULT_TOOL_STYLE: React.CSSProperties = {
+  width: '100%',
+  padding: '9px 11px',
+  border: 'none',
+  borderRadius: 5,
+  background: 'transparent',
+  color: 'var(--text-secondary)',
+  fontSize: 12,
+  textAlign: 'left',
+  cursor: 'pointer',
+}
+
+function lastSyncLabel(value?: string | null) {
+  if (!value) return 'First automatic sync is pending'
+  const parsed = new Date(value)
+  if (Number.isNaN(parsed.getTime())) return 'Previously synchronized'
+  return `Last updated ${parsed.toLocaleString([], {
+    month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  })}`
 }
 
 export default function VaultPage() {
@@ -130,6 +162,7 @@ export default function VaultPage() {
   const syncIntervalRef = useRef<number | null>(null)
   const categorizePollInFlight = useRef(false)
   const syncPollInFlight = useRef(false)
+  const vaultRealtimeRefreshRef = useRef<number | null>(null)
 
   useEffect(() => () => {
     if (categorizeIntervalRef.current !== null) {
@@ -137,6 +170,9 @@ export default function VaultPage() {
     }
     if (syncIntervalRef.current !== null) {
       window.clearInterval(syncIntervalRef.current)
+    }
+    if (vaultRealtimeRefreshRef.current !== null) {
+      window.clearTimeout(vaultRealtimeRefreshRef.current)
     }
   }, [])
 
@@ -162,7 +198,7 @@ export default function VaultPage() {
     })()
   }, [])
 
-  const loadVaultMedia = async (creatorId: string) => {
+  const loadVaultMedia = useCallback(async (creatorId: string) => {
     const allRows: any[] = []
     const pageSize = 1000
     let from = 0
@@ -184,9 +220,9 @@ export default function VaultPage() {
       return acc
     }, {} as Record<string, any[]>)
     setVaultAlbums(byAlbum)
-  }
+  }, [])
 
-  const loadCategorizationOverview = async (creatorId: string) => {
+  const loadCategorizationOverview = useCallback(async (creatorId: string) => {
     try {
       const response = await apiFetch(`/creator/${creatorId}/vault-categorization-overview`)
       if (!response.ok) return
@@ -194,7 +230,7 @@ export default function VaultPage() {
     } catch {
       setCategorizationOverview(null)
     }
-  }
+  }, [])
 
   useEffect(() => {
     if (!selectedCreatorId) return
@@ -203,7 +239,48 @@ export default function VaultPage() {
       loadVaultMedia(selectedCreatorId),
       loadCategorizationOverview(selectedCreatorId),
     ])
-  }, [selectedCreatorId])
+  }, [loadCategorizationOverview, loadVaultMedia, selectedCreatorId])
+
+  useEffect(() => {
+    if (!selectedCreatorId) return
+    const creatorId = selectedCreatorId
+    const refreshVaultSoon = () => {
+      if (vaultRealtimeRefreshRef.current !== null) {
+        window.clearTimeout(vaultRealtimeRefreshRef.current)
+      }
+      vaultRealtimeRefreshRef.current = window.setTimeout(() => {
+        void loadVaultMedia(creatorId)
+      }, 750)
+    }
+    const refreshWhenVisible = () => {
+      if (document.visibilityState !== 'visible') return
+      void Promise.all([
+        loadVaultMedia(creatorId),
+        loadCategorizationOverview(creatorId),
+      ])
+    }
+    const channel = supabase
+      .channel(`vault-media-${creatorId}`)
+      .on('postgres_changes', {
+        event: '*',
+        schema: 'public',
+        table: 'creator_vault_media',
+        filter: `creator_id=eq.${creatorId}`,
+      }, refreshVaultSoon)
+      .subscribe()
+
+    window.addEventListener('focus', refreshWhenVisible)
+    document.addEventListener('visibilitychange', refreshWhenVisible)
+    return () => {
+      if (vaultRealtimeRefreshRef.current !== null) {
+        window.clearTimeout(vaultRealtimeRefreshRef.current)
+        vaultRealtimeRefreshRef.current = null
+      }
+      window.removeEventListener('focus', refreshWhenVisible)
+      document.removeEventListener('visibilitychange', refreshWhenVisible)
+      void supabase.removeChannel(channel)
+    }
+  }, [loadCategorizationOverview, loadVaultMedia, selectedCreatorId])
 
   const startCategorization = async (
     mode: 'initial' | 'new' | 'upgrade',
@@ -281,6 +358,86 @@ export default function VaultPage() {
     }
   }
 
+  const startVaultSync = async () => {
+    if (!selectedCreatorId || syncingVault) return
+    setSyncingVault(true)
+    setVaultProgress({ synced: 0, total: 0, album: 'Starting...' })
+    const creatorId = selectedCreatorId
+    try {
+      const startRes = await apiFetch(`/sync-vault-start/${creatorId}`, {
+        method: 'POST',
+      })
+      const startData = await startRes.json().catch(() => ({}))
+      if (!startRes.ok) {
+        showToast(startData.detail || 'Could not start vault synchronization.', 'error')
+        setSyncingVault(false)
+        setVaultProgress(null)
+        return
+      }
+      if (startData.status === 'cooldown') {
+        setSyncingVault(false)
+        setVaultProgress(null)
+        const remaining = shortDuration(Number(startData.hours_remaining || 0) * 3600)
+        showToast(
+          `Vault is current — the next automatic check is available${remaining ? ` in ${remaining}` : ' soon'}.`,
+        )
+        return
+      }
+      if (syncIntervalRef.current !== null) {
+        window.clearInterval(syncIntervalRef.current)
+      }
+      syncIntervalRef.current = window.setInterval(async () => {
+        if (syncPollInFlight.current) return
+        syncPollInFlight.current = true
+        try {
+          const res = await apiFetch(`/sync-vault-status/${creatorId}`)
+          const state = await res.json()
+          setVaultProgress({
+            synced: state.synced,
+            total: state.total,
+            album: state.album,
+          })
+          if (state.status === 'done' || state.status === 'error') {
+            if (syncIntervalRef.current !== null) {
+              window.clearInterval(syncIntervalRef.current)
+              syncIntervalRef.current = null
+            }
+            await Promise.all([
+              loadVaultMedia(creatorId),
+              loadCategorizationOverview(creatorId),
+            ])
+            setSyncingVault(false)
+            window.setTimeout(() => setVaultProgress(null), 1500)
+            if (state.status === 'done') {
+              const categorized = Number(state.categorized_new ?? 0)
+              showToast(
+                state.synced > 0
+                  ? `Imported ${state.synced} new item(s)${categorized ? ` and categorized ${categorized}` : ''}.`
+                  : 'Vault is already synchronized.',
+              )
+            } else {
+              showToast(state.album || 'Vault synchronization failed.', 'error')
+            }
+          }
+        } catch {
+          if (syncIntervalRef.current !== null) {
+            window.clearInterval(syncIntervalRef.current)
+            syncIntervalRef.current = null
+          }
+          setSyncingVault(false)
+          setVaultProgress(null)
+          showToast('Could not read vault synchronization progress.', 'error')
+        } finally {
+          syncPollInFlight.current = false
+        }
+      }, 1000)
+    } catch {
+      setSyncingVault(false)
+      setVaultProgress(null)
+      showToast('Could not reach the vault synchronization service.', 'error')
+    }
+  }
+
   const selectedVaultItems = selectedAlbum === '__all__'
     ? Object.values(vaultAlbums).flat()
     : selectedAlbum
@@ -302,181 +459,143 @@ export default function VaultPage() {
 
       <div style={{ maxWidth: 1100, margin: '0 auto' }}>
             <div>
-              <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 20 }}>
-                <button
-                  onClick={async () => {
-                    if (!selectedCreatorId || syncingVault) return
-                    setSyncingVault(true)
-                    setVaultProgress({ synced: 0, total: 0, album: 'Starting...' })
-                    const creatorId = selectedCreatorId
-                    const startRes = await apiFetch(`/sync-vault-start/${creatorId}`, { method: 'POST' })
-                    const startData = await startRes.json().catch(() => ({}))
-                    if (startData.status === 'cooldown') {
-                      setSyncingVault(false)
-                      setVaultProgress(null)
-                      showToast(`Vault was synced recently — next sync available in ${startData.days_remaining} day(s).`, 'error')
-                      return
-                    }
-                    if (syncIntervalRef.current !== null) {
-                      window.clearInterval(syncIntervalRef.current)
-                    }
-                    syncIntervalRef.current = window.setInterval(async () => {
-                      if (syncPollInFlight.current) return
-                      syncPollInFlight.current = true
-                      try {
-                        const res = await apiFetch(`/sync-vault-status/${creatorId}`)
-                        const state = await res.json()
-                        setVaultProgress({ synced: state.synced, total: state.total, album: state.album })
-                        if (state.status === 'done' || state.status === 'error') {
-                          if (syncIntervalRef.current !== null) {
-                            window.clearInterval(syncIntervalRef.current)
-                            syncIntervalRef.current = null
-                          }
-                          await Promise.all([
-                            loadVaultMedia(creatorId),
-                            loadCategorizationOverview(creatorId),
-                          ])
-                          setSyncingVault(false)
-                          setTimeout(() => setVaultProgress(null), 1500)
-                          if (state.status === 'done') {
-                            const categorized = Number(state.categorized_new ?? 0)
-                            showToast(
-                              state.synced > 0
-                                ? `Imported ${state.synced} new item(s)${categorized ? ` and categorized ${categorized}` : ''}.`
-                                : 'Vault is already synchronized.'
-                            )
-                          }
-                        }
-                      } catch {
-                        if (syncIntervalRef.current !== null) {
-                          window.clearInterval(syncIntervalRef.current)
-                          syncIntervalRef.current = null
-                        }
-                        setSyncingVault(false)
-                        setVaultProgress(null)
-                      } finally {
-                        syncPollInFlight.current = false
-                      }
-                    }, 1000)
-                  }}
-                  style={{
-                    padding: '6px 14px', borderRadius: 6,
-                    cursor: syncingVault ? 'not-allowed' : 'pointer',
-                    background: 'transparent', border: '1px solid var(--border)',
-                    color: 'var(--text-muted)', fontSize: 12,
-                    opacity: syncingVault ? 0.5 : 1,
-                    fontVariantNumeric: 'tabular-nums',
-                  }}
-                >
-                  {syncingVault
-                    ? `↻ ${vaultProgress?.synced ?? 0}${vaultProgress?.total ? `/${vaultProgress.total}` : ''}`
-                    : '↻ Sync Vault'}
-                </button>
+              <div style={{
+                display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'center', marginBottom: 20,
+                padding: '12px 14px', border: '1px solid var(--border)',
+                borderRadius: 8, background: 'var(--bg-elevated)',
+              }}>
+                <div style={{ minWidth: 220, flex: 1 }}>
+                  <div style={{ color: 'var(--text-primary)', fontSize: 12, fontWeight: 600 }}>
+                    {syncingVault ? 'Updating vault…' : 'Automatic vault updates are on'}
+                  </div>
+                  <div style={{ color: 'var(--text-muted)', fontSize: 11, marginTop: 3 }}>
+                    {syncingVault
+                      ? `${vaultProgress?.synced ?? 0}${vaultProgress?.total ? `/${vaultProgress.total}` : ''} new items checked${vaultProgress?.album ? ` · ${vaultProgress.album}` : ''}`
+                      : `${lastSyncLabel(categorizationOverview?.last_vault_sync_at)} · checks every ${categorizationOverview?.vault_sync_interval_hours ?? 24}h`}
+                  </div>
+                </div>
                 <button
                   onClick={() => setShowUploadModal(true)}
                   disabled={!selectedCreatorId}
                   style={{
-                    padding: '6px 14px', borderRadius: 6, cursor: 'pointer',
-                    background: 'transparent', border: '1px solid var(--border)',
-                    color: 'var(--text-muted)', fontSize: 12,
+                    padding: '7px 13px', borderRadius: 6, cursor: 'pointer',
+                    background: 'rgba(255,255,255,0.06)', border: '1px solid var(--border)',
+                    color: 'var(--text-primary)', fontSize: 12,
                     opacity: !selectedCreatorId ? 0.5 : 1,
                   }}
                 >
-                  ↑ Add Media
+                  + Add media
                 </button>
-                <button
-                  onClick={() => void startCategorization(
-                    categorizationOverview?.initial_completed_at ? 'new' : 'initial',
-                  )}
-                  disabled={!selectedCreatorId || categorizingVault || Boolean(categorizationOverview?.initial_completed_at && !categorizationOverview.uncategorized)}
-                  style={{
-                    padding: '6px 14px', borderRadius: 6, cursor: categorizingVault ? 'not-allowed' : 'pointer',
-                    background: 'transparent', border: '1px solid var(--border)',
-                    color: 'var(--text-muted)', fontSize: 12,
-                    opacity: !selectedCreatorId || categorizingVault || Boolean(categorizationOverview?.initial_completed_at && !categorizationOverview.uncategorized) ? 0.5 : 1,
-                  }}
-                >
-                  {categorizingVault
-                    ? `✦ ${categorizeProgress?.done ?? 0}/${categorizeProgress?.total ?? '?'}${
-                      categorizeProgress?.estimated_seconds_remaining
-                        ? ` · ${shortDuration(categorizeProgress.estimated_seconds_remaining)} left`
-                        : ''
-                    }`
-                    : categorizationOverview?.initial_completed_at
-                      ? `✦ Categorize new (${categorizationOverview.uncategorized})`
-                      : `✦ Categorize existing media (${categorizationOverview?.uncategorized ?? 0})`}
-                </button>
-                {Boolean(categorizationOverview?.video_frame_upgrades) && (
-                  <button
-                    onClick={() => {
-                      const count = categorizationOverview?.video_frame_upgrades ?? 0
-                      setPendingUpgrade({
-                        count,
-                        scope: 'videos',
-                        title: `Analyze ${count} video${count === 1 ? '' : 's'} from real frames?`,
-                        description: 'Cleopatra will sample four moments across each clip and classify the sequence as video—not from a poster image. Videos that cannot provide readable frames stay queued for a safe retry.',
-                      })
-                    }}
-                    disabled={!selectedCreatorId || categorizingVault}
+                <details style={{ position: 'relative' }}>
+                  <summary
                     style={{
-                      padding: '6px 14px', borderRadius: 6,
-                      cursor: categorizingVault ? 'not-allowed' : 'pointer',
-                      background: 'rgba(76,175,130,0.09)',
-                      border: '1px solid rgba(76,175,130,0.38)',
-                      color: 'var(--green)', fontSize: 12,
-                      opacity: !selectedCreatorId || categorizingVault ? 0.5 : 1,
+                      padding: '7px 13px', borderRadius: 6, cursor: 'pointer',
+                      border: '1px solid var(--border)', color: 'var(--text-muted)',
+                      fontSize: 12, listStyle: 'none', userSelect: 'none',
                     }}
                   >
-                    ▶ Analyze video frames ({categorizationOverview?.video_frame_upgrades})
-                  </button>
-                )}
-                {Boolean(categorizationOverview?.stale_approved_classifications) && (
-                  <button
-                    onClick={() => {
-                      const count = categorizationOverview?.stale_approved_classifications ?? 0
-                      setPendingUpgrade({
-                        count,
-                        scope: 'approved',
-                        title: `Re-analyze ${count} approved-set item${count === 1 ? '' : 's'}?`,
-                        description: `This paid analysis updates only old or failed metadata to classifier v${categorizationOverview?.classifier_version}. Current-version media will not run again.`,
-                      })
-                    }}
-                    disabled={!selectedCreatorId || categorizingVault}
+                    Vault tools ···
+                  </summary>
+                  <div
                     style={{
-                      padding: '6px 14px', borderRadius: 6,
-                      cursor: categorizingVault ? 'not-allowed' : 'pointer',
-                      background: 'rgba(155,143,212,0.09)',
-                      border: '1px solid rgba(155,143,212,0.35)',
-                      color: 'var(--purple)', fontSize: 12,
-                      opacity: !selectedCreatorId || categorizingVault ? 0.5 : 1,
+                      position: 'absolute', zIndex: 30, right: 0, top: 'calc(100% + 6px)',
+                      width: 270, padding: 6, borderRadius: 8,
+                      border: '1px solid var(--border)', background: 'var(--bg-surface)',
+                      boxShadow: '0 12px 30px rgba(0,0,0,0.35)',
                     }}
                   >
-                    Re-analyze old approved-set media ({categorizationOverview?.stale_approved_classifications})
-                  </button>
-                )}
-                {Boolean(categorizationOverview?.stale_classifications) && (
-                  <button
-                    onClick={() => {
-                      const count = categorizationOverview?.stale_classifications ?? 0
-                      setPendingUpgrade({
-                        count,
-                        scope: 'all',
-                        title: `Re-analyze ${count} remaining item${count === 1 ? '' : 's'}?`,
-                        description: `This paid analysis processes only media with old or failed metadata. Anything already on classifier v${categorizationOverview?.classifier_version} is automatically excluded.`,
-                      })
-                    }}
-                    disabled={!selectedCreatorId || categorizingVault}
-                    style={{
-                      padding: '6px 14px', borderRadius: 6,
-                      cursor: categorizingVault ? 'not-allowed' : 'pointer',
-                      background: 'transparent', border: '1px solid var(--border)',
-                      color: 'var(--text-muted)', fontSize: 12,
-                      opacity: !selectedCreatorId || categorizingVault ? 0.5 : 1,
-                    }}
-                  >
-                    Re-analyze remaining old metadata ({categorizationOverview?.stale_classifications})
-                  </button>
-                )}
+                    <button
+                      onClick={event => {
+                        event.currentTarget.closest('details')?.removeAttribute('open')
+                        void startVaultSync()
+                      }}
+                      disabled={!selectedCreatorId || syncingVault}
+                      style={{
+                        ...VAULT_TOOL_STYLE,
+                        opacity: !selectedCreatorId || syncingVault ? 0.5 : 1,
+                      }}
+                    >
+                      {syncingVault ? 'Sync in progress…' : 'Check Fansly for new media now'}
+                    </button>
+                    <button
+                      onClick={event => {
+                        event.currentTarget.closest('details')?.removeAttribute('open')
+                        void startCategorization(
+                          categorizationOverview?.initial_completed_at ? 'new' : 'initial',
+                        )
+                      }}
+                      disabled={!selectedCreatorId || categorizingVault || Boolean(categorizationOverview?.initial_completed_at && !categorizationOverview.uncategorized)}
+                      style={{
+                        ...VAULT_TOOL_STYLE,
+                        opacity: !selectedCreatorId || categorizingVault || Boolean(categorizationOverview?.initial_completed_at && !categorizationOverview.uncategorized) ? 0.5 : 1,
+                      }}
+                    >
+                      {categorizingVault
+                        ? `Categorizing ${categorizeProgress?.done ?? 0}/${categorizeProgress?.total ?? '?'}${
+                          categorizeProgress?.estimated_seconds_remaining
+                            ? ` · ${shortDuration(categorizeProgress.estimated_seconds_remaining)} left`
+                            : ''
+                        }`
+                        : categorizationOverview?.initial_completed_at
+                          ? `Categorize new media (${categorizationOverview.uncategorized})`
+                          : `Categorize existing media (${categorizationOverview?.uncategorized ?? 0})`}
+                    </button>
+                    {Boolean(categorizationOverview?.video_frame_upgrades) && (
+                      <button
+                        onClick={event => {
+                          event.currentTarget.closest('details')?.removeAttribute('open')
+                          const count = categorizationOverview?.video_frame_upgrades ?? 0
+                          setPendingUpgrade({
+                            count,
+                            scope: 'videos',
+                            title: `Analyze ${count} video${count === 1 ? '' : 's'} from real frames?`,
+                            description: 'Cleopatra will sample four moments across each clip and classify the sequence as video—not from a poster image. Videos that cannot provide readable frames stay queued for a safe retry.',
+                          })
+                        }}
+                        disabled={!selectedCreatorId || categorizingVault}
+                        style={{ ...VAULT_TOOL_STYLE, color: 'var(--green)' }}
+                      >
+                        Analyze video frames ({categorizationOverview?.video_frame_upgrades})
+                      </button>
+                    )}
+                    {Boolean(categorizationOverview?.stale_approved_classifications) && (
+                      <button
+                        onClick={event => {
+                          event.currentTarget.closest('details')?.removeAttribute('open')
+                          const count = categorizationOverview?.stale_approved_classifications ?? 0
+                          setPendingUpgrade({
+                            count,
+                            scope: 'approved',
+                            title: `Re-analyze ${count} approved-set item${count === 1 ? '' : 's'}?`,
+                            description: `This paid analysis updates only old or failed metadata to classifier v${categorizationOverview?.classifier_version}. Current-version media will not run again.`,
+                          })
+                        }}
+                        disabled={!selectedCreatorId || categorizingVault}
+                        style={{ ...VAULT_TOOL_STYLE, color: 'var(--purple)' }}
+                      >
+                        Re-analyze approved-set media ({categorizationOverview?.stale_approved_classifications})
+                      </button>
+                    )}
+                    {Boolean(categorizationOverview?.stale_classifications) && (
+                      <button
+                        onClick={event => {
+                          event.currentTarget.closest('details')?.removeAttribute('open')
+                          const count = categorizationOverview?.stale_classifications ?? 0
+                          setPendingUpgrade({
+                            count,
+                            scope: 'all',
+                            title: `Re-analyze ${count} remaining item${count === 1 ? '' : 's'}?`,
+                            description: `This paid analysis processes only media with old or failed metadata. Anything already on classifier v${categorizationOverview?.classifier_version} is automatically excluded.`,
+                          })
+                        }}
+                        disabled={!selectedCreatorId || categorizingVault}
+                        style={VAULT_TOOL_STYLE}
+                      >
+                        Re-analyze remaining metadata ({categorizationOverview?.stale_classifications})
+                      </button>
+                    )}
+                  </div>
+                </details>
               </div>
 
               {categorizationOverview && (
