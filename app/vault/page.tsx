@@ -364,7 +364,9 @@ export default function VaultPage() {
     setVaultProgress({ synced: 0, total: 0, album: 'Starting...' })
     const creatorId = selectedCreatorId
     try {
-      const startRes = await apiFetch(`/sync-vault-start/${creatorId}`, {
+      // The 24-hour cooldown protects the automatic scheduler. An operator who
+      // just uploaded media on Fansly must still be able to import it now.
+      const startRes = await apiFetch(`/sync-vault-start/${creatorId}?force=true`, {
         method: 'POST',
       })
       const startData = await startRes.json().catch(() => ({}))
@@ -471,7 +473,7 @@ export default function VaultPage() {
                   <div style={{ color: 'var(--text-muted)', fontSize: 11, marginTop: 3 }}>
                     {syncingVault
                       ? `${vaultProgress?.synced ?? 0}${vaultProgress?.total ? `/${vaultProgress.total}` : ''} new items checked${vaultProgress?.album ? ` · ${vaultProgress.album}` : ''}`
-                      : `${lastSyncLabel(categorizationOverview?.last_vault_sync_at)} · checks every ${categorizationOverview?.vault_sync_interval_hours ?? 24}h`}
+                      : `${lastSyncLabel(categorizationOverview?.last_vault_sync_at)} · automatic daily refresh · manual check anytime`}
                   </div>
                 </div>
                 <button
