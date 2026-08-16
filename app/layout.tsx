@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from 'react'
 import { usePathname } from 'next/navigation'
+import SystemHealthBanner from '../components/SystemHealthBanner'
 import './globals.css'
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
@@ -213,6 +214,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           </div>
         </nav>
         <div style={{ flex: 1, overflow: 'hidden' }}>
+          <SystemHealthBanner />
           {children}
         </div>
       </body>
