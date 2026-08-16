@@ -62,6 +62,8 @@ type VaultCategorizationOverview = {
     synced: number
     total: number
     album: string
+    requires_reconnect?: boolean
+    retry_after_seconds?: number
   }
   uncategorized: number
   stale_classifications: number
@@ -123,6 +125,56 @@ function lastSyncLabel(value?: string | null) {
     hour: '2-digit',
     minute: '2-digit',
   })}`
+}
+
+function vaultSyncPresentation(overview: VaultCategorizationOverview | null) {
+  if (!overview) {
+    return {
+      needsAttention: false,
+      requiresReconnect: false,
+      title: 'Checking automatic vault updates…',
+      detail: 'Loading the latest background-sync status.',
+    }
+  }
+  const active = overview?.active_sync
+  if (active?.status === 'error') {
+    return {
+      needsAttention: true,
+      requiresReconnect: Boolean(active.requires_reconnect),
+      title: active.requires_reconnect
+        ? 'Vault connection needs to be reconnected'
+        : 'Automatic vault update failed',
+      detail: active.requires_reconnect
+        ? 'API Fansly denied access to this creator. Reconnect Fansly in Settings, then check again.'
+        : active.album || 'Check Fansly again or review the backend logs.',
+    }
+  }
+  const lastValue = overview?.last_vault_sync_at
+  if (!lastValue) {
+    return {
+      needsAttention: false,
+      requiresReconnect: false,
+      title: 'First automatic vault update is pending',
+      detail: 'The backend will run it without anyone needing to open the dashboard.',
+    }
+  }
+  const last = lastValue ? new Date(lastValue) : null
+  const intervalHours = overview?.vault_sync_interval_hours ?? 24
+  const staleAfterMs = (intervalHours + 2) * 60 * 60 * 1000
+  if (last && !Number.isNaN(last.getTime()) && Date.now() - last.getTime() > staleAfterMs) {
+    return {
+      needsAttention: true,
+      requiresReconnect: false,
+      title: 'Automatic vault update is overdue',
+      detail: `${lastSyncLabel(lastValue)}. Check Fansly now; if it fails, reconnect the creator in Settings.`,
+    }
+  }
+  return {
+    needsAttention: false,
+    requiresReconnect: false,
+    title: 'Automatic vault updates are on',
+    detail: `${lastSyncLabel(lastValue)} · automatic daily refresh · manual check anytime`,
+  }
 }
 
 export default function VaultPage() {
@@ -445,6 +497,7 @@ export default function VaultPage() {
     : selectedAlbum
       ? vaultAlbums[selectedAlbum] || []
       : []
+  const syncPresentation = vaultSyncPresentation(categorizationOverview)
 
   return (
     <div style={{ height: '100vh', overflowY: 'auto', boxSizing: 'border-box', padding: 32 }}>
@@ -463,19 +516,28 @@ export default function VaultPage() {
             <div>
               <div style={{
                 display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'center', marginBottom: 20,
-                padding: '12px 14px', border: '1px solid var(--border)',
+                padding: '12px 14px',
+                border: `1px solid ${syncPresentation.needsAttention ? 'rgba(229,118,137,0.65)' : 'var(--border)'}`,
                 borderRadius: 8, background: 'var(--bg-elevated)',
               }}>
                 <div style={{ minWidth: 220, flex: 1 }}>
-                  <div style={{ color: 'var(--text-primary)', fontSize: 12, fontWeight: 600 }}>
-                    {syncingVault ? 'Updating vault…' : 'Automatic vault updates are on'}
+                  <div style={{ color: syncPresentation.needsAttention ? '#e57689' : 'var(--text-primary)', fontSize: 12, fontWeight: 600 }}>
+                    {syncingVault ? 'Updating vault…' : syncPresentation.title}
                   </div>
                   <div style={{ color: 'var(--text-muted)', fontSize: 11, marginTop: 3 }}>
                     {syncingVault
                       ? `${vaultProgress?.synced ?? 0}${vaultProgress?.total ? `/${vaultProgress.total}` : ''} new items checked${vaultProgress?.album ? ` · ${vaultProgress.album}` : ''}`
-                      : `${lastSyncLabel(categorizationOverview?.last_vault_sync_at)} · automatic daily refresh · manual check anytime`}
+                      : syncPresentation.detail}
                   </div>
                 </div>
+                {syncPresentation.requiresReconnect && (
+                  <a
+                    href="/settings"
+                    style={{ color: '#e57689', fontSize: 12, textDecoration: 'none' }}
+                  >
+                    Reconnect Fansly
+                  </a>
+                )}
                 <button
                   onClick={() => setShowUploadModal(true)}
                   disabled={!selectedCreatorId}
