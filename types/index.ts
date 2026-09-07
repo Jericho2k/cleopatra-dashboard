@@ -51,6 +51,11 @@ export interface Creator {
 
 export interface SuggestionResponse {
   suggestions: string[]
+  /** REL-001 — true when the situation analysis behind these suggestions was
+   *  fabricated because the analyzer failed. The copy is still usable, but it
+   *  was not written against a real reading of the conversation. */
+  analysis_degraded?: boolean
+  analysis_degraded_reason?: string
 }
 
 /** Where a list came from. Cleopatra owns 'local' lists; 'fansly' lists mirror

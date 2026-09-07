@@ -54,6 +54,15 @@ type FullAutoHealth = {
     processing_actions: number
     overdue_actions?: number
   }
+  /** REL-001 — situation-analysis failures in the last hour. A degraded
+   *  analysis stops Full Auto rather than letting it sell on guessed state, so
+   *  a non-zero count explains why replies are not going out. */
+  analyzer?: {
+    window_hours: number
+    analyses: number
+    degraded: number
+    degraded_by_reason?: Record<string, number>
+  }
   worker?: {
     last_run_started_at: string | null
     last_run_completed_at: string | null
@@ -413,7 +422,18 @@ export default function MonetizationPage() {
                   <Metric label="Overdue" value={health.summary.overdue_actions ?? 0} alert={(health.summary.overdue_actions ?? 0) > 0} />
                   <Metric label="Needs human" value={health.summary.human_review} />
                   <Metric label="Failed actions" value={health.summary.failed_actions} alert={health.summary.failed_actions > 0} />
+                  <Metric label="Analyzer failures (1h)" value={health.analyzer?.degraded ?? 0} alert={(health.analyzer?.degraded ?? 0) > 0} />
                 </div>
+                {(health.analyzer?.degraded ?? 0) > 0 && (
+                  <div style={{ marginTop: 12, padding: '10px 12px', border: '1px solid #e57689', borderRadius: 8, fontSize: 12 }}>
+                    <div style={{ fontWeight: 650, color: '#e57689' }}>
+                      Situation analysis failed {health.analyzer?.degraded} time{health.analyzer?.degraded === 1 ? '' : 's'} in the last hour
+                    </div>
+                    <div style={{ marginTop: 3, color: 'var(--text-muted)' }}>
+                      Full Auto sends nothing rather than guessing, and retries automatically. Assisted suggestions still work but are marked as unanalysed.
+                    </div>
+                  </div>
+                )}
                 <div style={{ marginTop: 12, padding: '10px 12px', border: `1px solid ${health.worker?.last_error ? '#e57689' : 'var(--border)'}`, borderRadius: 8, fontSize: 12, color: 'var(--text-secondary)' }}>
                   <div style={{ fontWeight: 650, color: health.worker?.last_error ? '#e57689' : 'var(--text-primary)' }}>
                     Scheduled worker {health.worker?.last_error ? 'reported an error' : health.worker?.last_run_completed_at ? 'is running' : 'has not reported yet'}
