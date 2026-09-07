@@ -9,6 +9,7 @@ import type { Fan, Message, ConversationSummary, FanList } from '../types'
 import { warmBackend } from '../lib/api'
 import { recoverRealtime, useRealtimeRecovery } from '../lib/realtime-recovery'
 import { dedupeMessages } from '../lib/messages'
+import { isFanslyList } from '../lib/fanLists'
 import Sidebar from '../components/Sidebar'
 import ConversationView from '../components/ConversationView'
 import FanPanel from '../components/FanPanel'
@@ -365,11 +366,21 @@ export default function Page() {
   }
 
   async function updateList(listId: string, name: string, color: string, excludeFromAuto: boolean) {
-    await supabase.from('fan_lists').update({ name, color, exclude_from_auto: excludeFromAuto }).eq('id', listId)
-    setFanLists(prev => prev.map(l => l.id === listId ? { ...l, name, color, exclude_from_auto: excludeFromAuto } : l))
+    const list = fanLists.find(l => l.id === listId)
+    // A Fansly mirror's name belongs to Fansly and the next sync would restore
+    // it anyway. Color and the auto-mode exclusion are Cleopatra's own.
+    const patch = isFanslyList(list ?? { id: listId, name })
+      ? { color, exclude_from_auto: excludeFromAuto }
+      : { name, color, exclude_from_auto: excludeFromAuto }
+    await supabase.from('fan_lists').update(patch).eq('id', listId)
+    setFanLists(prev => prev.map(l => l.id === listId ? { ...l, ...patch } : l))
   }
 
   async function deleteList(listId: string) {
+    const list = fanLists.find(l => l.id === listId)
+    // Cleopatra does not own a Fansly list. The UI hides Delete for mirrors;
+    // this is the guard behind it.
+    if (list && isFanslyList(list)) return
     await supabase.from('fan_lists').delete().eq('id', listId)
     setFanLists(prev => prev.filter(l => l.id !== listId))
     if (activeListId === listId) setActiveListId(null)

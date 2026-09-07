@@ -53,6 +53,11 @@ export interface SuggestionResponse {
   suggestions: string[]
 }
 
+/** Where a list came from. Cleopatra owns 'local' lists; 'fansly' lists mirror
+ *  a list the agency maintains on the creator's Fansly account and are
+ *  read-only here. */
+export type FanListSource = 'local' | 'fansly'
+
 export interface FanList {
   id: string
   creator_id: string
@@ -60,6 +65,14 @@ export interface FanList {
   color: string
   exclude_from_auto: boolean
   member_fan_ids: string[]
+  /** Absent on databases where db/fansly_lists_v1.sql has not been applied. */
+  source?: FanListSource | null
+  external_list_id?: string | null
+  external_synced_at?: string | null
+  /** Set when the remote list stopped being returned by Fansly. The mirror is
+   *  kept so existing targeting rules still resolve. */
+  external_archived_at?: string | null
+  external_item_count?: number | null
 }
 
 export interface ConversationSummary {
