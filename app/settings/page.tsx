@@ -4,6 +4,12 @@ import React, { useState, useEffect } from 'react'
 import { Eye, EyeOff } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { apiFetch } from '../../lib/api'
+import {
+  fanListBadge,
+  fanListLabel,
+  isArchivedFanslyList,
+  sortFanLists,
+} from '../../lib/fanLists'
 
 type Section = 'Creator Persona' | 'Voice Calibration' | 'Blocked Words' | 'Auto Audience' | 'Sleep Hours' | 'Limits'
 
@@ -49,6 +55,15 @@ const DEFAULT_VOICE_CALIBRATION: VoiceCalibration = {
   approved_message_ids: [],
   approved_samples: [],
   candidates: [],
+}
+
+/** A list offered as an Auto Audience target. Fansly-sourced rows are mirrors
+ *  of lists the agency maintains on Fansly; Cleopatra does not own them. */
+type AudienceList = {
+  id: string
+  name: string
+  source?: string | null
+  external_archived_at?: string | null
 }
 
 const DEFAULT_AUTO_AUDIENCE: AutoAudiencePolicy = {
@@ -137,7 +152,10 @@ export default function SettingsPage() {
   })
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null)
   const [audiencePolicy, setAudiencePolicy] = useState<AutoAudiencePolicy>(DEFAULT_AUTO_AUDIENCE)
-  const [audienceLists, setAudienceLists] = useState<{ id: string; name: string }[]>([])
+  const [audienceLists, setAudienceLists] = useState<AudienceList[]>([])
+  const [fanslyListsSyncedAt, setFanslyListsSyncedAt] = useState<string | null>(null)
+  const [fanslyListsError, setFanslyListsError] = useState<string | null>(null)
+  const [fanslyListsRefreshing, setFanslyListsRefreshing] = useState(false)
   const [audiencePreview, setAudiencePreview] = useState<AutoAudiencePreview | null>(null)
   const [audienceSaving, setAudienceSaving] = useState(false)
   const [fullAutoSaving, setFullAutoSaving] = useState(false)
@@ -345,17 +363,60 @@ export default function SettingsPage() {
   }
 
   const loadAutoAudience = async (creatorId: string) => {
-    const [policyResponse, previewResponse, listsResponse] = await Promise.all([
-      apiFetch(`/creator/${creatorId}/auto-audience-policy`),
-      apiFetch(`/creator/${creatorId}/auto-audience-preview`),
-      supabase.from('fan_lists').select('id, name').eq('creator_id', creatorId).order('name'),
-    ])
+    const [policyResponse, previewResponse, listsResponse, syncStateResponse] =
+      await Promise.all([
+        apiFetch(`/creator/${creatorId}/auto-audience-policy`),
+        apiFetch(`/creator/${creatorId}/auto-audience-preview`),
+        // Mirrored rows are read straight from Supabase like every other list.
+        // Nothing here calls Fansly; that happens on the sync lifecycle or when
+        // an operator presses Refresh below.
+        supabase
+          .from('fan_lists')
+          .select('id, name, source, external_archived_at')
+          .eq('creator_id', creatorId)
+          .order('name'),
+        apiFetch(`/creator/${creatorId}/fansly-lists`),
+      ])
     if (policyResponse.ok) {
       const body = await policyResponse.json()
       setAudiencePolicy({ ...DEFAULT_AUTO_AUDIENCE, ...(body.policy ?? {}) })
     }
     if (previewResponse.ok) setAudiencePreview(await previewResponse.json())
-    setAudienceLists(listsResponse.data ?? [])
+    setAudienceLists(sortFanLists((listsResponse.data ?? []) as AudienceList[]))
+    if (syncStateResponse.ok) {
+      // Absent on a backend that predates list mirroring, which is fine: the
+      // selectors still work, they just show no Fansly state.
+      const body = await syncStateResponse.json().catch(() => ({}))
+      setFanslyListsSyncedAt(body.last_synced_at ?? null)
+      setFanslyListsError(body.last_error ?? null)
+    } else {
+      setFanslyListsSyncedAt(null)
+      setFanslyListsError(null)
+    }
+  }
+
+  const refreshFanslyLists = async () => {
+    if (!selectedCreatorId) return
+    setFanslyListsRefreshing(true)
+    try {
+      const response = await apiFetch(
+        `/creator/${selectedCreatorId}/sync-fansly-lists`,
+        { method: 'POST' },
+      )
+      const body = await response.json().catch(() => ({}))
+      if (!response.ok) throw new Error(body.detail || 'Could not refresh Fansly lists')
+      await loadAutoAudience(selectedCreatorId)
+      const imported = Number(body.remote_lists ?? 0)
+      showToast(
+        imported === 1
+          ? 'Imported 1 Fansly list'
+          : `Imported ${imported} Fansly lists`,
+      )
+    } catch (error) {
+      showToast(String(error instanceof Error ? error.message : error), 'error')
+    } finally {
+      setFanslyListsRefreshing(false)
+    }
   }
 
   const loadVoiceCalibration = async (creatorId: string) => {
@@ -1063,19 +1124,63 @@ export default function SettingsPage() {
                       ] as const).map(([key, title]) => (
                         <div key={key}>
                           <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 7, textTransform: 'uppercase' }}>{title}</div>
-                          {audienceLists.map(list => (
-                            <label key={list.id} style={{ display: 'flex', gap: 7, alignItems: 'center', fontSize: 12, marginBottom: 6, color: 'var(--text-secondary)' }}>
-                              <input type="checkbox" checked={audiencePolicy[key].includes(list.id)} onChange={event => setAudiencePolicy(p => ({
-                                ...p,
-                                [key]: event.target.checked ? [...p[key], list.id] : p[key].filter(id => id !== list.id),
-                              }))} />
-                              {list.name}
-                            </label>
-                          ))}
+                          {audienceLists.map(list => {
+                            const badge = fanListBadge(list)
+                            const archived = isArchivedFanslyList(list)
+                            const selected = audiencePolicy[key].includes(list.id)
+                            // A mirror Fansly no longer returns stays visible
+                            // only while a rule still references it, so nothing
+                            // is silently repointed to a different list.
+                            if (archived && !selected) return null
+                            return (
+                              <label key={list.id} style={{ display: 'flex', gap: 7, alignItems: 'center', fontSize: 12, marginBottom: 6, color: 'var(--text-secondary)', opacity: archived ? 0.65 : 1 }}>
+                                <input type="checkbox" checked={selected} onChange={event => setAudiencePolicy(p => ({
+                                  ...p,
+                                  [key]: event.target.checked ? [...p[key], list.id] : p[key].filter(id => id !== list.id),
+                                }))} />
+                                <span>{fanListLabel(list)}</span>
+                                {badge && (
+                                  <span style={{
+                                    fontSize: 8.5, padding: '1px 5px', borderRadius: 999,
+                                    background: 'rgba(120,140,255,0.12)', color: '#8fa2ff',
+                                    border: '1px solid rgba(120,140,255,0.25)', letterSpacing: '0.04em',
+                                    whiteSpace: 'nowrap',
+                                  }}>{badge}</span>
+                                )}
+                              </label>
+                            )
+                          })}
                         </div>
                       ))}
                     </div>
                   )}
+
+                  <div style={{
+                    display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap',
+                    marginTop: 14, paddingTop: 12, borderTop: '1px solid var(--border)',
+                  }}>
+                    <button
+                      type="button"
+                      onClick={refreshFanslyLists}
+                      disabled={fanslyListsRefreshing}
+                      style={{
+                        padding: '6px 11px', borderRadius: 6, fontSize: 11,
+                        cursor: fanslyListsRefreshing ? 'default' : 'pointer',
+                        background: 'transparent', border: '1px solid var(--border)',
+                        color: 'var(--text-secondary)',
+                        opacity: fanslyListsRefreshing ? 0.6 : 1,
+                      }}
+                    >
+                      {fanslyListsRefreshing ? 'Refreshing…' : 'Refresh Fansly lists'}
+                    </button>
+                    <span style={{ fontSize: 10.5, color: 'var(--text-faint)', lineHeight: 1.45 }}>
+                      {fanslyListsError
+                        ? `Last refresh failed: ${fanslyListsError}`
+                        : fanslyListsSyncedAt
+                          ? `Lists imported from Fansly. Last refreshed ${new Date(fanslyListsSyncedAt).toLocaleString()}.`
+                          : 'Lists you already keep on Fansly are imported automatically. Cleopatra never changes them there.'}
+                    </span>
+                  </div>
                 </div>
               )}
 

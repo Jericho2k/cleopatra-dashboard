@@ -2,6 +2,13 @@
 
 import React, { useState, useEffect } from 'react'
 import type { Fan, ConversationSummary, FanList } from '../types'
+import {
+  fanListBadge,
+  fanListLabel,
+  isArchivedFanslyList,
+  isEditableList,
+  sortFanLists,
+} from '../lib/fanLists'
 
 export interface SidebarProps {
   conversations: ConversationSummary[]
@@ -47,6 +54,10 @@ type ListModal = {
   name: string
   color: string
   excludeFromAuto: boolean
+  /** A Fansly-sourced mirror. Its name and membership belong to Fansly, so
+   *  neither may be changed here. Color and the auto-mode exclusion are
+   *  Cleopatra's own settings on the mirror and stay editable. */
+  readOnly?: boolean
 }
 
 export default function Sidebar({
@@ -108,20 +119,37 @@ export default function Sidebar({
             }}
           >
             <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 16, color: 'var(--text-primary)' }}>
-              {listModal.mode === 'create' ? 'New List' : 'Edit List'}
+              {listModal.mode === 'create'
+                ? 'New List'
+                : listModal.readOnly ? 'Fansly List' : 'Edit List'}
             </div>
+
+            {listModal.readOnly && (
+              <div style={{
+                fontSize: 11, lineHeight: 1.45, color: 'var(--text-muted)',
+                marginBottom: 14, padding: '9px 11px', borderRadius: 8,
+                background: 'rgba(120,140,255,0.08)',
+                border: '1px solid rgba(120,140,255,0.2)',
+              }}>
+                This list lives on Fansly. Rename it or change who is in it on
+                Fansly; Cleopatra keeps its own copy in step.
+              </div>
+            )}
 
             <input
               value={listModal.name}
               onChange={e => setListModal(prev => prev ? { ...prev, name: e.target.value } : null)}
               placeholder="List name"
-              autoFocus
+              autoFocus={!listModal.readOnly}
+              readOnly={listModal.readOnly}
               style={{
                 width: '100%', background: 'var(--bg-surface)',
                 border: '1px solid var(--border)', borderRadius: 8,
-                padding: '8px 12px', color: 'var(--text-primary)',
+                padding: '8px 12px',
+                color: listModal.readOnly ? 'var(--text-muted)' : 'var(--text-primary)',
                 fontSize: 13, marginBottom: 16, boxSizing: 'border-box',
                 outline: 'none',
+                cursor: listModal.readOnly ? 'default' : 'text',
               }}
             />
 
@@ -170,7 +198,7 @@ export default function Sidebar({
               </div>
             </div>
 
-            {listModal.mode === 'edit' && (
+            {listModal.mode === 'edit' && !listModal.readOnly && (
               <div style={{ marginBottom: 16 }}>
                 <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 8 }}>FANS IN THIS LIST</div>
                 <div style={{ maxHeight: 200, overflow: 'auto', border: '1px solid var(--border)', borderRadius: 8 }}>
@@ -210,7 +238,7 @@ export default function Sidebar({
             )}
 
             <div style={{ display: 'flex', gap: 8 }}>
-              {listModal.mode === 'edit' && (
+              {listModal.mode === 'edit' && !listModal.readOnly && (
                 <button
                   type="button"
                   onClick={() => { onDeleteList(listModal.listId!); setListModal(null) }}
@@ -428,19 +456,27 @@ export default function Sidebar({
           >
             All
           </button>
-          {fanLists.map(list => (
+          {sortFanLists(fanLists).map(list => (
             <button
               key={list.id}
               type="button"
               onClick={() => onSelectList(activeListId === list.id ? null : list.id)}
+              title={
+                isArchivedFanslyList(list)
+                  ? 'This list no longer exists on Fansly. Kept so existing rules still work.'
+                  : isEditableList(list)
+                    ? undefined
+                    : 'Imported from Fansly. Edit it on Fansly, not here.'
+              }
               style={{
                 fontSize: 10, padding: '3px 10px', borderRadius: 999, cursor: 'pointer',
                 background: activeListId === list.id ? list.color : 'transparent',
                 color: activeListId === list.id ? '#000' : 'var(--text-muted)',
                 border: `1px solid ${list.color}`,
+                opacity: isArchivedFanslyList(list) ? 0.55 : 1,
               }}
             >
-              {list.name}
+              {fanListLabel(list)}
             </button>
           ))}
           <button
@@ -508,7 +544,10 @@ export default function Sidebar({
                 <div style={{ color: 'var(--text-muted)', fontSize: 13, textAlign: 'center', padding: 20 }}>
                   No lists yet. Create one above.
                 </div>
-              ) : fanLists.map(list => (
+              ) : sortFanLists(fanLists).map(list => {
+                const badge = fanListBadge(list)
+                const editable = isEditableList(list)
+                return (
                 <div
                   key={list.id}
                   onClick={() => {
@@ -517,6 +556,9 @@ export default function Sidebar({
                       mode: 'edit', listId: list.id,
                       name: list.name, color: list.color,
                       excludeFromAuto: list.exclude_from_auto,
+                      // Imported lists live on Fansly. Cleopatra shows their
+                      // membership but must not offer to rename or delete them.
+                      readOnly: !editable,
                     })
                   }}
                   style={{
@@ -524,10 +566,18 @@ export default function Sidebar({
                     padding: '12px 14px', background: 'var(--bg-surface)',
                     border: '1px solid var(--border)', borderRadius: 10,
                     marginBottom: 8, cursor: 'pointer',
+                    opacity: isArchivedFanslyList(list) ? 0.6 : 1,
                   }}
                 >
                   <div style={{ width: 10, height: 10, borderRadius: '50%', background: list.color, flexShrink: 0 }} />
-                  <div style={{ flex: 1, fontSize: 13, color: 'var(--text-primary)' }}>{list.name}</div>
+                  <div style={{ flex: 1, fontSize: 13, color: 'var(--text-primary)' }}>{fanListLabel(list)}</div>
+                  {badge && (
+                    <span style={{
+                      fontSize: 9, padding: '2px 6px', borderRadius: 999,
+                      background: 'rgba(120,140,255,0.12)', color: '#8fa2ff',
+                      border: '1px solid rgba(120,140,255,0.25)', letterSpacing: '0.04em',
+                    }}>{badge}</span>
+                  )}
                   <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
                     {list.member_fan_ids.length} fans
                   </span>
@@ -540,7 +590,8 @@ export default function Sidebar({
                   )}
                   <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>→</span>
                 </div>
-              ))}
+                )
+              })}
             </div>
           </div>
         )}
@@ -789,7 +840,7 @@ export default function Sidebar({
                         boxShadow: '0 8px 24px rgba(0,0,0,0.4)',
                       }}
                     >
-                      {fanLists.map(list => {
+                      {sortFanLists(fanLists).map(list => {
                         const isMember = list.member_fan_ids.includes(c.fan.id)
                         return (
                           <button
@@ -813,7 +864,7 @@ export default function Sidebar({
                               width: 8, height: 8, borderRadius: '50%',
                               background: list.color, flexShrink: 0,
                             }} />
-                            {list.name}
+                            {fanListLabel(list)}
                             {isMember && <span style={{ marginLeft: 'auto', fontSize: 10 }}>✓</span>}
                           </button>
                         )
