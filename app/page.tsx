@@ -8,7 +8,7 @@ import { apiFetch } from '../lib/api'
 import type { Fan, Message, ConversationSummary, FanList } from '../types'
 import { warmBackend } from '../lib/api'
 import { recoverRealtime, useRealtimeRecovery } from '../lib/realtime-recovery'
-import { dedupeMessages } from '../lib/messages'
+import { capRetainedMessages, dedupeMessages } from '../lib/messages'
 import { isFanslyList } from '../lib/fanLists'
 import Sidebar from '../components/Sidebar'
 import ConversationView from '../components/ConversationView'
@@ -126,6 +126,11 @@ export default function Page() {
   const conversationsCache = useRef<Record<string, ConversationSummary[]>>({})
   const messagesCache = useRef<Record<string, Message[]>>({})
   const messagesPaginationCache = useRef<Record<string, { hasMoreMessages: boolean; oldestMessageTime: string | null }>>({})
+  // FE-001 - fans whose history the operator has deliberately scrolled back
+  // into. Their threads are never trimmed: the retained-message bound exists to
+  // stop a tab left open on a busy fan growing on its own, not to throw away
+  // history somebody just asked for. Cleared when the thread is reloaded.
+  const expandedHistoryFans = useRef<Set<string>>(new Set())
   useEffect(() => {
     warmBackend()
   }, [])
@@ -508,6 +513,9 @@ export default function Page() {
 
     if (error || !data) return
 
+    // Deliberate operator action: keep every message it returns, and remember
+    // that this thread must not be trimmed behind their back.
+    expandedHistoryFans.current.add(fanId)
     const olderMsgs = data.reverse().map(rowToMessage)
     const combined = dedupeMessages([...olderMsgs, ...tab.messages])
 
@@ -563,6 +571,8 @@ export default function Page() {
     updateTab(tab.id, { messagesLoading: true })
     delete messagesCache.current[fanId]
     delete messagesPaginationCache.current[fanId]
+    // Back to the 50-message window, so the thread is trimmable again.
+    expandedHistoryFans.current.delete(fanId)
 
     const { data, error } = await supabase
       .from('messages')
@@ -681,15 +691,23 @@ export default function Page() {
             const isActiveTab = tab.id === activeTabIdRef.current
             const isActiveFan = tab.activeFan?.id === msg.fan_id
 
+            // A realtime message arrives on its own, so this is where the
+            // retained-history bound applies - unless the operator has scrolled
+            // back into this thread, in which case trimming would delete what
+            // they are reading.
+            const trim = (rows: Message[]) =>
+              expandedHistoryFans.current.has(msg.fan_id)
+                ? rows
+                : capRetainedMessages(rows)
+
             const currentCached = messagesCache.current[msg.fan_id]
             if (currentCached !== undefined) {
-              messagesCache.current[msg.fan_id] = dedupeMessages([
-                ...currentCached,
-                msg,
-              ])
+              messagesCache.current[msg.fan_id] = trim(
+                dedupeMessages([...currentCached, msg]),
+              )
             }
             const mergedMessages = isActiveTab && isActiveFan
-              ? dedupeMessages([...tab.messages, msg])
+              ? trim(dedupeMessages([...tab.messages, msg]))
               : tab.messages
             if (
               isActiveTab
@@ -833,7 +851,9 @@ export default function Page() {
         const have = new Set(t.messages.map(m => m.id))
         const missed = data.map(rowToMessage).filter(m => !have.has(m.id))
         if (missed.length === 0) return t
-        const combined = dedupeMessages([...t.messages, ...missed])
+        const combined = expandedHistoryFans.current.has(fanId)
+          ? dedupeMessages([...t.messages, ...missed])
+          : capRetainedMessages(dedupeMessages([...t.messages, ...missed]))
         messagesCache.current[fanId] = combined
         return { ...t, messages: combined }
       }))
