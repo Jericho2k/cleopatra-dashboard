@@ -1,9 +1,23 @@
 'use client'
 
-import React, { useCallback, useEffect, useRef, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { supabase } from '../../lib/supabase'
 import { apiFetch } from '../../lib/api'
 import ConfirmDialog from '../../components/ConfirmDialog'
+import {
+  ALL_ALBUMS,
+  VAULT_DETAIL_COLUMNS,
+  VAULT_GRID_COLUMNS,
+  VAULT_PAGE_SIZE,
+  gridImageSource,
+  isVideo,
+  patchLoadedRow,
+  previewImageSource,
+  summarizeAlbums,
+  totalItems,
+  type VaultAlbum,
+  type VaultGridItem,
+} from '../../lib/vault'
 
 const VAULT_CATEGORY_RANGES: Record<string, { min: number; max: number }> = {
   teaser_clothed: { min: 0, max: 0 },
@@ -177,14 +191,75 @@ function vaultSyncPresentation(overview: VaultCategorizationOverview | null) {
   }
 }
 
+const THUMBNAIL_BOX: React.CSSProperties = {
+  width: 100,
+  height: 100,
+  borderRadius: 6,
+  background: 'var(--bg-elevated)',
+  border: '1px solid var(--border)',
+}
+
+/**
+ * One grid tile.
+ *
+ * FE-002 - this used to render `item.url`, the ORIGINAL asset, into a 100x100
+ * box, so opening an album pulled hundreds of megabytes to draw postage stamps
+ * while `thumbnail_url` sat unused. It now asks for the thumbnail and falls
+ * back to the original only when no variant exists.
+ *
+ * The failure path used to do
+ * `(e.target as HTMLImageElement).parentElement!.innerHTML = '...'`, mutating
+ * DOM that React owns; the next reconciliation of that subtree could throw
+ * "NotFoundError: The node to be removed is not a child of this node". The
+ * fallback is React state now, and the state is keyed on the source so a
+ * refreshed signed URL gets a real second chance rather than staying broken.
+ */
+function VaultThumbnail({ item }: { item: VaultGridItem }) {
+  const source = gridImageSource(item)
+  const [failedSource, setFailedSource] = useState<string | null>(null)
+
+  if (isVideo(item)) {
+    return (
+      <div style={{
+        ...THUMBNAIL_BOX,
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        fontSize: 24,
+      }}>🎥</div>
+    )
+  }
+
+  if (!source || failedSource === source) {
+    return <div style={THUMBNAIL_BOX} />
+  }
+
+  return (
+    <img
+      src={source}
+      alt=""
+      loading="lazy"
+      onError={() => setFailedSource(source)}
+      style={{ ...THUMBNAIL_BOX, objectFit: 'cover' }}
+    />
+  )
+}
+
+
 export default function VaultPage() {
   const [creators, setCreators] = useState<{ id: string; name: string }[]>([])
   const [selectedCreatorId, setSelectedCreatorId] = useState<string | null>(null)
 
-  const [vaultAlbums, setVaultAlbums] = useState<Record<string, any[]>>({})
+  // FE-003 - the page holds album COUNTS plus the rows of the album currently
+  // being browsed, never the whole vault. Album metadata is one aggregate round
+  // trip that transfers no rows; media arrives a page at a time; the heavy
+  // columns are read for one item when its modal opens.
+  const [albums, setAlbums] = useState<VaultAlbum[]>([])
+  const [albumsLoading, setAlbumsLoading] = useState(false)
   const [selectedAlbum, setSelectedAlbum] = useState<string | null>(null)
-  const [vaultVisibleLimit, setVaultVisibleLimit] = useState(200)
+  const [albumRows, setAlbumRows] = useState<VaultGridItem[]>([])
+  const [albumRowsLoading, setAlbumRowsLoading] = useState(false)
+  const [albumHasMore, setAlbumHasMore] = useState(false)
   const [previewItem, setPreviewItem] = useState<any>(null)
+  const [previewLoading, setPreviewLoading] = useState(false)
   const [previewEdits, setPreviewEdits] = useState<{ content_category: string; ai_description: string; price_min: string; price_max: string; scene_location: string; scene_outfit: string; scene_lighting: string; scene_id: string } | null>(null)
   const [previewSaving, setPreviewSaving] = useState(false)
   const [syncingVault, setSyncingVault] = useState(false)
@@ -215,6 +290,10 @@ export default function VaultPage() {
   const categorizePollInFlight = useRef(false)
   const syncPollInFlight = useRef(false)
   const vaultRealtimeRefreshRef = useRef<number | null>(null)
+  // Read by the realtime handler and the pager so neither has to close over
+  // state that changes on every load.
+  const albumRowsRef = useRef<VaultGridItem[]>([])
+  const selectedAlbumRef = useRef<string | null>(null)
 
   useEffect(() => () => {
     if (categorizeIntervalRef.current !== null) {
@@ -250,28 +329,79 @@ export default function VaultPage() {
     })()
   }, [])
 
-  const loadVaultMedia = useCallback(async (creatorId: string) => {
-    const allRows: any[] = []
-    const pageSize = 1000
-    let from = 0
-    while (true) {
-      const { data } = await supabase
-        .from('creator_vault_media')
-        .select('id, filename, url, album_title, mimetype, ai_description, thumbnail_url, media_type, title, price, is_active, content_category, price_min, price_max, scene_id, scene_location, scene_outfit, scene_lighting, explicitness_level, good_for, tags, classification_version, classification_model, classification_source, classification_confidence, classified_at')
-        .eq('creator_id', creatorId)
-        .order('album_title')
-        .range(from, from + pageSize - 1)
-      if (data) allRows.push(...data)
-      if (!data || data.length < pageSize) break
-      from += pageSize
+  const loadAlbums = useCallback(async (creatorId: string) => {
+    setAlbumsLoading(true)
+    try {
+      const { data, error } = await supabase.rpc('vault_album_summary', {
+        p_creator_id: creatorId,
+      })
+      if (!error && Array.isArray(data)) {
+        setAlbums(
+          data.map((row: any) => ({
+            title: String(row.album_title ?? 'Uncategorized'),
+            count: Number(row.item_count ?? 0),
+          })),
+        )
+        return
+      }
+
+      // The aggregate function may not be applied yet. Fall back to scanning a
+      // single short column rather than the 26 the page used to fetch: still
+      // paged, but two orders of magnitude less JSON, and it disappears as soon
+      // as db/vault_album_summary_v1.sql lands.
+      const titles: { album_title: string | null }[] = []
+      const pageSize = 1000
+      let from = 0
+      for (;;) {
+        const page = await supabase
+          .from('creator_vault_media')
+          .select('album_title')
+          .eq('creator_id', creatorId)
+          .order('id')
+          .range(from, from + pageSize - 1)
+        if (page.data) titles.push(...page.data)
+        if (!page.data || page.data.length < pageSize) break
+        from += pageSize
+      }
+      setAlbums(summarizeAlbums(titles))
+    } finally {
+      setAlbumsLoading(false)
     }
-    const byAlbum = allRows.reduce((acc: Record<string, any[]>, item: any) => {
-      const album = item.album_title || 'Uncategorized'
-      if (!acc[album]) acc[album] = []
-      acc[album].push(item)
-      return acc
-    }, {} as Record<string, any[]>)
-    setVaultAlbums(byAlbum)
+  }, [])
+
+  // A guard against a slow page landing after the operator moved on. Every
+  // fetch stamps the request it belongs to and drops its result if a newer one
+  // has started.
+  const albumRequestRef = useRef(0)
+
+  const loadAlbumPage = useCallback(async (
+    creatorId: string,
+    album: string,
+    { append }: { append: boolean },
+  ) => {
+    const request = ++albumRequestRef.current
+    setAlbumRowsLoading(true)
+    try {
+      const offset = append ? albumRowsRef.current.length : 0
+      let query = supabase
+        .from('creator_vault_media')
+        .select(VAULT_GRID_COLUMNS)
+        .eq('creator_id', creatorId)
+      if (album !== ALL_ALBUMS) query = query.eq('album_title', album)
+      const { data } = await query
+        // A unique total order: without it a page boundary can drop or repeat
+        // an item, which in a media grid looks like a missing or doubled tile.
+        .order('album_title')
+        .order('id')
+        .range(offset, offset + VAULT_PAGE_SIZE - 1)
+
+      if (request !== albumRequestRef.current) return
+      const rows = (data ?? []) as VaultGridItem[]
+      setAlbumRows(current => (append ? [...current, ...rows] : rows))
+      setAlbumHasMore(rows.length === VAULT_PAGE_SIZE)
+    } finally {
+      if (request === albumRequestRef.current) setAlbumRowsLoading(false)
+    }
   }, [])
 
   const loadCategorizationOverview = useCallback(async (creatorId: string) => {
@@ -287,30 +417,65 @@ export default function VaultPage() {
   useEffect(() => {
     if (!selectedCreatorId) return
     setSelectedAlbum(null)
+    setAlbumRows([])
+    setAlbumHasMore(false)
     void Promise.all([
-      loadVaultMedia(selectedCreatorId),
+      loadAlbums(selectedCreatorId),
       loadCategorizationOverview(selectedCreatorId),
     ])
-  }, [loadCategorizationOverview, loadVaultMedia, selectedCreatorId])
+  }, [loadCategorizationOverview, loadAlbums, selectedCreatorId])
+
+  // Only the album on screen is fetched, and only its first page.
+  useEffect(() => {
+    if (!selectedCreatorId || !selectedAlbum) return
+    void loadAlbumPage(selectedCreatorId, selectedAlbum, { append: false })
+  }, [loadAlbumPage, selectedAlbum, selectedCreatorId])
 
   useEffect(() => {
     if (!selectedCreatorId) return
     const creatorId = selectedCreatorId
-    const refreshVaultSoon = () => {
+
+    // One media row changing is not a reason to reload the vault. The old
+    // handler re-ran the entire load 750 ms after ANY change, so a
+    // categorisation run made the page re-download everything, repeatedly.
+    const onRowChange = (payload: {
+      eventType?: string
+      new?: Record<string, unknown>
+      old?: Record<string, unknown>
+    }) => {
+      const row = payload.new as (VaultGridItem & Record<string, unknown>) | undefined
+      if (payload.eventType === 'UPDATE' && row?.id) {
+        // Patch it where it sits. patchLoadedRow returns the same array when
+        // the row is not on the current page, so React skips the render.
+        setAlbumRows(current => patchLoadedRow(current, row))
+        setPreviewItem((current: any) =>
+          current && current.id === row.id ? { ...current, ...row } : current,
+        )
+        return
+      }
+
+      // An insert or delete changes counts and page boundaries, so it is a
+      // structural event. Debounce it and reload only the album on screen.
       if (vaultRealtimeRefreshRef.current !== null) {
         window.clearTimeout(vaultRealtimeRefreshRef.current)
       }
       vaultRealtimeRefreshRef.current = window.setTimeout(() => {
-        void loadVaultMedia(creatorId)
+        void loadAlbums(creatorId)
+        const album = selectedAlbumRef.current
+        if (album) void loadAlbumPage(creatorId, album, { append: false })
       }, 750)
     }
+
     const refreshWhenVisible = () => {
       if (document.visibilityState !== 'visible') return
       void Promise.all([
-        loadVaultMedia(creatorId),
+        loadAlbums(creatorId),
         loadCategorizationOverview(creatorId),
       ])
+      const album = selectedAlbumRef.current
+      if (album) void loadAlbumPage(creatorId, album, { append: false })
     }
+
     const channel = supabase
       .channel(`vault-media-${creatorId}`)
       .on('postgres_changes', {
@@ -318,7 +483,7 @@ export default function VaultPage() {
         schema: 'public',
         table: 'creator_vault_media',
         filter: `creator_id=eq.${creatorId}`,
-      }, refreshVaultSoon)
+      }, onRowChange)
       .subscribe()
 
     window.addEventListener('focus', refreshWhenVisible)
@@ -332,7 +497,7 @@ export default function VaultPage() {
       document.removeEventListener('visibilitychange', refreshWhenVisible)
       void supabase.removeChannel(channel)
     }
-  }, [loadCategorizationOverview, loadVaultMedia, selectedCreatorId])
+  }, [loadAlbums, loadAlbumPage, loadCategorizationOverview, selectedCreatorId])
 
   const startCategorization = async (
     mode: 'initial' | 'new' | 'upgrade',
@@ -386,9 +551,16 @@ export default function VaultPage() {
             }
             setCategorizingVault(false)
             await Promise.all([
-              loadVaultMedia(selectedCreatorId),
+              loadAlbums(selectedCreatorId),
               loadCategorizationOverview(selectedCreatorId),
             ])
+            if (selectedAlbumRef.current) {
+              await loadAlbumPage(
+                selectedCreatorId,
+                selectedAlbumRef.current,
+                { append: false },
+              )
+            }
             window.setTimeout(() => setCategorizeProgress(null), 2000)
             if (state.status === 'done') {
               showToast(
@@ -457,9 +629,14 @@ export default function VaultPage() {
               syncIntervalRef.current = null
             }
             await Promise.all([
-              loadVaultMedia(creatorId),
+              loadAlbums(creatorId),
               loadCategorizationOverview(creatorId),
             ])
+            if (selectedAlbumRef.current) {
+              await loadAlbumPage(creatorId, selectedAlbumRef.current, {
+                append: false,
+              })
+            }
             setSyncingVault(false)
             window.setTimeout(() => setVaultProgress(null), 1500)
             if (state.status === 'done') {
@@ -492,11 +669,54 @@ export default function VaultPage() {
     }
   }
 
-  const selectedVaultItems = selectedAlbum === '__all__'
-    ? Object.values(vaultAlbums).flat()
-    : selectedAlbum
-      ? vaultAlbums[selectedAlbum] || []
-      : []
+  useEffect(() => { albumRowsRef.current = albumRows }, [albumRows])
+  useEffect(() => { selectedAlbumRef.current = selectedAlbum }, [selectedAlbum])
+
+  // Derived from bounded current data rather than from the whole vault. The old
+  // `Object.values(vaultAlbums).flat()` allocated a fresh array of every media
+  // item on EVERY render, including every keystroke in the preview modal.
+  const vaultItemCount = useMemo(() => totalItems(albums), [albums])
+
+  const openPreview = useCallback(async (item: VaultGridItem) => {
+    // Show the grid row immediately, then fill in the heavy columns. They are
+    // fetched here rather than carried by every row in the grid.
+    setPreviewItem(item)
+    setPreviewEdits({
+      content_category: '',
+      ai_description: '',
+      price_min: '',
+      price_max: '',
+      scene_location: '',
+      scene_outfit: '',
+      scene_lighting: '',
+      scene_id: '',
+    })
+    setPreviewLoading(true)
+    try {
+      const { data } = await supabase
+        .from('creator_vault_media')
+        .select(VAULT_DETAIL_COLUMNS)
+        .eq('id', item.id)
+        .maybeSingle()
+      const detail = (data ?? item) as any
+      setPreviewItem((current: any) =>
+        current && current.id === item.id ? { ...current, ...detail } : current,
+      )
+      setPreviewEdits({
+        content_category: detail.content_category || '',
+        ai_description: detail.ai_description || '',
+        price_min: String(detail.price_min || ''),
+        price_max: String(detail.price_max || ''),
+        scene_location: detail.scene_location || '',
+        scene_outfit: detail.scene_outfit || '',
+        scene_lighting: detail.scene_lighting || '',
+        scene_id: detail.scene_id || '',
+      })
+    } finally {
+      setPreviewLoading(false)
+    }
+  }, [])
+
   const syncPresentation = vaultSyncPresentation(categorizationOverview)
 
   return (
@@ -710,14 +930,16 @@ export default function VaultPage() {
               <div style={{ marginBottom: 24 }}>
                 <div style={{ fontSize: 18, fontWeight: 600, marginBottom: 4 }}>Vault</div>
                 <div style={{ fontSize: 13, color: 'var(--text-muted)' }}>
-                  {Object.values(vaultAlbums).flat().length} media items across {Object.keys(vaultAlbums).length} albums
+                  {albumsLoading
+                    ? 'Counting media…'
+                    : `${vaultItemCount} media items across ${albums.length} albums`}
                 </div>
               </div>
 
               {!selectedAlbum && (
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
                   <div
-                    onClick={() => { setSelectedAlbum('__all__'); setVaultVisibleLimit(200) }}
+                    onClick={() => setSelectedAlbum(ALL_ALBUMS)}
                     style={{
                       width: 140, padding: '16px 12px', borderRadius: 8,
                       border: '1px solid var(--border)', cursor: 'pointer',
@@ -728,14 +950,14 @@ export default function VaultPage() {
                     <div style={{ fontSize: 28 }}>📁</div>
                     <div style={{ fontSize: 12, fontWeight: 600, textAlign: 'center' }}>All</div>
                     <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
-                      {Object.values(vaultAlbums).flat().length} items
+                      {vaultItemCount} items
                     </div>
                   </div>
 
-                  {Object.entries(vaultAlbums).map(([albumTitle, items]: [string, any[]]) => (
+                  {albums.map(album => (
                     <div
-                      key={albumTitle}
-                      onClick={() => { setSelectedAlbum(albumTitle); setVaultVisibleLimit(200) }}
+                      key={album.title}
+                      onClick={() => setSelectedAlbum(album.title)}
                       style={{
                         width: 140, padding: '16px 12px', borderRadius: 8,
                         border: '1px solid var(--border)', cursor: 'pointer',
@@ -745,9 +967,9 @@ export default function VaultPage() {
                     >
                       <div style={{ fontSize: 28 }}>📂</div>
                       <div style={{ fontSize: 12, fontWeight: 600, textAlign: 'center', wordBreak: 'break-word' }}>
-                        {albumTitle}
+                        {album.title}
                       </div>
-                      <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{items.length} items</div>
+                      <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{album.count} items</div>
                     </div>
                   ))}
                 </div>
@@ -766,65 +988,44 @@ export default function VaultPage() {
                     ← Back
                   </button>
                   <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 16 }}>
-                    {selectedAlbum === '__all__' ? 'All Media' : selectedAlbum}
+                    {selectedAlbum === ALL_ALBUMS ? 'All Media' : selectedAlbum}
                   </div>
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-                    {selectedVaultItems.slice(0, vaultVisibleLimit).map((item: any) => (
+                    {albumRows.map(item => (
                       <div
                         key={item.id}
-                        onClick={() => {
-                          setPreviewItem(item)
-                          setPreviewEdits({
-                            content_category: item.content_category || '',
-                            ai_description: item.ai_description || '',
-                            price_min: String(item.price_min || ''),
-                            price_max: String(item.price_max || ''),
-                            scene_location: item.scene_location || '',
-                            scene_outfit: item.scene_outfit || '',
-                            scene_lighting: item.scene_lighting || '',
-                            scene_id: item.scene_id || '',
-                          })
-                        }}
+                        onClick={() => { void openPreview(item) }}
                         style={{ cursor: 'pointer', position: 'relative' }}
                       >
-                        {item.mimetype?.startsWith('video') ? (
-                          <div style={{
-                            width: 100, height: 100, borderRadius: 6,
-                            background: 'var(--bg-elevated)',
-                            border: '1px solid var(--border)',
-                            display: 'flex', alignItems: 'center', justifyContent: 'center',
-                            fontSize: 24,
-                          }}>🎥</div>
-                        ) : item.url ? (
-                          <img src={item.url} alt="" loading="lazy" style={{
-                            width: 100, height: 100, objectFit: 'cover',
-                            borderRadius: 6, border: '1px solid var(--border)',
-                          }} onError={(e) => {
-                            (e.target as HTMLImageElement).parentElement!.innerHTML =
-                              '<div style="width:100px;height:100px;background:var(--bg-elevated);border:1px solid var(--border);border-radius:6px"></div>'
-                          }} />
-                        ) : (
-                          <div style={{
-                            width: 100, height: 100, borderRadius: 6,
-                            background: 'var(--bg-elevated)',
-                            border: '1px solid var(--border)',
-                          }} />
-                        )}
+                        <VaultThumbnail item={item} />
                       </div>
                     ))}
                   </div>
-                  {selectedVaultItems.length > vaultVisibleLimit && (
+                  {albumRowsLoading && (
+                    <div style={{ marginTop: 16, fontSize: 12, color: 'var(--text-muted)' }}>
+                      Loading media…
+                    </div>
+                  )}
+                  {albumHasMore && !albumRowsLoading && (
                     <button
                       type="button"
-                      onClick={() => setVaultVisibleLimit(limit => limit + 200)}
+                      onClick={() => {
+                        if (!selectedCreatorId) return
+                        void loadAlbumPage(selectedCreatorId, selectedAlbum, { append: true })
+                      }}
                       style={{
                         marginTop: 16, padding: '7px 12px', borderRadius: 6,
                         border: '1px solid var(--border)', background: 'var(--bg-elevated)',
                         color: 'var(--text-secondary)', cursor: 'pointer',
                       }}
                     >
-                      Show 200 more ({selectedVaultItems.length - vaultVisibleLimit} remaining)
+                      Load {VAULT_PAGE_SIZE} more
                     </button>
+                  )}
+                  {!albumRowsLoading && albumRows.length === 0 && (
+                    <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+                      No media in this album.
+                    </div>
                   )}
                 </div>
               )}
@@ -848,10 +1049,13 @@ export default function VaultPage() {
                   >
                     {/* Media */}
                     <div style={{ flexShrink: 0, maxWidth: '60vw' }}>
-                      {previewItem.mimetype?.startsWith('video') ? (
-                        <video src={previewItem.url} controls style={{ maxHeight: '80vh', maxWidth: '60vw', borderRadius: 8, background: '#000' }} />
+                      {/* The ORIGINAL here: full resolution is what the
+                          operator opened this for, and it is the only place
+                          that justifies downloading it. */}
+                      {isVideo(previewItem) ? (
+                        <video src={previewImageSource(previewItem) ?? undefined} controls style={{ maxHeight: '80vh', maxWidth: '60vw', borderRadius: 8, background: '#000' }} />
                       ) : (
-                        <img src={previewItem.url} style={{ maxHeight: '80vh', maxWidth: '60vw', objectFit: 'contain', borderRadius: 8 }} />
+                        <img src={previewImageSource(previewItem) ?? undefined} style={{ maxHeight: '80vh', maxWidth: '60vw', objectFit: 'contain', borderRadius: 8 }} />
                       )}
                       <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', marginTop: 6, textAlign: 'center' }}>
                         {previewItem.filename}
@@ -865,7 +1069,9 @@ export default function VaultPage() {
                       borderRadius: 12, padding: 20, overflowY: 'auto', maxHeight: '80vh',
                     }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-                        <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>Media Details</div>
+                        <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>
+                          Media Details{previewLoading ? ' …' : ''}
+                        </div>
                         <button
                           onClick={() => { setPreviewItem(null); setPreviewEdits(null) }}
                           style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: 18, padding: 0 }}
@@ -1037,13 +1243,12 @@ export default function VaultPage() {
                                 scene_lighting: data.item.scene_lighting || prev.scene_lighting,
                                 scene_id: data.item.scene_id || prev.scene_id,
                               } : prev)
-                              setVaultAlbums(prev => {
-                                const next: Record<string, any[]> = {}
-                                Object.entries(prev).forEach(([album, items]) => {
-                                  next[album] = (items as any[]).map(m => m.id === previewItem.id ? { ...m, ...data.item } : m)
-                                })
-                                return next
-                              })
+                              setAlbumRows(current =>
+                                patchLoadedRow(current, {
+                                  ...data.item,
+                                  id: previewItem.id,
+                                }),
+                              )
                               if (selectedCreatorId) await loadCategorizationOverview(selectedCreatorId)
                               showToast(
                                 `Media re-analyzed. ${data.manual_reanalysis?.remaining ?? 0} AI re-analyses remaining today.`
@@ -1094,17 +1299,16 @@ export default function VaultPage() {
                             showToast('Could not save the media details.', 'error')
                             return
                           }
-                          // Update local state
-                          setVaultAlbums(prev => {
-                            const next: Record<string, any[]> = {}
-                            Object.entries(prev).forEach(([album, items]) => {
-                              next[album] = items.map(m => m.id === previewItem.id
-                                ? { ...m, ...previewEdits, price_min: prices.min, price_max: prices.max }
-                                : m
-                              )
-                            })
-                            return next
-                          })
+                          // Patch the one row on screen. The grid holds a page,
+                          // not the vault, so there is no map of albums to walk.
+                          setAlbumRows(current =>
+                            patchLoadedRow(current, {
+                              ...previewEdits,
+                              price_min: prices.min,
+                              price_max: prices.max,
+                              id: previewItem.id,
+                            } as any),
+                          )
                           setPreviewItem((prev: any) => ({
                             ...prev,
                             ...previewEdits,
@@ -1232,8 +1436,8 @@ export default function VaultPage() {
                 }}
               >
                 <option value="">No album</option>
-                {Object.keys(vaultAlbums).map(a => (
-                  <option key={a} value={a}>{a}</option>
+                {albums.map(album => (
+                  <option key={album.title} value={album.title}>{album.title}</option>
                 ))}
                 <option value="__new__">+ Create new album...</option>
               </select>
@@ -1313,12 +1517,16 @@ export default function VaultPage() {
                     )
                     const data = await res.json()
                     if (data.status === 'ok' && data.item) {
-                      const item = data.item
-                      const albumKey = item.album_title || 'Uncategorized'
-                      setVaultAlbums(prev => ({
-                        ...prev,
-                        [albumKey]: [...(prev[albumKey] || []), item],
-                      }))
+                      // Counts changed, so refresh them; refresh the open album
+                      // only if the new item belongs in it.
+                      if (selectedCreatorId) {
+                        void loadAlbums(selectedCreatorId)
+                        const open = selectedAlbumRef.current
+                        const albumKey = data.item.album_title || 'Uncategorized'
+                        if (open && (open === ALL_ALBUMS || open === albumKey)) {
+                          void loadAlbumPage(selectedCreatorId, open, { append: false })
+                        }
+                      }
                       setShowUploadModal(false)
                       setUploadFile(null)
                       setUploadPreview(null)
