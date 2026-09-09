@@ -9,6 +9,10 @@ import type { Fan, Message, ConversationSummary, FanList } from '../types'
 import { warmBackend } from '../lib/api'
 import { recoverRealtime, useRealtimeRecovery } from '../lib/realtime-recovery'
 import { capRetainedMessages, dedupeMessages } from '../lib/messages'
+import {
+  conversationsAreStale,
+  mergeConversationSummaries,
+} from '../lib/conversations'
 import { isFanslyList } from '../lib/fanLists'
 import Sidebar from '../components/Sidebar'
 import ConversationView from '../components/ConversationView'
@@ -30,9 +34,31 @@ type Tab = {
 }
 
 const ACTIVE_CHAT_SYNC_TIMEOUT_MS = 15_000
-const ACTIVE_CHAT_RECENT_WINDOW_MS = 10 * 60_000
-const ACTIVE_CHAT_RECENT_POLL_MS = 45_000
-const ACTIVE_CHAT_IDLE_POLL_MS = 3 * 60_000
+
+// API-002 - this used to be a 45-second heartbeat (3 minutes when idle), and
+// every tick made a real API Fansly list_chat_messages call through the
+// backend: ~80 provider calls an hour per open browser tab, ~2,000 an hour
+// across 25 operators, duplicating the webhook, the backend's own 5-30 minute
+// reconciliation, and Supabase realtime.
+//
+// Deleting the poll outright would have been wrong. It was compensating for
+// real gaps: a dropped realtime socket, a webhook that had not landed yet,
+// attachment enrichment that arrives after the message row. So it is kept as
+// RECOVERY rather than as a heartbeat, and it runs when there is a reason to
+// think we missed something:
+//
+//   * the conversation was just opened;
+//   * realtime reconnected after dropping (useRealtimeRecovery);
+//   * the tab became visible again after being hidden;
+//   * the backend told us a chat binding is still pending;
+//   * and a slow safety interval underneath all of that.
+//
+// Correctness is not traded away here: realtime plus the webhook plus the
+// backend reconciler all still deliver messages. This is the belt on top.
+const ACTIVE_CHAT_SAFETY_INTERVAL_MS = 15 * 60_000
+// However many reasons fire at once, one fan is reconciled at most this often.
+// Flicking between tabs must not turn into provider traffic.
+const ACTIVE_CHAT_MIN_INTERVAL_MS = 60_000
 const ACTIVE_CHAT_BINDING_RETRY_MS = 15 * 60_000
 
 async function syncActiveFanMessages(creatorId: string, fanId: string) {
@@ -123,7 +149,17 @@ export default function Page() {
 
   const activeTabIdRef = useRef(activeTabId)
   const tabsRef = useRef<Tab[]>([])
+  const fanListsRef = useRef<FanList[]>([])
+  const creatorsRef = useRef<{id: string, name: string}[]>([])
   const conversationsCache = useRef<Record<string, ConversationSummary[]>>({})
+  // When each creator's conversation list was last read, and a monotonically
+  // increasing id so a slow response for one creator cannot be applied to
+  // another's tab (FE-005).
+  const conversationsFetchedAt = useRef<Record<string, number>>({})
+  const conversationsRequestRef = useRef(0)
+  // When each open conversation last reconciled against API Fansly, so several
+  // reasons firing at once still cost at most one provider call (API-002).
+  const lastChatReconcileAt = useRef<Record<string, number>>({})
   const messagesCache = useRef<Record<string, Message[]>>({})
   const messagesPaginationCache = useRef<Record<string, { hasMoreMessages: boolean; oldestMessageTime: string | null }>>({})
   // FE-001 - fans whose history the operator has deliberately scrolled back
@@ -138,6 +174,14 @@ export default function Page() {
   useEffect(() => {
     tabsRef.current = tabs
   }, [tabs])
+
+  useEffect(() => {
+    fanListsRef.current = fanLists
+  }, [fanLists])
+
+  useEffect(() => {
+    creatorsRef.current = creators
+  }, [creators])
 
   useEffect(() => {
     activeTabIdRef.current = activeTabId
@@ -168,8 +212,8 @@ export default function Page() {
     setActiveTabId(newTab.id)
   }
 
-  const toggleAutoMode = async (tabId: string) => {
-    const tab = tabs.find(t => t.id === tabId)
+  const toggleAutoMode = useCallback(async (tabId: string) => {
+    const tab = tabsRef.current.find(t => t.id === tabId)
     if (!tab) return
     const next = !tab.autoMode
     const response = await apiFetch(`/creator/${tab.creatorId}/auto-mode`, {
@@ -183,7 +227,7 @@ export default function Page() {
       return
     }
     updateTab(tabId, { autoMode: Boolean(body.auto_mode) })
-  }
+  }, [updateTab])
 
   const toggleFanAutoMode = useCallback(async (tabId: string, fanId: string) => {
     const tab = tabsRef.current.find(t => t.id === tabId)
@@ -335,7 +379,7 @@ export default function Page() {
     return () => { alive = false }
   }, [])
 
-  async function loadFanLists(creatorId: string) {
+  const loadFanLists = useCallback(async (creatorId: string) => {
     const { data: lists } = await supabase
       .from('fan_lists')
       .select('*, fan_list_members(fan_id)')
@@ -344,7 +388,7 @@ export default function Page() {
       ...l,
       member_fan_ids: (l.fan_list_members ?? []).map((m: any) => m.fan_id),
     })))
-  }
+  }, [])
 
   useEffect(() => {
     const handler = async () => {
@@ -359,19 +403,20 @@ export default function Page() {
     return () => window.removeEventListener('creator-added', handler)
   }, [loadCreators, tabs])
 
-  async function createList(name: string, color: string, excludeFromAuto: boolean) {
-    if (!activeTab) return
+  const createList = useCallback(async (name: string, color: string, excludeFromAuto: boolean) => {
+    const tab = tabsRef.current.find(candidate => candidate.id === activeTabIdRef.current)
+    if (!tab) return
     const { data } = await supabase.from('fan_lists').insert({
-      creator_id: activeTab.creatorId,
+      creator_id: tab.creatorId,
       name,
       color,
       exclude_from_auto: excludeFromAuto,
     }).select().single()
     if (data) setFanLists(prev => [...prev, { ...data, member_fan_ids: [] }])
-  }
+  }, [])
 
-  async function updateList(listId: string, name: string, color: string, excludeFromAuto: boolean) {
-    const list = fanLists.find(l => l.id === listId)
+  const updateList = useCallback(async (listId: string, name: string, color: string, excludeFromAuto: boolean) => {
+    const list = fanListsRef.current.find(l => l.id === listId)
     // A Fansly mirror's name belongs to Fansly and the next sync would restore
     // it anyway. Color and the auto-mode exclusion are Cleopatra's own.
     const patch = isFanslyList(list ?? { id: listId, name })
@@ -379,49 +424,70 @@ export default function Page() {
       : { name, color, exclude_from_auto: excludeFromAuto }
     await supabase.from('fan_lists').update(patch).eq('id', listId)
     setFanLists(prev => prev.map(l => l.id === listId ? { ...l, ...patch } : l))
-  }
+  }, [])
 
-  async function deleteList(listId: string) {
-    const list = fanLists.find(l => l.id === listId)
+  const deleteList = useCallback(async (listId: string) => {
+    const list = fanListsRef.current.find(l => l.id === listId)
     // Cleopatra does not own a Fansly list. The UI hides Delete for mirrors;
     // this is the guard behind it.
     if (list && isFanslyList(list)) return
     await supabase.from('fan_lists').delete().eq('id', listId)
     setFanLists(prev => prev.filter(l => l.id !== listId))
-    if (activeListId === listId) setActiveListId(null)
-  }
+    setActiveListId(current => (current === listId ? null : current))
+  }, [])
 
-  async function addFanToList(fanId: string, listId: string) {
+  const addFanToList = useCallback(async (fanId: string, listId: string) => {
     await supabase.from('fan_list_members').upsert({ list_id: listId, fan_id: fanId })
     setFanLists(prev => prev.map(l =>
       l.id === listId && !l.member_fan_ids.includes(fanId)
         ? { ...l, member_fan_ids: [...l.member_fan_ids, fanId] }
         : l
     ))
-  }
+  }, [])
 
-  async function removeFanFromList(fanId: string, listId: string) {
+  const removeFanFromList = useCallback(async (fanId: string, listId: string) => {
     await supabase.from('fan_list_members').delete().eq('fan_id', fanId).eq('list_id', listId)
     setFanLists(prev => prev.map(l =>
       l.id === listId ? { ...l, member_fan_ids: l.member_fan_ids.filter(id => id !== fanId) } : l
     ))
-  }
+  }, [])
 
+  // FE-005 - a tab for a creator other than the active one receives no realtime
+  // events, because the channel is filtered to one creator_id. So switching
+  // back has to catch that tab up: the cached list is shown immediately, and a
+  // fresh read replaces it when it lands.
+  //
+  // The load is guarded by a request id. Switching creators quickly used to be
+  // able to apply creator A's response to creator B's tab.
   useEffect(() => {
     if (!activeTab) return
-    if (activeTab.conversations.length > 0) return
-    const cached = conversationsCache.current[activeTab.creatorId]
-    if (cached && cached.length > 0) {
-      updateTab(activeTab.id, { conversations: cached })
+    const creatorId = activeTab.creatorId
+    const tabId = activeTab.id
+
+    const cached = conversationsCache.current[creatorId]
+    const hasSomethingToShow = activeTab.conversations.length > 0 || (cached?.length ?? 0) > 0
+    if (cached && cached.length > 0 && activeTab.conversations.length === 0) {
+      updateTab(tabId, { conversations: cached })
+    }
+
+    if (
+      hasSomethingToShow
+      && !conversationsAreStale(conversationsFetchedAt.current[creatorId])
+    ) {
       return
     }
+
+    const request = ++conversationsRequestRef.current
+    let cancelled = false
 
     async function load() {
       const { data } = await supabase
         .from('fan_conversation_summaries')
         .select('*')
-        .eq('creator_id', activeTab!.creatorId)
+        .eq('creator_id', creatorId)
         .order('last_message_time', { ascending: false, nullsFirst: false })
+
+      if (cancelled || request !== conversationsRequestRef.current) return
 
       const summaries: ConversationSummary[] = (data ?? []).map((row: any) => ({
         fan: rowToFan(row),
@@ -431,17 +497,29 @@ export default function Page() {
         unread_count: 0,
       }))
 
-      conversationsCache.current[activeTab!.creatorId] = summaries
-      updateTab(activeTab!.id, { conversations: summaries })
+      const tab = tabsRef.current.find(candidate => candidate.id === tabId)
+      const merged = mergeConversationSummaries(
+        tab?.conversations.length ? tab.conversations : (cached ?? []),
+        summaries,
+        tab?.activeFan?.id ?? null,
+      )
+
+      conversationsCache.current[creatorId] = merged
+      conversationsFetchedAt.current[creatorId] = Date.now()
+      updateTab(tabId, { conversations: merged })
     }
-    load()
-  }, [activeTabId, activeTab?.conversations.length])
+    void load()
+    return () => { cancelled = true }
+  }, [activeTabId, activeTab?.conversations.length, activeTab?.creatorId, updateTab])
 
   useEffect(() => {
     const handler = (e: Event) => {
       const ce = e as CustomEvent<{ creatorId?: string }>
       const creatorId = ce.detail?.creatorId ?? activeTab?.creatorId
-      if (creatorId) delete conversationsCache.current[creatorId]
+      if (creatorId) {
+        delete conversationsCache.current[creatorId]
+        delete conversationsFetchedAt.current[creatorId]
+      }
       setTabs(prev => prev.map(tab => {
         if (tab.creatorId !== creatorId) return tab
         return { ...tab, conversations: [] }
@@ -533,6 +611,70 @@ export default function Page() {
   // Stable handlers for the memoized chat panels. They read live state from refs
   // instead of closing over activeTab/tabs, so their identity never changes and
   // ConversationView / FanPanel can skip re-rendering on unrelated realtime events.
+  //
+  // FE-004 - the Sidebar's handlers now follow the same pattern. It was passed
+  // five inline arrows, so wrapping it in React.memo would have achieved
+  // nothing: a new function identity on every render defeats the comparison.
+  const handleSelectFan = useCallback((fan: Fan) => {
+    const tab = tabsRef.current.find(candidate => candidate.id === activeTabIdRef.current)
+    if (!tab) return
+    updateTab(tab.id, {
+      activeFan: fan,
+      conversations: tab.conversations.map(c =>
+        c.fan.id === fan.id ? { ...c, unread: false, unread_count: 0 } : c
+      ),
+    })
+  }, [updateTab])
+
+  const handleCreatorChange = useCallback((id: string) => {
+    const tab = tabsRef.current.find(candidate => candidate.id === activeTabIdRef.current)
+    const creator = creatorsRef.current.find(c => c.id === id)
+    if (!creator || !tab) return
+    updateTab(tab.id, {
+      creatorId: id,
+      creatorName: creator.name,
+      activeFan: null,
+      messages: [],
+      conversations: [],
+      hasMoreMessages: false,
+      oldestMessageTime: null,
+    })
+    void loadFanLists(id)
+  }, [loadFanLists, updateTab])
+
+  const handleToggleAutoMode = useCallback(() => {
+    const tab = tabsRef.current.find(candidate => candidate.id === activeTabIdRef.current)
+    if (tab) void toggleAutoMode(tab.id)
+  }, [toggleAutoMode])
+
+  const handleSyncChats = useCallback(async () => {
+    const tab = tabsRef.current.find(candidate => candidate.id === activeTabIdRef.current)
+    if (!tab) return
+    setSyncingChats(true)
+    try {
+      const res = await apiFetch(
+        `/sync-chats/${tab.creatorId}?incremental=true&force=true`,
+        { method: 'POST' },
+      )
+      await res.json()
+      delete conversationsCache.current[tab.creatorId]
+      delete conversationsFetchedAt.current[tab.creatorId]
+      updateTab(tab.id, { conversations: [] })
+    } finally {
+      setSyncingChats(false)
+    }
+  }, [updateTab])
+
+  const handleMarkAllRead = useCallback(async () => {
+    const tab = tabsRef.current.find(candidate => candidate.id === activeTabIdRef.current)
+    if (!tab) return
+    await apiFetch(`/mark-all-read/${tab.creatorId}`, { method: 'POST' })
+    updateTab(tab.id, {
+      conversations: tab.conversations.map(c => ({ ...c, unread: false, unread_count: 0 })),
+      unreadCounts: {},
+    })
+  }, [updateTab])
+
   const handleReplySent = useCallback((content: string, messageId: string) => {
     const tab = tabsRef.current.find(t => t.id === activeTabIdRef.current)
     if (!tab?.activeFan) return
@@ -611,29 +753,31 @@ export default function Page() {
     let inFlight = false
     let timer: number | undefined
 
-    const normalDelay = () => {
-      const tab = tabsRef.current.find(candidate => candidate.id === activeTabIdRef.current)
-      const latest = tab?.messages[tab.messages.length - 1]?.sent_at
-      const latestMs = latest ? Date.parse(latest) : Number.NaN
-      return Number.isFinite(latestMs) && Date.now() - latestMs <= ACTIVE_CHAT_RECENT_WINDOW_MS
-        ? ACTIVE_CHAT_RECENT_POLL_MS
-        : ACTIVE_CHAT_IDLE_POLL_MS
-    }
-
-    const scheduleNext = (delay: number) => {
+    const scheduleSafetyCheck = (delay: number = ACTIVE_CHAT_SAFETY_INTERVAL_MS) => {
       if (cancelled) return
       if (timer !== undefined) window.clearTimeout(timer)
-      timer = window.setTimeout(() => void reconcile(), delay)
+      timer = window.setTimeout(() => void reconcile('safety-interval'), delay)
     }
 
-    const reconcile = async () => {
+    const reconcile = async (reason: string) => {
       if (cancelled || inFlight) return
       if (document.visibilityState !== 'visible') {
-        scheduleNext(ACTIVE_CHAT_IDLE_POLL_MS)
+        // A hidden tab has no operator watching it and the backend reconciler
+        // covers the account anyway, so it makes no provider calls at all.
+        scheduleSafetyCheck()
         return
       }
+
+      const key = `${creatorId}:${fanId}`
+      const since = Date.now() - (lastChatReconcileAt.current[key] ?? 0)
+      if (since < ACTIVE_CHAT_MIN_INTERVAL_MS) {
+        scheduleSafetyCheck(ACTIVE_CHAT_MIN_INTERVAL_MS - since)
+        return
+      }
+
       inFlight = true
-      let nextDelay = normalDelay()
+      lastChatReconcileAt.current[key] = Date.now()
+      let nextDelay = ACTIVE_CHAT_SAFETY_INTERVAL_MS
       try {
         const body = await syncActiveFanMessages(creatorId, fanId)
         const retrySeconds = Number(body.retry_after_seconds ?? 0)
@@ -641,28 +785,30 @@ export default function Page() {
           (body.status === 'binding_pending' || body.status === 'binding_unavailable')
           && retrySeconds > 0
         ) {
-          nextDelay = Math.max(nextDelay, retrySeconds * 1000)
+          // A known inconsistency: the chat is not bound yet, so come back for
+          // it rather than waiting out the full safety interval.
+          nextDelay = Math.min(nextDelay, Math.max(retrySeconds * 1000, ACTIVE_CHAT_MIN_INTERVAL_MS))
         }
         const changed = Number(body.imported ?? 0) + Number(body.media_updated ?? 0)
         if (changed > 0 && !cancelled) {
           await handleHistoryLoaded()
         }
       } catch {
-        // Realtime and the ten-minute backend reconciler remain as fallbacks;
-        // do not hammer a failing upstream chat endpoint.
-        nextDelay = Math.max(nextDelay, ACTIVE_CHAT_IDLE_POLL_MS)
+        // Realtime, the webhook and the backend reconciler all remain; do not
+        // hammer a failing upstream chat endpoint.
+        nextDelay = ACTIVE_CHAT_SAFETY_INTERVAL_MS
       } finally {
         inFlight = false
-        scheduleNext(nextDelay)
+        scheduleSafetyCheck(nextDelay)
       }
     }
 
-    void reconcile()
+    // Opening a conversation is the one moment an operator most wants to know
+    // nothing is missing.
+    void reconcile('conversation-opened')
+
     const onVisibilityChange = () => {
-      if (document.visibilityState === 'visible') {
-        if (timer !== undefined) window.clearTimeout(timer)
-        void reconcile()
-      }
+      if (document.visibilityState === 'visible') void reconcile('tab-visible')
     }
     document.addEventListener('visibilitychange', onVisibilityChange)
     return () => {
@@ -828,6 +974,11 @@ export default function Page() {
   // messages-realtime channel going forward.
   useEffect(() => {
     if (recoveryTick === 0) return
+    // Nothing that arrived while the socket was down reached ANY open tab, so
+    // every creator's cached conversation list is suspect, not just this one's
+    // (FE-005). Clearing the freshness stamps makes the next switch catch up.
+    conversationsFetchedAt.current = {}
+
     const tab = tabsRef.current.find(t => t.id === activeTabIdRef.current)
     const fanId = tab?.activeFan?.id
     if (!tab || !fanId) return
@@ -835,6 +986,28 @@ export default function Page() {
     const newestLoaded = tab.messages[tab.messages.length - 1]?.sent_at ?? null
 
     let cancelled = false
+
+    // API-002 - a reconnect is the clearest signal that something may have been
+    // missed, so this is where an API Fansly reconciliation genuinely belongs.
+    // The socket only delivers from the resubscribe point onward, so anything
+    // that landed while it was dead is invisible to Supabase too; asking the
+    // platform is the only way to be sure. Rate limiting inside the reconciler
+    // keeps a flapping connection from turning into provider traffic.
+    void (async () => {
+      const key = `${creatorId}:${fanId}`
+      const since = Date.now() - (lastChatReconcileAt.current[key] ?? 0)
+      if (since < ACTIVE_CHAT_MIN_INTERVAL_MS) return
+      lastChatReconcileAt.current[key] = Date.now()
+      try {
+        const body = await syncActiveFanMessages(creatorId, fanId)
+        const changed = Number(body.imported ?? 0) + Number(body.media_updated ?? 0)
+        if (changed > 0 && !cancelled) await handleHistoryLoaded()
+      } catch {
+        // The catch-up read below still runs; realtime is resubscribed either
+        // way.
+      }
+    })()
+
     ;(async () => {
       let query = supabase
         .from('messages')
@@ -859,7 +1032,7 @@ export default function Page() {
       }))
     })()
     return () => { cancelled = true }
-  }, [recoveryTick])
+  }, [handleHistoryLoaded, recoveryTick])
 
   if (authLoading) return (
     <div style={{ height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--bg-base)', color: 'var(--text-muted)', fontFamily: 'var(--font-body)' }}>
@@ -1089,31 +1262,10 @@ export default function Page() {
             conversations={activeTab?.conversations ?? []}
             conversationsLoading={conversationsLoading}
             activeFanId={activeTab?.activeFan?.id ?? null}
-            onSelectFan={(fan) => {
-              if (!activeTab) return
-              updateTab(activeTab.id, {
-                activeFan: fan,
-                conversations: activeTab.conversations.map(c =>
-                  c.fan.id === fan.id ? { ...c, unread: false, unread_count: 0 } : c
-                )
-              })
-            }}
+            onSelectFan={handleSelectFan}
             creators={creators}
             activeCreatorId={activeTab?.creatorId ?? ''}
-            onCreatorChange={(id) => {
-              const creator = creators.find(c => c.id === id)
-              if (!creator || !activeTab) return
-              updateTab(activeTab.id, {
-                creatorId: id,
-                creatorName: creator.name,
-                activeFan: null,
-                messages: [],
-                conversations: [],
-                hasMoreMessages: false,
-                oldestMessageTime: null,
-              })
-              loadFanLists(id)
-            }}
+            onCreatorChange={handleCreatorChange}
             fanLists={fanLists}
             activeListId={activeListId}
             onSelectList={setActiveListId}
@@ -1123,28 +1275,10 @@ export default function Page() {
             onAddFanToList={addFanToList}
             onRemoveFanFromList={removeFanFromList}
             globalAutoMode={activeTab?.autoMode ?? false}
-            onToggleAutoMode={() => activeTab && toggleAutoMode(activeTab.id)}
+            onToggleAutoMode={handleToggleAutoMode}
             syncingChats={syncingChats}
-            onSyncChats={async () => {
-              if (!activeTab) return
-              setSyncingChats(true)
-              try {
-                const res = await apiFetch(`/sync-chats/${activeTab.creatorId}?incremental=true&force=true`, { method: 'POST' })
-                await res.json()
-                delete conversationsCache.current[activeTab.creatorId]
-                updateTab(activeTab.id, { conversations: [] })
-              } finally {
-                setSyncingChats(false)
-              }
-            }}
-            onMarkAllRead={async () => {
-              if (!activeTab) return
-              await apiFetch(`/mark-all-read/${activeTab.creatorId}`, { method: 'POST' })
-              updateTab(activeTab.id, {
-                conversations: activeTab.conversations.map(c => ({ ...c, unread: false, unread_count: 0 })),
-                unreadCounts: {},
-              })
-            }}
+            onSyncChats={handleSyncChats}
+            onMarkAllRead={handleMarkAllRead}
           />
         </div>
         <div style={{ height: '100%', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
