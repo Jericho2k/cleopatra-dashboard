@@ -1055,7 +1055,7 @@ export default function VaultPage() {
                       {isVideo(previewItem) ? (
                         <video src={previewImageSource(previewItem) ?? undefined} controls style={{ maxHeight: '80vh', maxWidth: '60vw', borderRadius: 8, background: '#000' }} />
                       ) : (
-                        <img src={previewImageSource(previewItem) ?? undefined} style={{ maxHeight: '80vh', maxWidth: '60vw', objectFit: 'contain', borderRadius: 8 }} />
+                        <img src={previewImageSource(previewItem) ?? undefined} alt="Vault media preview" style={{ maxHeight: '80vh', maxWidth: '60vw', objectFit: 'contain', borderRadius: 8 }} />
                       )}
                       <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', marginTop: 6, textAlign: 'center' }}>
                         {previewItem.filename}
@@ -1408,7 +1408,7 @@ export default function VaultPage() {
                 {uploadFile.type.startsWith('video') ? (
                   <video src={uploadPreview!} controls style={{ width: '100%', maxHeight: 240, borderRadius: 8, background: '#000' }} />
                 ) : (
-                  <img src={uploadPreview!} style={{ width: '100%', maxHeight: 240, objectFit: 'contain', borderRadius: 8, background: 'var(--bg-elevated)' }} />
+                  <img src={uploadPreview!} alt="Upload preview" style={{ width: '100%', maxHeight: 240, objectFit: 'contain', borderRadius: 8, background: 'var(--bg-elevated)' }} />
                 )}
                 <button
                   type="button"

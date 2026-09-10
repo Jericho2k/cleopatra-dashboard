@@ -21,6 +21,15 @@ jobs:
           node-version: "22"
           cache: npm
       - run: npm ci
+      # eslint exits non-zero on ERRORS only. The fatal set is deliberately
+      # narrow (see eslint.config.mjs): unused bindings, unused expressions,
+      # rules-of-hooks and alt-text — the correctness-class rules that have
+      # actually produced bugs here. The remaining ~90 warnings are
+      # no-explicit-any and next/no-img-element, which are real debt but not
+      # correctness, so --max-warnings 0 would fail every unrelated change
+      # instead of catching anything.
       - run: npm run lint
+      # TypeScript is clean and is a correctness gate, so it is enforced.
+      - run: npm run typecheck
       - run: npm test
       - run: npm run build

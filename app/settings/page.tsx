@@ -133,9 +133,7 @@ export default function SettingsPage() {
   })
   const [personaSaving, setPersonaSaving] = useState(false)
   const [personaSaved, setPersonaSaved] = useState(false)
-  const [syncing, setSyncing] = useState(false)
   const [autoAvailable, setAutoAvailable] = useState<boolean | null>(null)
-  const [approvedSetsCount, setApprovedSetsCount] = useState<number>(0)
   const [showAddCreator, setShowAddCreator] = useState(false)
   const [reconnectCreatorId, setReconnectCreatorId] = useState<string | null>(null)
   const [connectStep, setConnectStep] = useState<'credentials' | '2fa' | 'done'>('credentials')
@@ -470,9 +468,9 @@ export default function SettingsPage() {
         .eq('creator_id', selectedCreatorId)
         .eq('status', 'approved')
       if (cancelled) return
-      const n = count ?? 0
-      setApprovedSetsCount(n)
-      setAutoAvailable(n > 0)
+      // Only ever used to decide whether Auto can be offered; the count
+      // itself was never rendered.
+      setAutoAvailable((count ?? 0) > 0)
     })()
     return () => { cancelled = true }
   }, [selectedCreatorId])

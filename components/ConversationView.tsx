@@ -172,8 +172,6 @@ function ConversationView({
   const prevLastMessageIdRef = useRef<string | undefined>(undefined)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
-  const lastMessage = messages[messages.length - 1]
-
   useEffect(() => {
     if (!fan) return
     setSuggestions(['', '', ''])
@@ -882,6 +880,7 @@ function ConversationView({
                   >
                     <img
                       src={att.thumbnail_url}
+                      alt="Message attachment"
                       style={{
                         width: '100%',
                         display: 'block',
@@ -1474,6 +1473,7 @@ function ConversationView({
           ) : (
             <img
               src={mediaPreview.url}
+              alt="Media preview"
               style={{ maxHeight: '80vh', maxWidth: '80vw', objectFit: 'contain', borderRadius: 8 }}
             />
           )}
