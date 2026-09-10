@@ -11,6 +11,22 @@ const eslintConfig = defineConfig([
     rules: {
       "@typescript-eslint/no-explicit-any": "warn",
       "react-hooks/set-state-in-effect": "warn",
+      // A leading underscore is this codebase's existing way of saying "this
+      // parameter is part of the signature and deliberately unread" — the
+      // reconcile(reason) call sites document WHY a refresh fired even though
+      // the body does not branch on it. Everything without the underscore is
+      // an error, because an unused binding is usually a half-finished edit.
+      "@typescript-eslint/no-unused-vars": ["error", {
+        argsIgnorePattern: "^_",
+        varsIgnorePattern: "^_",
+        caughtErrorsIgnorePattern: "^_",
+      }],
+      // Correctness-class rules, fatal rather than advisory. These are the
+      // ones that have actually produced bugs here: FE-007 was an effect
+      // depending on state it mutated, and app/scripts had the same shape.
+      "react-hooks/rules-of-hooks": "error",
+      "@typescript-eslint/no-unused-expressions": "error",
+      "jsx-a11y/alt-text": "error",
     },
   },
   // Override default ignores of eslint-config-next.

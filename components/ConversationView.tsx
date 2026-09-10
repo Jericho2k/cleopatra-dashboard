@@ -5,6 +5,13 @@ import type { Fan, Message } from '../types'
 import { sendReply, getLatestSuggestions, generateSuggestions, apiFetch } from '../lib/api'
 import { supabase } from '../lib/supabase'
 import { useRealtimeRecovery } from '../lib/realtime-recovery'
+import {
+  collectPpvMediaIds,
+  markPpvMediaUnresolved,
+  mergePpvMediaResponse,
+  pendingPpvMediaIds,
+  type PpvMediaMap,
+} from '../lib/ppvMedia'
 import { ChevronDown } from 'lucide-react'
 
 type OperatorPPVMedia = {
@@ -147,19 +154,23 @@ function ConversationView({
   const [ppvSending, setPpvSending] = useState(false)
   const [ppvError, setPpvError] = useState('')
   // media_id -> { url, thumbnail_url, mimetype } resolved from vault
-  const [ppvMediaMap, setPpvMediaMap] = useState<Record<string, {
-    url: string | null
-    thumbnail_url: string | null
-    mimetype: string | null
-  }>>({})
+  const [ppvMediaMap, setPpvMediaMap] = useState<PpvMediaMap>({})
+  // FE-007 — which media ids have already been asked for.
+  //
+  // This, not ppvMediaMap, is the authority on "have we requested this". The
+  // effect below used to derive its work from ppvMediaMap AND write to
+  // ppvMediaMap, so it depended on state it mutated: if the server's response
+  // omitted an id (or returned keys that did not match the ones requested),
+  // that id stayed unresolved, the effect re-ran, and it requested it again
+  // forever. A ref cannot re-trigger a render, so a request can be recorded
+  // without feeding the loop.
+  const requestedPpvMediaRef = useRef<Set<string>>(new Set())
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const scrollContainerRef = useRef<HTMLDivElement>(null)
   const isLoadingMore = useRef(false)
   const prevMessagesLenRef = useRef(0)
   const prevLastMessageIdRef = useRef<string | undefined>(undefined)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
-
-  const lastMessage = messages[messages.length - 1]
 
   useEffect(() => {
     if (!fan) return
@@ -227,6 +238,7 @@ function ConversationView({
     setPpvPrice('')
     setPpvError('')
     setPpvMediaMap({})
+    requestedPpvMediaRef.current = new Set()
     setReplyError('')
     setAutoModeError('')
   }, [fan?.id])
@@ -311,24 +323,25 @@ function ConversationView({
       })
   }, [creatorId])
 
+  // A realtime reconnect means we may have been away long enough for signed
+  // vault URLs to expire, so everything becomes requestable again. Runs before
+  // the fetch effect below, which lists recoveryTick in its own dependencies.
+  useEffect(() => {
+    requestedPpvMediaRef.current = new Set()
+  }, [recoveryTick])
+
   useEffect(() => {
     if (!creatorId || messages.length === 0) return
 
-    // Collect media_ids that haven't been resolved yet
-    const unresolved = messages
-      .flatMap(m => {
-        const ppv = m.media_context?.ppv
-        if (!ppv) return []
-        const ids = (ppv as any).media_ids?.length
-          ? ((ppv as any).media_ids as string[])
-          : (ppv.media_id ? [ppv.media_id as string] : [])
-        return ids
-      })
-      .filter(id => !(id in ppvMediaMap))
+    // Derived only from messages — the real trigger — and from the set of ids
+    // already asked about. Never from the map this effect writes.
+    const requested = requestedPpvMediaRef.current
+    const uniqueIds = pendingPpvMediaIds(collectPpvMediaIds(messages), requested)
+    if (uniqueIds.length === 0) return
 
-    if (unresolved.length === 0) return
-
-    const uniqueIds = [...new Set(unresolved)]
+    // Marked BEFORE the request, so a re-render while it is in flight does not
+    // start a second one for the same ids.
+    uniqueIds.forEach(id => requested.add(id))
 
     let cancelled = false
     apiFetch(`/vault-media-urls/${creatorId}`, {
@@ -341,20 +354,23 @@ function ConversationView({
         return response.json()
       })
       .then(body => {
-        if (!cancelled) {
-          setPpvMediaMap(prev => ({ ...prev, ...(body.media ?? {}) }))
-        }
+        if (cancelled) return
+        // mergePpvMediaResponse backfills every requested id the server did not
+        // answer for, so an omission is recorded rather than looking like work
+        // still outstanding.
+        setPpvMediaMap(prev => mergePpvMediaResponse(prev, uniqueIds, body.media))
       })
       .catch(() => {
         if (cancelled) return
-        const missing = Object.fromEntries(uniqueIds.map(mediaId => [
-          mediaId,
-          { url: null, thumbnail_url: null, mimetype: null },
-        ]))
-        setPpvMediaMap(prev => ({ ...prev, ...missing }))
+        setPpvMediaMap(prev => markPpvMediaUnresolved(prev, uniqueIds))
       })
-    return () => { cancelled = true }
-  }, [messages, creatorId, ppvMediaMap])
+    return () => {
+      cancelled = true
+      // The answer never arrived, so this request did not happen. Un-mark the
+      // ids or a creator switch mid-flight would leave them unrequestable.
+      uniqueIds.forEach(id => requested.delete(id))
+    }
+  }, [messages, creatorId, recoveryTick])
 
   const getBlockedMatches = (text: string): string[] => {
     const lower = text.toLowerCase()
@@ -864,6 +880,7 @@ function ConversationView({
                   >
                     <img
                       src={att.thumbnail_url}
+                      alt="Message attachment"
                       style={{
                         width: '100%',
                         display: 'block',
@@ -1456,6 +1473,7 @@ function ConversationView({
           ) : (
             <img
               src={mediaPreview.url}
+              alt="Media preview"
               style={{ maxHeight: '80vh', maxWidth: '80vw', objectFit: 'contain', borderRadius: 8 }}
             />
           )}

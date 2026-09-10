@@ -872,7 +872,7 @@ function Sidebar({
                             key={list.id}
                             type="button"
                             onClick={() => {
-                              isMember ? onRemoveFanFromList(c.fan.id, list.id) : onAddFanToList(c.fan.id, list.id)
+                              if (isMember) { onRemoveFanFromList(c.fan.id, list.id) } else { onAddFanToList(c.fan.id, list.id) }
                               setListDropdownFanId(null)
                             }}
                             style={{

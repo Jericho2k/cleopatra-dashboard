@@ -78,13 +78,36 @@ export default function SetsPage() {
     if (creatorId) void loadSets(creatorId)
   }, [creatorId])
 
+  // Same shape as FE-007 in ConversationView: this effect used to derive its
+  // work by reading `thumbs` and then write `thumbs`. It could not loop, only
+  // because `thumbs` was left out of the dependency array — which is a stale
+  // closure rather than a design. A ref of already-requested ids is the actual
+  // authority on "have we asked", so the effect no longer reads the state it
+  // writes, and an id the query does not return is recorded rather than being
+  // re-requested every time `sets` changes.
+  const requestedThumbsRef = useRef<Set<string>>(new Set())
+
+  useEffect(() => {
+    requestedThumbsRef.current = new Set()
+  }, [creatorId])
+
   useEffect(() => {
     if (!creatorId) return
-    const ids = [...new Set(sets.flatMap(s => s.media_ids))].filter(id => !(id in thumbs))
+    const requested = requestedThumbsRef.current
+    const ids = [...new Set(sets.flatMap(s => s.media_ids))].filter(
+      id => id && !requested.has(id),
+    )
     if (!ids.length) return
+    ids.forEach(id => requested.add(id))
+
     let cancelled = false
     ;(async () => {
-      const updates: Record<string, Thumb> = {}
+      // Every requested id gets an entry. Anything the query did not return is
+      // genuinely unresolvable, and recording that is what stops it being asked
+      // for again on the next render.
+      const updates: Record<string, Thumb> = Object.fromEntries(
+        ids.map(id => [id, { thumbnail_url: null, url: null, mimetype: null }]),
+      )
       for (let i = 0; i < ids.length; i += 200) {
         const chunk = ids.slice(i, i + 200)
         const { data } = await supabase
@@ -98,7 +121,11 @@ export default function SetsPage() {
       }
       if (!cancelled) setThumbs(prev => ({ ...prev, ...updates }))
     })()
-    return () => { cancelled = true }
+    return () => {
+      cancelled = true
+      // The answer never arrived, so the request did not happen.
+      ids.forEach(id => requested.delete(id))
+    }
   }, [sets, creatorId])
 
   async function generate() {
@@ -425,7 +452,7 @@ export default function SetsPage() {
                   const sel = selected.has(v.fansly_media_id)
                   const isVid = v.mimetype?.startsWith('video')
                   return (
-                    <div key={v.fansly_media_id} onClick={() => setSelected(prev => { const n = new Set(prev); n.has(v.fansly_media_id) ? n.delete(v.fansly_media_id) : n.add(v.fansly_media_id); return n })}
+                    <div key={v.fansly_media_id} onClick={() => setSelected(prev => { const n = new Set(prev); if (n.has(v.fansly_media_id)) { n.delete(v.fansly_media_id) } else { n.add(v.fansly_media_id) }; return n })}
                       style={{ position: 'relative', height: 128, borderRadius: 6, overflow: 'hidden', cursor: 'pointer', border: sel ? '2px solid var(--green)' : '1px solid var(--border)' }}>
                       {v.thumbnail_url ? <img src={v.thumbnail_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                         : <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--bg-base)', color: 'var(--text-faint)' }}>{isVid ? '🎬' : '?'}</div>}

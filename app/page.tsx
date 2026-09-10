@@ -759,7 +759,7 @@ export default function Page() {
       timer = window.setTimeout(() => void reconcile('safety-interval'), delay)
     }
 
-    const reconcile = async (reason: string) => {
+    const reconcile = async (_reason: string) => {
       if (cancelled || inFlight) return
       if (document.visibilityState !== 'visible') {
         // A hidden tab has no operator watching it and the backend reconciler
@@ -1064,7 +1064,7 @@ export default function Page() {
         gap: 2,
         position: 'relative',
       }}>
-        {tabs.map((tab, index) => {
+        {tabs.map((tab) => {
           const totalUnread = Object.values(tab.unreadCounts).reduce((a, b) => a + b, 0)
           return (
             <div
