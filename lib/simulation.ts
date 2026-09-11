@@ -41,6 +41,21 @@ export type SimulatedCreatorMessage = {
   media_context?: Record<string, unknown> | null
 }
 
+/**
+ * What one Full Auto turn actually did, as reported by the backend.
+ *
+ * An empty transcript is not one event but three, and the simulator used to
+ * present all of them as "Full Auto decided to send nothing this turn". That
+ * sentence was displayed during a total writer outage — every configured model
+ * failed and nothing was sent — which is the opposite of a decision. The backend
+ * now reports which of the three happened; the UI must not go back to guessing.
+ */
+export type SimulationOutcome =
+  | 'replied'
+  | 'no_send'
+  | 'analyzer_degraded'
+  | 'writer_failed'
+
 export type SimulatedTurn = {
   status: string
   simulation: boolean
@@ -48,6 +63,41 @@ export type SimulatedTurn = {
   fan_message_id: string
   creator_messages: SimulatedCreatorMessage[]
   analysis_degraded?: boolean
+  outcome?: SimulationOutcome
+}
+
+/**
+ * The outcome of a turn, tolerating a backend that has not deployed yet.
+ *
+ * An older backend sends no `outcome`. Falling back to `analysis_degraded` and
+ * then to `no_send` reproduces exactly the old behaviour rather than inventing a
+ * failure the server never reported.
+ */
+export function turnOutcome(turn: SimulatedTurn): SimulationOutcome {
+  if (turn.outcome) return turn.outcome
+  if (turn.creator_messages.length > 0) return 'replied'
+  return turn.analysis_degraded ? 'analyzer_degraded' : 'no_send'
+}
+
+/**
+ * What to tell the operator when a turn produced no creator message.
+ *
+ * Returns an empty string when the turn replied, because there is nothing to
+ * report. A writer failure is stated as a failure: it means the deployment is
+ * broken and needs looking at, not that Full Auto exercised judgement.
+ */
+export function turnOutcomeMessage(turn: SimulatedTurn): string {
+  switch (turnOutcome(turn)) {
+    case 'replied':
+      return ''
+    case 'writer_failed':
+      return 'Writer generation failed — no message was sent. Every configured writer model failed or returned unusable output; check the backend logs.'
+    case 'analyzer_degraded':
+      return 'Full Auto sent nothing: the situation analyzer was degraded and failed closed.'
+    case 'no_send':
+    default:
+      return 'Full Auto decided to send nothing this turn.'
+  }
 }
 
 export type NavEntry = {
