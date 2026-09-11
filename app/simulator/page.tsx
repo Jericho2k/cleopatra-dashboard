@@ -23,6 +23,7 @@ import {
   fetchSimulationCreators,
   sendSimulatedFanMessage,
   simulatePpvOutcome,
+  turnOutcomeMessage,
   type SimulationCapabilities,
   type SimulationCreator,
 } from '../../lib/simulation'
@@ -129,11 +130,9 @@ export default function SimulatorPage() {
       })
       setTranscript(current => [...current, ...replies])
       if (replies.length === 0) {
-        setError(
-          turn.analysis_degraded
-            ? 'Full Auto sent nothing: the situation analyzer was degraded and failed closed.'
-            : 'Full Auto decided to send nothing this turn.',
-        )
+        // Reported by the real Auto path, not inferred from an empty
+        // transcript: a writer failure must never read as a decision.
+        setError(turnOutcomeMessage(turn))
       }
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : String(caught))
