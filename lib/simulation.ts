@@ -1,0 +1,177 @@
+/**
+ * Owner-only Full Auto simulator: capability, navigation gating, and transcript.
+ *
+ * The backend is the security boundary. Everything here decides what to RENDER,
+ * and renders nothing by default: an ordinary agency account must see no trace
+ * that the simulator exists — no sidebar entry, no controls, no "access denied"
+ * screen that advertises a feature it cannot use.
+ *
+ * The capability therefore starts as `null` ("not answered yet") rather than
+ * `false`, and the navigation only grows the extra entry once the backend has
+ * positively said `auto_simulation: true`. A failed request, an offline backend,
+ * a 404 and a plain `false` all collapse to the same thing: the feature does not
+ * exist for this account.
+ *
+ * No allowlist, user id, or environment variable ever reaches the client. The
+ * only thing the client learns is one boolean about itself.
+ */
+
+import { apiFetch } from './api'
+
+export type SimulationCapabilities = {
+  auto_simulation: boolean
+}
+
+export type SimulationTestFan = {
+  id: string
+  display_name: string
+}
+
+export type SimulationCreator = {
+  id: string
+  name: string
+  test_fans: SimulationTestFan[]
+}
+
+export type SimulatedCreatorMessage = {
+  id: string
+  role: 'creator'
+  content: string
+  sent_at: string | null
+  media_context?: Record<string, unknown> | null
+}
+
+export type SimulatedTurn = {
+  status: string
+  simulation: boolean
+  fast?: boolean
+  fan_message_id: string
+  creator_messages: SimulatedCreatorMessage[]
+  analysis_degraded?: boolean
+}
+
+export type NavEntry = {
+  href: string
+  label: string
+}
+
+/** The navigation every account sees, in order. */
+export const BASE_NAV: NavEntry[] = [
+  { href: '/', label: 'Chats' },
+  { href: '/analytics', label: 'Overview' },
+  { href: '/scripts', label: 'Sets' },
+  { href: '/vault', label: 'Vault' },
+  { href: '/monetization', label: 'Monetization' },
+  { href: '/settings', label: 'Settings' },
+]
+
+export const SIMULATOR_NAV: NavEntry = { href: '/simulator', label: 'Simulator' }
+
+/**
+ * Whether simulator UI may render at all.
+ *
+ * `null` means the backend has not answered yet and must be treated exactly
+ * like `false`, so the entry never flashes into view and then disappears.
+ */
+export function canSimulate(
+  capabilities: SimulationCapabilities | null | undefined,
+): boolean {
+  return capabilities?.auto_simulation === true
+}
+
+/**
+ * The navigation for this account. Identical to BASE_NAV for every ordinary
+ * tenant — the Simulator entry is appended only on an explicit true.
+ */
+export function navEntries(
+  capabilities: SimulationCapabilities | null | undefined,
+): NavEntry[] {
+  return canSimulate(capabilities) ? [...BASE_NAV, SIMULATOR_NAV] : [...BASE_NAV]
+}
+
+/**
+ * Ask the backend what this authenticated account may do.
+ *
+ * Never throws: any failure is "no capability", because a network error must
+ * not be the reason a private feature becomes visible.
+ */
+export async function fetchSimulationCapabilities(): Promise<SimulationCapabilities> {
+  try {
+    const response = await apiFetch('/simulation-capabilities')
+    if (!response.ok) return { auto_simulation: false }
+    const body = await response.json().catch(() => ({}))
+    return { auto_simulation: body?.auto_simulation === true }
+  } catch {
+    return { auto_simulation: false }
+  }
+}
+
+export async function fetchSimulationCreators(): Promise<SimulationCreator[]> {
+  const response = await apiFetch('/simulation/creators')
+  if (!response.ok) return []
+  const body = await response.json().catch(() => ({}))
+  if (!Array.isArray(body?.creators)) return []
+  return body.creators
+    .filter((creator: unknown) => !!creator && typeof creator === 'object')
+    .map((creator: Record<string, unknown>) => ({
+      id: String(creator.id ?? ''),
+      name: String(creator.name ?? creator.id ?? ''),
+      test_fans: Array.isArray(creator.test_fans)
+        ? (creator.test_fans as Record<string, unknown>[]).map(fan => ({
+            id: String(fan.id ?? ''),
+            display_name: String(fan.display_name ?? fan.id ?? ''),
+          }))
+        : [],
+    }))
+    .filter((creator: SimulationCreator) => creator.id !== '')
+}
+
+/** Send one simulated fan message and wait for the Auto turn it triggers. */
+export async function sendSimulatedFanMessage(
+  creatorId: string,
+  fanId: string,
+  message: string,
+  fast: boolean,
+): Promise<SimulatedTurn> {
+  const response = await apiFetch(
+    `/creator/${creatorId}/fan/${fanId}/simulate-inbound`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message, fast }),
+    },
+  )
+  const body = await response.json().catch(() => ({}))
+  if (!response.ok) {
+    throw new Error(
+      typeof body?.detail === 'string'
+        ? body.detail
+        : `Simulation failed (${response.status})`,
+    )
+  }
+  return body as SimulatedTurn
+}
+
+export async function simulatePpvOutcome(
+  creatorId: string,
+  fanId: string,
+  outcome: 'purchase' | 'decline',
+): Promise<Record<string, unknown>> {
+  const response = await apiFetch(
+    `/creator/${creatorId}/fan/${fanId}/simulate-${outcome}`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({}),
+    },
+  )
+  const body = await response.json().catch(() => ({}))
+  if (!response.ok) {
+    throw new Error(
+      typeof body?.detail === 'string'
+        ? body.detail
+        : `Simulation failed (${response.status})`,
+    )
+  }
+  return body as Record<string, unknown>
+}

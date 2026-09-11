@@ -3,10 +3,20 @@
 import React, { useState, useEffect } from 'react'
 import { usePathname } from 'next/navigation'
 import SystemHealthBanner from '../components/SystemHealthBanner'
+import {
+  canSimulate,
+  fetchSimulationCapabilities,
+  type SimulationCapabilities,
+} from '../lib/simulation'
 import './globals.css'
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   const [expanded, setExpanded] = useState(false)
+  // null = the backend has not answered yet. Treated exactly like false, so the
+  // entry never flashes into view for an account that may not have it.
+  const [capabilities, setCapabilities] = useState<SimulationCapabilities | null>(
+    null,
+  )
   const pathname = usePathname()
   const isLoginPage = pathname === '/login'
 
@@ -14,6 +24,17 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     const saved = localStorage.getItem('nav-expanded')
     if (saved === 'true') setExpanded(true)
   }, [])
+
+  useEffect(() => {
+    if (isLoginPage) return
+    let cancelled = false
+    void fetchSimulationCapabilities().then(value => {
+      if (!cancelled) setCapabilities(value)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [isLoginPage])
 
   const toggle = () => {
     setExpanded((v) => {
@@ -162,6 +183,28 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               </svg>
             }
           />
+          {/*
+            Owner-only. Rendered ONLY after the backend has positively said
+            auto_simulation: true for this authenticated account. For every
+            ordinary agency account the element below does not exist at all —
+            not disabled, not an access-denied screen, absent. The backend
+            enforces the same rule independently; this is presentation only.
+          */}
+          {canSimulate(capabilities) && (
+            <NavItem
+              href="/simulator"
+              expanded={expanded}
+              label="Simulator"
+              icon={
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                  <rect x="1.5" y="3" width="13" height="9" rx="1.5" stroke="currentColor" strokeWidth="1.5" />
+                  <path d="M5.5 14h5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+                  <path d="M4.75 6.25L6.5 7.5 4.75 8.75" stroke="currentColor" strokeWidth="1.25" strokeLinecap="round" strokeLinejoin="round" />
+                  <path d="M8.25 9h3" stroke="currentColor" strokeWidth="1.25" strokeLinecap="round" />
+                </svg>
+              }
+            />
+          )}
           <NavItem
             href="/settings"
             expanded={expanded}
