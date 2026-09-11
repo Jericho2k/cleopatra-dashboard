@@ -134,6 +134,9 @@ function ConversationView({
   const [autoModeSaving, setAutoModeSaving] = useState(false)
   const [autoModeError, setAutoModeError] = useState('')
   const [autoAvailable, setAutoAvailable] = useState<boolean | null>(null)
+  // Why Auto is unavailable, when the backend says. Today: "connector_disabled"
+  // (API Fansly intentionally off) versus the default, no approved vault sets.
+  const [autoLockReason, setAutoLockReason] = useState<string | null>(null)
   const [hoveredSuggestion, setHoveredSuggestion] = useState<number | null>(null)
   const [scripts, setScripts] = useState<{ id: string; title: string; content: string; category: string }[]>([])
   const [showScripts, setShowScripts] = useState(false)
@@ -219,6 +222,9 @@ function ConversationView({
         const body = await response.json().catch(() => ({}))
         if (!cancelled && response.ok) {
           setAutoAvailable(Boolean(body.auto_available))
+          setAutoLockReason(
+            typeof body.reason === 'string' ? body.reason : null,
+          )
         }
       })
       .catch(() => undefined)
@@ -630,7 +636,9 @@ function ConversationView({
             title={
               autoModeError
               || (autoAvailable === false
-                ? 'Approve at least one vault set before enabling auto mode.'
+                ? autoLockReason === 'connector_disabled'
+                  ? 'Full Auto is unavailable: the Fansly connector is turned off for this deployment.'
+                  : 'Approve at least one vault set before enabling auto mode.'
                 : undefined)
             }
             style={{
