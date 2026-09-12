@@ -52,10 +52,13 @@ import {
   actionOutcomeMessage,
   createSimulationTestFan,
   deleteSimulationCatalogMirror,
+  describeMirrorSource,
+  fetchMirrorSources,
   fetchSimulationState,
   mirrorSimulationCatalog,
   mirrorSummary,
   runSimulationActionNow,
+  type MirrorSource,
   type SimulationScheduledAction,
   type SimulationState,
 } from '../../lib/simulationWorkspace'
@@ -89,6 +92,7 @@ export default function SimulatorPage() {
   const [creatingFan, setCreatingFan] = useState(false)
   const [newFanName, setNewFanName] = useState('')
   const [mirrorSourceId, setMirrorSourceId] = useState('')
+  const [mirrorSources, setMirrorSources] = useState<MirrorSource[]>([])
   const [mirroring, setMirroring] = useState(false)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
@@ -106,6 +110,13 @@ export default function SimulatorPage() {
       })
       void fetchAIStackRegistry().then(found => {
         if (!cancelled) setRegistry(found)
+      })
+      // Mirror SOURCES come from their own owner-only, cross-tenant listing.
+      // Using the simulator creator list here was the bug: that list is
+      // tenancy-scoped, so an agency-owned creator — which is exactly the
+      // vault worth mirroring — could never appear in it.
+      void fetchMirrorSources().then(rows => {
+        if (!cancelled) setMirrorSources(rows)
       })
     })
     return () => {
@@ -437,10 +448,14 @@ export default function SimulatorPage() {
             style={{ ...PANEL, width: '100%', padding: '6px 8px', color: 'var(--text-primary)', fontSize: 12 }}
           >
             <option value="">Mirror from…</option>
-            {creators
-              .filter(row => row.id !== creatorId)
+            {mirrorSources
+              // A creator cannot mirror onto itself: that would mark its own
+              // vault simulation-only and take it out of live planning.
+              .filter(row => row.creator_id !== creatorId)
               .map(row => (
-                <option key={row.id} value={row.id}>{row.name}</option>
+                <option key={row.creator_id} value={row.creator_id}>
+                  {describeMirrorSource(row)}
+                </option>
               ))}
           </select>
           <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
@@ -462,10 +477,12 @@ export default function SimulatorPage() {
             </button>
           </div>
           <div style={{ fontSize: 10, color: 'var(--text-faint)', marginTop: 6, lineHeight: 1.5 }}>
-            Copies vault metadata so simulated planning has realistic content.
-            Mirrored rows are badged TEST / SIMULATION and carry rewritten{' '}
-            <code>sim:</code> ids — they are excluded from live planning and can
-            never be delivered. The source creator&apos;s vault is never written to.
+            Copies vault metadata into <strong>{creator?.name ?? 'this creator'}</strong>{' '}
+            so simulated planning has realistic content. Sources may include
+            creators you are not otherwise assigned to; reading one here grants
+            no other access to it and never writes to it. Mirrored rows are
+            badged TEST / SIMULATION and carry rewritten <code>sim:</code> ids —
+            excluded from live planning and impossible to deliver.
           </div>
         </div>
       </div>
