@@ -3,6 +3,7 @@
 import React, { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { apiFetch } from '../../lib/api'
+import { fanStats, type FanRevenueRow } from '../../lib/productionMetrics'
 import { supabase } from '../../lib/supabase'
 
 type Creator = { id: string; name: string; auto_mode: boolean; last_chat_reconcile_at: string | null }
@@ -26,7 +27,7 @@ export default function OverviewPage() {
   const [health, setHealth] = useState<Health | null>(null)
   const [preview, setPreview] = useState<Preview | null>(null)
   const [approvals, setApprovals] = useState<Approval[]>([])
-  const [fanStats, setFanStats] = useState({ total: 0, revenue: 0, buyers: 0, whales: 0 })
+  const [stats, setStats] = useState({ total: 0, revenue: 0, buyers: 0, whales: 0, simulated: 0 })
   const [loading, setLoading] = useState(true)
   const [resolving, setResolving] = useState<string | null>(null)
   const [message, setMessage] = useState('')
@@ -60,7 +61,13 @@ export default function OverviewPage() {
         apiFetch(`/creator/${id}/full-auto-health`),
         apiFetch(`/creator/${id}/auto-audience-preview`),
         apiFetch(`/creator/${id}/ppv-approvals?status=pending`),
-        supabase.from('fans').select('total_spent, spend_tier, sales_log').eq('creator_id', id),
+        // platform_fan_id is selected so owner test fans can be excluded:
+        // simulated spend is real persisted state, but it is not this agency's
+        // revenue and must never appear in a number read as such.
+        supabase
+          .from('fans')
+          .select('platform_fan_id, total_spent, spend_tier, sales_log')
+          .eq('creator_id', id),
       ])
       if (!healthResponse.ok) throw new Error(await healthResponse.text())
       setHealth(await healthResponse.json())
@@ -69,13 +76,7 @@ export default function OverviewPage() {
         const body = await approvalResponse.json()
         setApprovals(body.requests ?? [])
       } else setApprovals([])
-      const fans = fansResponse.data ?? []
-      setFanStats({
-        total: fans.length,
-        revenue: fans.reduce((sum, fan) => sum + Number(fan.total_spent ?? 0), 0),
-        buyers: fans.filter(fan => Number(fan.total_spent ?? 0) > 0 || (fan.sales_log?.length ?? 0) > 0).length,
-        whales: fans.filter(fan => fan.spend_tier === 'whale').length,
-      })
+      setStats(fanStats((fansResponse.data ?? []) as FanRevenueRow[]))
     } catch (error) {
       setMessage(String(error instanceof Error ? error.message : error))
     } finally {
@@ -137,12 +138,19 @@ export default function OverviewPage() {
         </div>
 
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, minmax(0, 1fr))', gap: 10, marginBottom: 18 }}>
-          <Metric label='Confirmed revenue' value={`$${fanStats.revenue}`} />
-          <Metric label='Fans' value={fanStats.total} />
-          <Metric label='Buyers' value={fanStats.buyers} />
-          <Metric label='Whales' value={fanStats.whales} />
+          <Metric label='Confirmed revenue' value={`$${stats.revenue}`} />
+          <Metric label='Fans' value={stats.total} />
+          <Metric label='Buyers' value={stats.buyers} />
+          <Metric label='Whales' value={stats.whales} />
           <Metric label='Auto eligible' value={preview?.eligible ?? 0} />
         </div>
+
+        {stats.simulated > 0 && (
+          <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 18 }}>
+            {stats.simulated} simulation fan{stats.simulated === 1 ? '' : 's'} excluded
+            from these figures. Their state is kept, and the Simulator shows it.
+          </div>
+        )}
 
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, minmax(0, 1fr))', gap: 10, marginBottom: 18 }}>
           <Metric label='Payment pending' value={health?.summary.payment_pending ?? 0} />

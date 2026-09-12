@@ -3,6 +3,17 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { supabase } from '../../lib/supabase'
 import { apiFetch } from '../../lib/api'
+import {
+  anchorPatch,
+  anchorPosition,
+  categoryRangeFor,
+  dollars,
+  fixedPricePatch,
+  pricingContract,
+  rangePatch,
+  restoreCategoryRangePatch,
+  type CategoryRange,
+} from '../../lib/setPricing'
 
 
 type VaultSet = {
@@ -13,6 +24,10 @@ type VaultSet = {
   media_ids: string[]; preview_media_id: string | null
   suggested_price: number | null; tags: string[] | null
   base_price_cents: number | null; min_price_cents: number | null; max_price_cents: number | null
+  // Whether Cleopatra may move inside the set's range at all. Null is treated
+  // as true: that is the column default and what the engine actually does.
+  dynamic_pricing_enabled?: boolean | null
+  content_category?: string | null
   status: 'draft' | 'approved' | 'archived'; source: 'ai' | 'manual' | 'simulation_mirror'
   metadata_version: number | null
   // Owner-only mirrored test content. Excluded from live package planning and
@@ -41,7 +56,32 @@ export default function SetsPage() {
   const [pickerLimit, setPickerLimit] = useState<number>(60)
   const [descriptionBusy, setDescriptionBusy] = useState<Set<string>>(new Set())
   const [setNotices, setSetNotices] = useState<Record<string, { message: string; error?: boolean }>>({})
+  // The agency's approved price range per content category — the same table the
+  // backend prices every offer from. Used to show where a set's allowed range
+  // came from, and to put a category default back after a customisation.
+  const [categories, setCategories] = useState<CategoryRange[]>([])
+  const [pricingOpen, setPricingOpen] = useState<Set<string>>(new Set())
   const currentCreatorRef = useRef<string | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    void (async () => {
+      try {
+        const response = await apiFetch('/content-price-ranges')
+        if (!response.ok) return
+        const body = await response.json().catch(() => null)
+        if (!cancelled && Array.isArray(body?.categories)) {
+          setCategories(body.categories as CategoryRange[])
+        }
+      } catch {
+        // Without the table the UI falls back to the set's own stored bounds,
+        // which is still honest — it just cannot name the category.
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   // creators — matches app/page.tsx (chatter_creators scoped to the user)
   useEffect(() => {
@@ -206,14 +246,34 @@ export default function SetsPage() {
   function canApprove(s: VaultSet) {
     return s.media_ids.length >= 2 || isIndividualVideo(s)
   }
-  async function updateSuggestedPrice(s: VaultSet, value: number) {
-    const suggested_price = Math.max(0, value)
-    await patchSet(s.id, {
-      suggested_price,
-      base_price_cents: Math.round(suggested_price * 100),
-      min_price_cents: Math.round(suggested_price * 100),
-      max_price_cents: Math.round(suggested_price * 100),
-    })
+  /**
+   * Move the price ANCHOR. Deliberately does not touch the range.
+   *
+   * This used to write suggested_price, base_price_cents, min_price_cents and
+   * max_price_cents all to the same number, which collapsed the set's entire
+   * allowed range to a point and switched off dynamic pricing for it — without
+   * asking and without saying so. Collapsing a range is now something the
+   * operator chooses explicitly, with the Fixed price control.
+   */
+  async function updateAnchorPrice(s: VaultSet, value: number) {
+    const contract = pricingContract(s, categories)
+    await patchSet(s.id, anchorPatch(contract, Math.max(0, value)))
+  }
+
+  async function updateRange(s: VaultSet, min: number, max: number) {
+    const contract = pricingContract(s, categories)
+    await patchSet(s.id, rangePatch(contract, min, max))
+  }
+
+  async function setFixedPrice(s: VaultSet, value: number) {
+    await patchSet(s.id, fixedPricePatch(Math.max(0, value)))
+  }
+
+  async function restoreCategoryRange(s: VaultSet) {
+    const category = categoryRangeFor(s, categories)
+    if (!category) return
+    const contract = pricingContract(s, categories)
+    await patchSet(s.id, restoreCategoryRangePatch(contract, category))
   }
   async function del(id: string) {
     setSets(prev => prev.filter(s => s.id !== id)); await supabase.from('vault_sets').delete().eq('id', id)
@@ -323,7 +383,12 @@ export default function SetsPage() {
                 style={{ flex: 1, background: 'transparent', border: 'none', color: 'var(--text-primary)', fontSize: 15, fontWeight: 600 }} />
               {s.simulation_only ? (
                 <span
-                  title="Mirrored test content. Never offered to a real fan and never deliverable."
+                  title={
+                    'Mirrored test content. Never offered to a real fan and never deliverable.'
+                    + (s.source_creator_id
+                      ? `\nMirrored from creator ${s.source_creator_id}.`
+                      : '')
+                  }
                   style={{ fontSize: 11, fontWeight: 700, letterSpacing: 0.4, padding: '2px 8px', borderRadius: 999,
                     background: 'rgba(240,165,0,0.15)', color: '#d9aa52',
                     border: '1px solid rgba(240,165,0,0.45)' }}>
@@ -389,13 +454,31 @@ export default function SetsPage() {
                   {[0, 1, 2, 3, 4, 5].map(n => <option key={n} value={n}>{n}</option>)}
                 </select>
               </label>
-              <label style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                $<input type="number" defaultValue={s.suggested_price ?? 0}
-                  onBlur={e => updateSuggestedPrice(s, Number(e.target.value))}
-                  style={{ width: 64, background: 'var(--bg-base)', border: '1px solid var(--border)', color: 'var(--text-primary)', borderRadius: 6, padding: '4px 6px', fontSize: 12 }} />
-              </label>
+              <button
+                type="button"
+                onClick={() => setPricingOpen(current => {
+                  const next = new Set(current)
+                  if (next.has(s.id)) next.delete(s.id)
+                  else next.add(s.id)
+                  return next
+                })}
+                style={{ padding: '4px 10px', borderRadius: 6, border: '1px solid var(--border)', background: 'transparent', color: 'var(--text-muted)', fontSize: 12, cursor: 'pointer' }}
+              >
+                {pricingOpen.has(s.id) ? '▾' : '▸'} pricing
+              </button>
               <button onClick={() => openPicker(s.id)} style={{ marginLeft: 'auto', padding: '4px 10px', borderRadius: 6, border: '1px solid var(--border)', background: 'transparent', color: 'var(--text-muted)', fontSize: 12, cursor: 'pointer' }}>+ Add media</button>
             </div>
+
+            {/* The real pricing contract, not one number pretending to be it. */}
+            <SetPricing
+              set={s}
+              categories={categories}
+              expanded={pricingOpen.has(s.id)}
+              onAnchor={value => void updateAnchorPrice(s, value)}
+              onRange={(min, max) => void updateRange(s, min, max)}
+              onFixed={value => void setFixedPrice(s, value)}
+              onRestoreCategory={() => void restoreCategoryRange(s)}
+            />
             {s.tags && s.tags.length > 0 && (
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginBottom: 10 }}>
                 {s.tags.map(t => (
@@ -483,6 +566,184 @@ export default function SetsPage() {
                 </button>
               </div>
             )}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+/**
+ * One set's pricing contract, stated honestly.
+ *
+ * Collapsed it shows what the operator needs at a glance: the anchor, the range
+ * Cleopatra may actually work inside, and whether dynamic pricing is on at all.
+ * Expanded it lets them change each of those separately — including choosing a
+ * fixed price, which is the only thing that collapses the range.
+ */
+function SetPricing({
+  set: s,
+  categories,
+  expanded,
+  onAnchor,
+  onRange,
+  onFixed,
+  onRestoreCategory,
+}: {
+  set: VaultSet
+  categories: CategoryRange[]
+  expanded: boolean
+  onAnchor: (value: number) => void
+  onRange: (min: number, max: number) => void
+  onFixed: (value: number) => void
+  onRestoreCategory: () => void
+}) {
+  const contract = pricingContract(s, categories)
+  const category = categoryRangeFor(s, categories)
+  const position = anchorPosition(contract)
+  const fixed = !contract.dynamic || contract.collapsed
+
+  return (
+    <div style={{ marginBottom: 12, padding: '10px 12px', border: '1px solid var(--border)', borderRadius: 8, background: 'var(--bg-base)' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+        <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+          {fixed ? 'Fixed price' : 'Price anchor'}
+        </span>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
+          <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>$</span>
+          <input
+            // Keyed on the stored value: these are uncontrolled inputs
+            // (committed on blur, not on every keystroke), so without a key a
+            // patch would leave the old text on screen next to the new range.
+            key={`anchor-${contract.anchorCents}`}
+            type="number"
+            min={0}
+            defaultValue={(contract.anchorCents / 100).toString()}
+            onBlur={event => {
+              const value = Number(event.target.value)
+              if (!Number.isFinite(value)) return
+              if (Math.round(value * 100) === contract.anchorCents) return
+              if (fixed) onFixed(value)
+              else onAnchor(value)
+            }}
+            style={{ width: 72, background: 'var(--bg-surface)', border: '1px solid var(--border)', color: 'var(--text-primary)', borderRadius: 6, padding: '4px 6px', fontSize: 12 }}
+          />
+        </label>
+        <span style={{ fontSize: 11, color: fixed ? 'var(--text-muted)' : 'var(--green)' }}>
+          Dynamic pricing {fixed ? 'Off' : 'On'}
+        </span>
+      </div>
+
+      {fixed ? (
+        <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 8, lineHeight: 1.5 }}>
+          This set is offered at exactly {dollars(contract.anchorCents)}. Cleopatra
+          will not move the price for any fan.
+        </div>
+      ) : (
+        <div style={{ marginTop: 10 }}>
+          <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 5 }}>Allowed range</div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span style={{ fontSize: 11, color: 'var(--text-secondary)', minWidth: 42 }}>
+              {dollars(contract.minCents)}
+            </span>
+            <div style={{ position: 'relative', flex: 1, height: 4, borderRadius: 2, background: 'var(--border)' }}>
+              <div
+                style={{
+                  position: 'absolute',
+                  left: `${position * 100}%`,
+                  top: -4,
+                  transform: 'translateX(-50%)',
+                  width: 2,
+                  height: 12,
+                  background: 'var(--silver)',
+                }}
+              />
+              <div
+                style={{
+                  position: 'absolute',
+                  left: `${position * 100}%`,
+                  top: 10,
+                  transform: 'translateX(-50%)',
+                  fontSize: 10,
+                  color: 'var(--silver)',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                {dollars(contract.anchorCents)}
+              </div>
+            </div>
+            <span style={{ fontSize: 11, color: 'var(--text-secondary)', minWidth: 42, textAlign: 'right' }}>
+              {dollars(contract.maxCents)}
+            </span>
+          </div>
+          <div style={{ fontSize: 10.5, color: 'var(--text-muted)', marginTop: 16 }}>
+            Range source:{' '}
+            {contract.rangeSource === 'category'
+              ? `${category?.label ?? 'category'} default`
+              : contract.rangeSource === 'custom'
+                ? 'customised for this set'
+                : 'anchor only — no category range known'}
+          </div>
+        </div>
+      )}
+
+      {expanded && (
+        <div style={{ marginTop: 12, paddingTop: 10, borderTop: '1px solid var(--border)' }}>
+          <div style={{ display: 'flex', gap: 10, alignItems: 'flex-end', flexWrap: 'wrap' }}>
+            <label style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+              min $
+              <input
+                key={`min-${contract.minCents}`}
+                type="number"
+                min={0}
+                defaultValue={(contract.minCents / 100).toString()}
+                onBlur={event => {
+                  const min = Number(event.target.value)
+                  if (!Number.isFinite(min)) return
+                  onRange(min, contract.maxCents / 100)
+                }}
+                style={{ width: 70, marginLeft: 4, background: 'var(--bg-surface)', border: '1px solid var(--border)', color: 'var(--text-primary)', borderRadius: 6, padding: '4px 6px', fontSize: 12 }}
+              />
+            </label>
+            <label style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+              max $
+              <input
+                key={`max-${contract.maxCents}`}
+                type="number"
+                min={0}
+                defaultValue={(contract.maxCents / 100).toString()}
+                onBlur={event => {
+                  const max = Number(event.target.value)
+                  if (!Number.isFinite(max)) return
+                  onRange(contract.minCents / 100, max)
+                }}
+                style={{ width: 70, marginLeft: 4, background: 'var(--bg-surface)', border: '1px solid var(--border)', color: 'var(--text-primary)', borderRadius: 6, padding: '4px 6px', fontSize: 12 }}
+              />
+            </label>
+            {category && (
+              <button
+                type="button"
+                onClick={onRestoreCategory}
+                style={{ padding: '4px 10px', borderRadius: 6, border: '1px solid var(--border)', background: 'transparent', color: 'var(--text-muted)', fontSize: 11, cursor: 'pointer' }}
+              >
+                Restore {category.label} default
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => {
+                if (fixed) onRange(contract.anchorCents / 100, contract.anchorCents / 100 * 2)
+                else onFixed(contract.anchorCents / 100)
+              }}
+              style={{ padding: '4px 10px', borderRadius: 6, border: '1px solid var(--border)', background: 'transparent', color: 'var(--text-muted)', fontSize: 11, cursor: 'pointer' }}
+            >
+              {fixed ? 'Use a range' : 'Use one fixed price'}
+            </button>
+          </div>
+          <div style={{ fontSize: 10.5, color: 'var(--text-faint)', marginTop: 8, lineHeight: 1.5 }}>
+            Cleopatra prices every offer inside this range. Where within it depends on
+            what the fan has actually bought before and on the agency Pricing strategy.
+            A budget the fan has stated is a hard ceiling regardless.
           </div>
         </div>
       )}

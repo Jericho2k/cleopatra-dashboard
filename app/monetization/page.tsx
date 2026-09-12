@@ -2,6 +2,15 @@
 
 import React, { useEffect, useMemo, useState } from 'react'
 import { apiFetch } from '../../lib/api'
+import {
+  ADVANCED_PRICING_FIELDS,
+  defaultScope,
+  featureGateWarning,
+  fetchPricingPolicy,
+  formatAdvancedValue,
+  savePricingPolicy,
+  type PricingPolicyView,
+} from '../../lib/pricingPolicy'
 import { supabase } from '../../lib/supabase'
 
 type Creator = {
@@ -144,6 +153,11 @@ export default function MonetizationPage() {
   const [health, setHealth] = useState<FullAutoHealth | null>(null)
   const [approvals, setApprovals] = useState<PPVApproval[]>([])
   const [resolvingApproval, setResolvingApproval] = useState<string | null>(null)
+  const [pricing, setPricing] = useState<PricingPolicyView | null>(null)
+  const [pricingSaving, setPricingSaving] = useState(false)
+  const [pricingError, setPricingError] = useState('')
+  const [showAdvanced, setShowAdvanced] = useState(false)
+  const [showLifecycleAdvanced, setShowLifecycleAdvanced] = useState(false)
 
   useEffect(() => {
     void loadCreators()
@@ -154,8 +168,52 @@ export default function MonetizationPage() {
       void loadPolicy(creatorId)
       void loadHealth(creatorId)
       void loadApprovals(creatorId)
+      void loadPricing(creatorId)
     }
   }, [creatorId])
+
+  async function loadPricing(id: string) {
+    setPricingError('')
+    setPricing(await fetchPricingPolicy(id))
+  }
+
+  async function applyPreset(preset: 'conservative' | 'balanced' | 'aggressive') {
+    if (!creatorId || pricingSaving) return
+    setPricingSaving(true)
+    setPricingError('')
+    try {
+      // An agency scope, when the creator belongs to one, is the right place
+      // for a strategy: it is a statement about how the agency sells, not about
+      // one creator. Falls back to the creator scope when there is no agency
+      // scope to write to.
+      await savePricingPolicy(creatorId, {
+        scope: defaultScope(pricing),
+        preset,
+      })
+      await loadPricing(creatorId)
+    } catch (error) {
+      setPricingError(error instanceof Error ? error.message : String(error))
+    } finally {
+      setPricingSaving(false)
+    }
+  }
+
+  async function saveAdvancedPricing(key: string, value: number) {
+    if (!creatorId || pricingSaving) return
+    setPricingSaving(true)
+    setPricingError('')
+    try {
+      await savePricingPolicy(creatorId, {
+        scope: defaultScope(pricing),
+        settings: { [key]: value },
+      })
+      await loadPricing(creatorId)
+    } catch (error) {
+      setPricingError(error instanceof Error ? error.message : String(error))
+    } finally {
+      setPricingSaving(false)
+    }
+  }
 
   async function loadCreators() {
     setLoading(true)
@@ -312,20 +370,137 @@ export default function MonetizationPage() {
               <Invariant label="Media always requires payment" />
             </Card>
 
-            <Card title="Paid session packages">
+            <Card title="Session shape">
               <Toggle label="Offer two packages" checked={policy.offer_two_packages} onChange={(value) => update('offer_two_packages', value)} />
               <Grid>
-                <MoneyField label="Quick-session target" cents={policy.quick_package_target_cents} onChange={(value) => update('quick_package_target_cents', value)} />
-                <MoneyField label="Full-session target" cents={policy.full_package_target_cents} onChange={(value) => update('full_package_target_cents', value)} disabled={!policy.offer_two_packages} />
+                {/* Renamed, not removed. These two amounts were labelled
+                    "Quick-session target $" and "Full-session target $", which
+                    read as the price the customer pays. They are not: since the
+                    content-bounded pricing work, package_from_sequence prices an
+                    offer from the approved range of the sets in it and the
+                    per-fan probe position. What these amounts actually do is
+                    decide HOW MUCH CONTENT goes into each of the two session
+                    shapes — a bigger budget selects a longer, richer sequence.
+                    Presenting them as prices was the misleading part. */}
+                <MoneyField label="Short session content budget" cents={policy.quick_package_target_cents} onChange={(value) => update('quick_package_target_cents', value)} />
+                <MoneyField label="Long session content budget" cents={policy.full_package_target_cents} onChange={(value) => update('full_package_target_cents', value)} disabled={!policy.offer_two_packages} />
                 <NumberField label="Minimum PPV steps" value={policy.session_min_steps} min={1} max={8} onChange={(value) => update('session_min_steps', value)} />
                 <NumberField label="Maximum PPV steps" value={policy.session_max_steps} min={1} max={8} onChange={(value) => update('session_max_steps', value)} />
               </Grid>
               <Invariant label="Purchase confirmation is required before every next PPV step" />
               <NumberField label="Text messages between purchased PPV steps" value={policy.post_purchase_cooldown_messages} min={0} max={20} onChange={(value) => update('post_purchase_cooldown_messages', value)} />
               <Hint>
-                Quick and full amounts are soft starting targets, not price caps. The exact selected package is priced inside the
-                combined minimum and maximum of its approved vault sets; an explicit fan budget is the only hard current ceiling.
+                These two amounts size the CONTENT in each session shape, not what the customer pays.
+                A bigger budget selects a longer, richer sequence. The actual price comes from the approved
+                price range of the sets that ended up in it, and from where Pricing strategy says to probe
+                this particular fan inside that range. An explicit fan budget is the only hard current ceiling.
               </Hint>
+            </Card>
+
+            {/* Pricing strategy — the agency-facing expression of the
+                price-policy hierarchy that already exists in the backend:
+                creator override, then agency policy, then Railway defaults. */}
+            <Card title="Pricing strategy">
+              {!pricing ? (
+                <Hint>Pricing strategy is unavailable for this creator.</Hint>
+              ) : (
+                <>
+                  {featureGateWarning(pricing) && (
+                    <div style={{
+                      padding: '10px 12px', marginBottom: 14, borderRadius: 8,
+                      border: '1px solid rgba(255,180,80,0.4)', background: 'rgba(255,180,80,0.08)',
+                      fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.55,
+                    }}>
+                      {featureGateWarning(pricing)}
+                    </div>
+                  )}
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 10 }}>
+                    {pricing.presets.map(option => {
+                      const active = pricing.effective_preset === option.preset
+                      return (
+                        <button
+                          key={option.preset}
+                          type="button"
+                          disabled={pricingSaving}
+                          onClick={() => void applyPreset(option.preset)}
+                          style={{
+                            textAlign: 'left', padding: 12, borderRadius: 9, cursor: 'pointer',
+                            background: active ? 'rgba(155,143,212,0.12)' : 'var(--bg-elevated)',
+                            border: `1px solid ${active ? 'var(--purple)' : 'var(--border)'}`,
+                            color: 'var(--text-primary)',
+                          }}
+                        >
+                          <div style={{ fontSize: 13, fontWeight: 650 }}>{option.label}</div>
+                          <div style={{ fontSize: 11.5, color: 'var(--text-muted)', marginTop: 4, lineHeight: 1.5 }}>
+                            {option.description}
+                          </div>
+                        </button>
+                      )
+                    })}
+                  </div>
+                  {pricing.effective_preset === 'custom' && (
+                    <Hint>
+                      This creator is on hand-tuned values that match none of the three presets.
+                      Picking one above replaces them.
+                    </Hint>
+                  )}
+                  <Hint>
+                    Applies to {pricing.agency_scope_id ? 'your whole agency' : 'this creator'}.
+                    Precedence is creator override, then agency policy, then the Railway deployment
+                    defaults. Aggressive still cannot exceed a set&apos;s approved maximum or a budget
+                    the fan has actually stated.
+                  </Hint>
+                  {pricingError && (
+                    <div style={{ fontSize: 12, color: '#ff8b8b', marginTop: 10 }}>{pricingError}</div>
+                  )}
+
+                  <div style={{ marginTop: 16, paddingTop: 14, borderTop: '1px solid var(--border)' }}>
+                    <button
+                      type="button"
+                      onClick={() => setShowAdvanced(current => !current)}
+                      style={{
+                        background: 'transparent', border: 'none', padding: 0, cursor: 'pointer',
+                        color: 'var(--text-secondary)', fontSize: 12.5,
+                      }}
+                    >
+                      {showAdvanced ? '▾' : '▸'} Advanced pricing tuning
+                    </button>
+                    {showAdvanced && (
+                      <div style={{ marginTop: 12 }}>
+                        <Hint>
+                          Exact values behind the presets. Basis points are a fraction of the way
+                          through an item&apos;s approved range, not a markup.
+                        </Hint>
+                        <Grid>
+                          {ADVANCED_PRICING_FIELDS.map(field => (
+                            <div key={field.key}>
+                              <label style={labelStyle} title={field.help}>
+                                {field.label} ⓘ
+                              </label>
+                              <input
+                                type="number"
+                                defaultValue={Number(pricing.effective[field.key] ?? 0)}
+                                disabled={pricingSaving}
+                                onBlur={event => {
+                                  const value = Number(event.target.value)
+                                  if (!Number.isFinite(value)) return
+                                  if (value === Number(pricing.effective[field.key] ?? 0)) return
+                                  void saveAdvancedPricing(field.key, Math.round(value))
+                                }}
+                                style={inputStyle}
+                              />
+                              <div style={{ fontSize: 10.5, color: 'var(--text-muted)', marginTop: 4 }}>
+                                {formatAdvancedValue(field.unit, Number(pricing.effective[field.key] ?? 0))}
+                                {field.unit === 'bps' || field.unit === 'cents' ? ` · stored as ${field.unit}` : ''}
+                              </div>
+                            </div>
+                          ))}
+                        </Grid>
+                      </div>
+                    )}
+                  </div>
+                </>
+              )}
             </Card>
 
             <Card title="Operator approval">
@@ -381,36 +556,61 @@ export default function MonetizationPage() {
               <Hint>Use an IANA timezone such as Europe/Berlin, America/New_York, or Europe/Moscow.</Hint>
             </Card>
 
-            <Card title="Full-auto lifecycle">
-              <Grid>
-                <NumberField label="Purchase window (hours)" value={policy.ppv_payment_window_hours} min={1} max={168} onChange={(value) => update('ppv_payment_window_hours', value)} />
-                <NumberField label="Purchase recheck (minutes)" value={policy.ppv_recheck_minutes} min={5} max={1440} onChange={(value) => update('ppv_recheck_minutes', value)} />
-                <NumberField label="Recent activity suppression (hours)" value={policy.followup_recent_activity_suppression_hours} min={0} max={168} onChange={(value) => update('followup_recent_activity_suppression_hours', value)} />
-              </Grid>
+            {/* Follow-up behaviour. Restructured so the primary controls are the
+                ones an operator can reason about without knowing Cleopatra's
+                internals — WHETHER each kind of follow-up happens, and roughly
+                when — while reconciliation timing, payment recheck cadence,
+                offer expiry and suppression windows move into Advanced. Nothing
+                was removed: every one of these still affects backend behaviour,
+                so hiding one would be worse than showing it in the wrong place. */}
+            <Card title="Follow-up behaviour">
               <Toggle label="Follow up after a completed paid session" checked={policy.post_session_followup_enabled} onChange={(value) => update('post_session_followup_enabled', value)} />
               <NumberField label="Post-session delay (hours)" value={policy.post_session_followup_delay_hours} min={1} max={720} onChange={(value) => update('post_session_followup_delay_hours', value)} />
               <Toggle label="Follow up once after an abandoned locked PPV" checked={policy.abandoned_ppv_followup_enabled} onChange={(value) => update('abandoned_ppv_followup_enabled', value)} />
               <NumberField label="Abandoned PPV delay (hours)" value={policy.abandoned_ppv_followup_delay_hours} min={1} max={720} onChange={(value) => update('abandoned_ppv_followup_delay_hours', value)} />
-              <div style={{ marginTop: 18, paddingTop: 16, borderTop: '1px solid var(--border)' }}>
-                <div style={{ fontSize: 13, fontWeight: 650, marginBottom: 4 }}>Presented offer recovery</div>
-                <Hint>If a fan disappears after seeing options, the exact approved offer remains attached until this window expires.</Hint>
-                <Grid>
-                  <NumberField label="Pending offer window (hours)" value={policy.pending_offer_expiry_hours} min={1} max={168} onChange={(value) => update('pending_offer_expiry_hours', value)} />
-                  <NumberField label="Abandoned offer follow-up delay (hours)" value={policy.abandoned_offer_followup_delay_hours} min={1} max={720} onChange={(value) => update('abandoned_offer_followup_delay_hours', value)} />
-                </Grid>
-                <Toggle label="Follow up once after an unselected offer expires" checked={policy.abandoned_offer_followup_enabled} onChange={(value) => update('abandoned_offer_followup_enabled', value)} />
-              </div>
+              <Toggle label="Follow up once after an unselected offer expires" checked={policy.abandoned_offer_followup_enabled} onChange={(value) => update('abandoned_offer_followup_enabled', value)} />
+              <NumberField label="Abandoned offer delay (hours)" value={policy.abandoned_offer_followup_delay_hours} min={1} max={720} onChange={(value) => update('abandoned_offer_followup_delay_hours', value)} />
+
               <div style={{ marginTop: 18, paddingTop: 16, borderTop: '1px solid var(--border)' }}>
                 <div style={{ fontSize: 13, fontWeight: 650, marginBottom: 4 }}>Inactive Auto chats</div>
                 <Hint>Optional, conservative re-engagement for an otherwise idle eligible Full Auto chat. Payday, offer, payment, and post-session follow-ups always take priority.</Hint>
                 <Toggle label="Re-engage eligible Full Auto fans who go quiet" checked={policy.inactivity_reengagement_enabled} onChange={(value) => update('inactivity_reengagement_enabled', value)} />
-                <Grid>
-                  <NumberField label="Inactive before follow-up (hours)" value={policy.inactivity_reengagement_delay_hours} min={6} max={720} onChange={(value) => update('inactivity_reengagement_delay_hours', value)} />
-                  <NumberField label="Minimum time between inactivity messages (hours)" value={policy.inactivity_reengagement_cooldown_hours} min={24} max={2160} onChange={(value) => update('inactivity_reengagement_cooldown_hours', value)} />
-                  <NumberField label="Maximum inactivity messages per 30 days" value={policy.inactivity_reengagement_max_per_30_days} min={1} max={10} onChange={(value) => update('inactivity_reengagement_max_per_30_days', value)} />
-                </Grid>
+                <NumberField label="Inactive before follow-up (hours)" value={policy.inactivity_reengagement_delay_hours} min={6} max={720} onChange={(value) => update('inactivity_reengagement_delay_hours', value)} />
               </div>
-              <Hint>Failed purchase checks are retried. A locked PPV and an unselected offer have separate durable recovery paths.</Hint>
+
+              <div style={{ marginTop: 18, paddingTop: 16, borderTop: '1px solid var(--border)' }}>
+                <button
+                  type="button"
+                  onClick={() => setShowLifecycleAdvanced(current => !current)}
+                  style={{
+                    background: 'transparent', border: 'none', padding: 0, cursor: 'pointer',
+                    color: 'var(--text-secondary)', fontSize: 12.5,
+                  }}
+                >
+                  {showLifecycleAdvanced ? '▾' : '▸'} Advanced timing
+                </button>
+                {showLifecycleAdvanced && (
+                  <div style={{ marginTop: 12 }}>
+                    <Hint>
+                      Implementation timing. These control how the durable recovery machinery paces
+                      itself, not what it decides. Defaults are safe; change them only for a reason.
+                    </Hint>
+                    <Grid>
+                      <NumberField label="Purchase window (hours)" value={policy.ppv_payment_window_hours} min={1} max={168} onChange={(value) => update('ppv_payment_window_hours', value)} />
+                      <NumberField label="Purchase recheck (minutes)" value={policy.ppv_recheck_minutes} min={5} max={1440} onChange={(value) => update('ppv_recheck_minutes', value)} />
+                      <NumberField label="Recent activity suppression (hours)" value={policy.followup_recent_activity_suppression_hours} min={0} max={168} onChange={(value) => update('followup_recent_activity_suppression_hours', value)} />
+                      <NumberField label="Pending offer window (hours)" value={policy.pending_offer_expiry_hours} min={1} max={168} onChange={(value) => update('pending_offer_expiry_hours', value)} />
+                      <NumberField label="Minimum time between inactivity messages (hours)" value={policy.inactivity_reengagement_cooldown_hours} min={24} max={2160} onChange={(value) => update('inactivity_reengagement_cooldown_hours', value)} />
+                      <NumberField label="Maximum inactivity messages per 30 days" value={policy.inactivity_reengagement_max_per_30_days} min={1} max={10} onChange={(value) => update('inactivity_reengagement_max_per_30_days', value)} />
+                    </Grid>
+                    <Hint>
+                      If a fan disappears after seeing options, the exact approved offer stays attached
+                      until the pending offer window expires. Failed purchase checks are retried, and a
+                      locked PPV and an unselected offer have separate durable recovery paths.
+                    </Hint>
+                  </div>
+                )}
+              </div>
             </Card>
 
             {health && (
@@ -635,8 +835,8 @@ const FIELD_HELP: Record<string, string> = {
   'Free text messages': 'Maximum text-only session allowance when Free text allowed is selected.',
   'Free-session cooldown (hours)': 'How long the fan must wait before another free text allowance can begin.',
   'Offer two packages': 'Present quick and full approved package choices instead of a single option.',
-  'Quick-session target': 'A soft pricing target. Vault minimums and the requested experience remain authoritative.',
-  'Full-session target': 'A soft pricing target for the larger package, not a universal content ceiling.',
+  'Short session content budget': 'How much content goes into the shorter session shape. NOT the price: the price comes from the approved range of the sets selected, and from Pricing strategy.',
+  'Long session content budget': 'How much content goes into the longer session shape. NOT the price, for the same reason as the short session.',
   'Minimum PPV steps': 'Minimum number of purchase-gated steps used when an approved sequence supports it.',
   'Maximum PPV steps': 'Maximum number of purchase-gated steps the session planner may create.',
   'Text messages between purchased PPV steps': 'Conversation turns to wait after a confirmed unlock before offering the next step.',
@@ -646,7 +846,9 @@ const FIELD_HELP: Record<string, string> = {
   'Purchase recheck (minutes)': 'How often the durable worker checks the platform for an unlock.',
   'Recent activity suppression (hours)': 'A scheduled follow-up is skipped when the fan has returned within this window.',
   'Pending offer window (hours)': 'How long exact presented options remain pending when the fan disappears without choosing.',
-  'Abandoned offer follow-up delay (hours)': 'Delay after offer expiry before one contextual recovery message may be sent.',
+  'Abandoned offer delay (hours)': 'Delay after offer expiry before one contextual recovery message may be sent.',
+  'Post-session delay (hours)': 'Delay after a completed paid session before one contextual follow-up may be sent.',
+  'Abandoned PPV delay (hours)': 'Delay after a locked PPV goes unpaid before one contextual recovery message may be sent.',
   'Inactive before follow-up (hours)': 'How long an eligible idle Full Auto chat must remain unanswered before one casual re-engagement message.',
   'Minimum time between inactivity messages (hours)': 'Global per-fan cooldown between generic inactivity messages, even across separate silence episodes.',
   'Maximum inactivity messages per 30 days': 'Hard per-fan limit for generic inactivity re-engagement. Commercial lifecycle follow-ups are separate.',
