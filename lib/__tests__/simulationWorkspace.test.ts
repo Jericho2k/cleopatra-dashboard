@@ -18,9 +18,11 @@ import {
   actionOutcomeMessage,
   centsToDollars,
   collectSimulationMediaIds,
+  describeMirrorSource,
   isSimulationMediaId,
   partitionMediaIds,
   ppvPresentation,
+  type MirrorSource,
 } from '../simulationWorkspace'
 import type { Message } from '../../types'
 
@@ -147,5 +149,31 @@ describe('centsToDollars', () => {
     expect(centsToDollars(2500)).toBe('$25')
     expect(centsToDollars(2550)).toBe('$25.50')
     expect(centsToDollars(null)).toBe('—')
+  })
+})
+
+describe('mirror source discovery', () => {
+  const source = (overrides: Partial<MirrorSource> = {}): MirrorSource => ({
+    creator_id: 'eliz-id',
+    name: 'eliz',
+    approved_sets: 12,
+    media_items: 340,
+    usable: true,
+    ...overrides,
+  })
+
+  it('describes what is actually there, so an empty vault is obvious', () => {
+    expect(describeMirrorSource(source())).toBe('eliz — 12 sets, 340 media')
+    expect(describeMirrorSource(source({ usable: false, approved_sets: 0 }))).toBe(
+      'eliz — nothing to mirror',
+    )
+  })
+
+  it('treats usable as an explicit backend answer, not a guess from counts', () => {
+    // The backend decides usability; the client must not re-derive it, or the
+    // two can disagree about whether a mirror is worth running.
+    expect(describeMirrorSource(source({ usable: false }))).toContain(
+      'nothing to mirror',
+    )
   })
 })

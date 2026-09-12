@@ -327,6 +327,61 @@ export function centsToDollars(cents: unknown): string {
 // backend's; nothing here weakens either, and this control only starts and
 // removes the mirror.
 
+/**
+ * A creator whose vault may be COPIED FROM.
+ *
+ * Deliberately a different list from the Simulator's creator selector. That one
+ * answers "who may I simulate as?" and is tenancy-scoped. This one answers
+ * "whose vault may I copy metadata from?" and is owner-gated and cross-tenant,
+ * because the realistic vault worth mirroring usually belongs to an
+ * AGENCY-OWNED creator the platform owner is deliberately not assigned to.
+ *
+ * Appearing here grants nothing else: the creator does not enter the simulator
+ * selector, no assignment is created, and the mirror's TARGET must still be a
+ * creator the caller ordinarily holds.
+ */
+export type MirrorSource = {
+  creator_id: string
+  name: string
+  approved_sets: number
+  media_items: number
+  /** False when there is no approved content, so mirroring would plan against nothing. */
+  usable: boolean
+}
+
+/**
+ * Owner-only list of mirror sources. Never throws.
+ *
+ * An agency account gets the same 404 as every other owner-only route, which
+ * collapses to an empty list here — the control renders as having nothing to
+ * offer rather than announcing a feature it may not use.
+ */
+export async function fetchMirrorSources(): Promise<MirrorSource[]> {
+  try {
+    const response = await apiFetch('/simulation/catalog/sources')
+    if (!response.ok) return []
+    const body = await response.json().catch(() => ({}))
+    if (!Array.isArray(body?.sources)) return []
+    return (body.sources as Record<string, unknown>[])
+      .map(row => ({
+        creator_id: String(row.creator_id ?? ''),
+        name: String(row.name ?? row.creator_id ?? ''),
+        approved_sets: Number(row.approved_sets ?? 0),
+        media_items: Number(row.media_items ?? 0),
+        usable: row.usable === true,
+      }))
+      .filter(row => row.creator_id !== '')
+  } catch {
+    return []
+  }
+}
+
+/** How a source reads in the picker: name plus what is actually there. */
+export function describeMirrorSource(source: MirrorSource): string {
+  if (!source.usable) return `${source.name} — nothing to mirror`
+  return `${source.name} — ${source.approved_sets} sets, ${source.media_items} media`
+}
+
 export type MirrorResult = {
   source_creator_id: string
   target_creator_id: string
