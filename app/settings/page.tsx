@@ -5,15 +5,40 @@ import { Eye, EyeOff } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { apiFetch } from '../../lib/api'
 import {
+  describeSource,
+  describeStage,
+  fetchAIStackRegistry,
+  fetchCreatorAIStack,
+  findProfile,
+  saveCreatorAIStack,
+  type AIStackRegistry,
+  type CreatorAIStack,
+} from '../../lib/aiStack'
+import {
   fanListBadge,
   fanListLabel,
   isArchivedFanslyList,
   sortFanLists,
 } from '../../lib/fanLists'
+import { canSimulate, fetchSimulationCapabilities } from '../../lib/simulation'
 
-type Section = 'Creator Persona' | 'Voice Calibration' | 'Blocked Words' | 'Auto Audience' | 'Sleep Hours' | 'Limits'
+type Section = 'Creator Persona' | 'Voice Calibration' | 'Blocked Words' | 'Auto Audience' | 'Sleep Hours' | 'Limits' | 'AI Stack ADMIN'
 
-const SECTIONS: Section[] = ['Creator Persona', 'Voice Calibration', 'Blocked Words', 'Auto Audience', 'Sleep Hours', 'Limits']
+const BASE_SECTIONS: Section[] = ['Creator Persona', 'Voice Calibration', 'Blocked Words', 'Auto Audience', 'Sleep Hours', 'Limits']
+
+/**
+ * The owner-only AI Stack section.
+ *
+ * Appended only once the backend has positively confirmed the capability — the
+ * same rule the Simulator entry follows. An agency account never sees the entry,
+ * and the mutation endpoints reject it independently of what the UI renders, so
+ * this is presentation, not the security boundary.
+ */
+const AI_STACK_SECTION: Section = 'AI Stack ADMIN'
+
+function sectionsFor(ownerTools: boolean): Section[] {
+  return ownerTools ? [...BASE_SECTIONS, AI_STACK_SECTION] : [...BASE_SECTIONS]
+}
 type AutoAudiencePolicy = {
   scope: 'all' | 'new_only' | 'matching'
   match_mode: 'any' | 'all'
@@ -112,6 +137,15 @@ const PROXY_COUNTRIES = [
 
 export default function SettingsPage() {
   const [activeSection, setActiveSection] = useState<Section>('Creator Persona')
+  // Owner-only tooling (Simulator, AI Stack admin) share one capability. It
+  // starts false and only ever becomes true on an explicit backend yes, so the
+  // section never flashes into view for an agency account.
+  const [ownerTools, setOwnerTools] = useState(false)
+  const [aiStackRegistry, setAiStackRegistry] = useState<AIStackRegistry | null>(null)
+  const [creatorAiStack, setCreatorAiStack] = useState<CreatorAIStack | null>(null)
+  const [aiStackSaving, setAiStackSaving] = useState(false)
+  const [aiStackError, setAiStackError] = useState('')
+  const [inspectedProfile, setInspectedProfile] = useState<string>('')
   const [words, setWords] = useState<{ id: string; word: string }[]>([])
   const [newWord, setNewWord] = useState('')
   const [creatorsLoading, setCreatorsLoading] = useState(true)
@@ -211,6 +245,48 @@ export default function SettingsPage() {
   useEffect(() => {
     fetchCreators()
   }, [])
+
+  // Owner tooling capability, plus the AI Stack registry when it is granted.
+  useEffect(() => {
+    let cancelled = false
+    void fetchSimulationCapabilities().then(async capabilities => {
+      if (cancelled || !canSimulate(capabilities)) return
+      setOwnerTools(true)
+      const registry = await fetchAIStackRegistry()
+      if (!cancelled) setAiStackRegistry(registry)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  // This creator's override and the profile that would actually answer it.
+  useEffect(() => {
+    if (!ownerTools || !selectedCreatorId) {
+      setCreatorAiStack(null)
+      return
+    }
+    let cancelled = false
+    void fetchCreatorAIStack(selectedCreatorId).then(found => {
+      if (!cancelled) setCreatorAiStack(found)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [ownerTools, selectedCreatorId])
+
+  async function saveAiStackOverride(profileId: string) {
+    if (!selectedCreatorId) return
+    setAiStackSaving(true)
+    setAiStackError('')
+    try {
+      setCreatorAiStack(await saveCreatorAIStack(selectedCreatorId, profileId || null))
+    } catch (error) {
+      setAiStackError(error instanceof Error ? error.message : String(error))
+    } finally {
+      setAiStackSaving(false)
+    }
+  }
 
   async function connectCreator() {
     setConnecting(true)
@@ -705,7 +781,7 @@ export default function SettingsPage() {
         </div>
 
         <ul style={{ listStyle: 'none', padding: '8px', margin: 0, flex: 1 }}>
-          {SECTIONS.map(section => (
+          {sectionsFor(ownerTools).map(section => (
             <li key={section}>
               <button
                 type="button"
@@ -1398,6 +1474,147 @@ export default function SettingsPage() {
               >
                 Save
               </button>
+            </div>
+          )}
+
+          {/* AI Stack ADMIN — owner only.
+
+              An AI Stack Profile is the whole conversational AI configuration:
+              every model-powered stage's provider, model, fallback, prompt
+              version, reasoning setting and generation parameters. This is
+              deliberately NOT a model playground — there is no free-text
+              provider or model field anywhere, and the only value this page can
+              send is a stable profile identifier the backend validates. */}
+          {activeSection === 'AI Stack ADMIN' && ownerTools && (
+            <div>
+              <div style={{ marginBottom: 24 }}>
+                <div style={{ fontSize: 18, fontWeight: 600, marginBottom: 4 }}>AI Stack ADMIN</div>
+                <div style={{ fontSize: 13, color: 'var(--text-muted)', lineHeight: 1.6 }}>
+                  Which conversational AI brain answers this creator&apos;s fans. A
+                  profile is the whole stack, not one model: every stage&apos;s
+                  provider, model, fallback, prompt version and reasoning
+                  setting. Deterministic commercial logic — pricing, inventory,
+                  sessions, safety — is shared by every profile and does not
+                  change with this choice.
+                </div>
+              </div>
+
+              <div style={{ marginBottom: 20 }}>
+                <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 6 }}>
+                  Production default ({aiStackRegistry?.environment_variable ?? 'AI_STACK_PROFILE'})
+                </div>
+                <div style={{ fontSize: 14, color: 'var(--text-primary)' }}>
+                  {aiStackRegistry?.environment_profile ?? '—'}
+                </div>
+              </div>
+
+              <div style={{ marginBottom: 8 }}>
+                <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 6 }}>
+                  Creator override
+                </div>
+                <select
+                  value={creatorAiStack?.override ?? ''}
+                  disabled={aiStackSaving || !selectedCreatorId}
+                  onChange={e => void saveAiStackOverride(e.target.value)}
+                  style={{ width: '100%', maxWidth: 420, background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text-primary)', padding: '10px 12px', fontSize: 13 }}
+                >
+                  <option value="">Production default</option>
+                  {(aiStackRegistry?.profiles ?? []).map(profile => (
+                    <option key={profile.profile_id} value={profile.profile_id}>
+                      {profile.profile_id}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div style={{ fontSize: 11.5, color: 'var(--text-muted)', marginBottom: 20, lineHeight: 1.6 }}>
+                Persistent and creator-scoped, not a browser setting: Full Auto
+                answers asynchronously from a worker where no browser session
+                exists.
+                {creatorAiStack && (
+                  <>
+                    {' '}Currently answering as{' '}
+                    <strong style={{ color: 'var(--text-primary)' }}>
+                      {creatorAiStack.effective.ai_stack_profile}
+                    </strong>{' '}
+                    ({describeSource(creatorAiStack.effective.ai_stack_source)}).
+                  </>
+                )}
+              </div>
+              {aiStackError && (
+                <div style={{ fontSize: 12, color: '#ff8b8b', marginBottom: 16 }}>{aiStackError}</div>
+              )}
+
+              {/* Read-only profile detail. For debugging and comparison: what
+                  does this profile actually mean, stage by stage. */}
+              <div style={{ marginTop: 8, paddingTop: 20, borderTop: '1px solid var(--border-subtle)' }}>
+                <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 4 }}>Profile detail</div>
+                <div style={{ fontSize: 12.5, color: 'var(--text-muted)', marginBottom: 12 }}>
+                  Read-only. Every model-powered stage that exists in the chat
+                  pipeline, fully resolved.
+                </div>
+                <select
+                  value={inspectedProfile || creatorAiStack?.effective.ai_stack_profile || ''}
+                  onChange={e => setInspectedProfile(e.target.value)}
+                  style={{ width: '100%', maxWidth: 420, background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text-primary)', padding: '10px 12px', fontSize: 13, marginBottom: 14 }}
+                >
+                  {(aiStackRegistry?.profiles ?? []).map(profile => (
+                    <option key={profile.profile_id} value={profile.profile_id}>
+                      {profile.label} ({profile.profile_id})
+                    </option>
+                  ))}
+                </select>
+
+                {(() => {
+                  const selected = findProfile(
+                    aiStackRegistry,
+                    inspectedProfile || creatorAiStack?.effective.ai_stack_profile,
+                  ) ?? aiStackRegistry?.profiles[0] ?? null
+                  if (!selected) {
+                    return (
+                      <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+                        No AI stack registry available.
+                      </div>
+                    )
+                  }
+                  return (
+                    <div>
+                      <div style={{ fontSize: 12.5, color: 'var(--text-secondary)', marginBottom: 14, lineHeight: 1.6 }}>
+                        {selected.summary}
+                      </div>
+                      {selected.stages.map(stage => (
+                        <div
+                          key={stage.stage}
+                          style={{
+                            border: '1px solid var(--border)',
+                            borderRadius: 8,
+                            padding: '10px 12px',
+                            marginBottom: 8,
+                          }}
+                        >
+                          <div style={{ fontSize: 12.5, color: 'var(--text-primary)', marginBottom: 3 }}>
+                            {stage.label}
+                          </div>
+                          <div style={{ fontSize: 11.5, color: 'var(--text-secondary)' }}>
+                            {describeStage(stage)}
+                          </div>
+                          <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 3 }}>
+                            fallback:{' '}
+                            {stage.fallback_model
+                              ? `${stage.fallback_model} / ${stage.fallback_provider}`
+                              : 'none'}
+                            {stage.env_overridable ? ' · environment-overridable' : ''}
+                          </div>
+                          {stage.notes && (
+                            <div style={{ fontSize: 11, color: 'var(--text-faint)', marginTop: 4, lineHeight: 1.5 }}>
+                              {stage.notes}
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )
+                })()}
+              </div>
             </div>
           )}
 

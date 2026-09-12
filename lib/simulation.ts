@@ -25,6 +25,15 @@ export type SimulationCapabilities = {
 export type SimulationTestFan = {
   id: string
   display_name: string
+  /** Always a `test_` id. Shown so the owner can see the boundary is real. */
+  platform_fan_id?: string | null
+  /**
+   * This test fan's own AI Stack Profile override, or null to inherit the
+   * creator's. Honoured by the backend ONLY for `test_` fans, so it can never
+   * affect a real conversation. Absent on a backend whose ai_stack_profile
+   * migration has not been applied yet.
+   */
+  ai_stack_profile?: string | null
 }
 
 export type SimulationCreator = {
@@ -55,6 +64,8 @@ export type SimulationOutcome =
   | 'no_send'
   | 'analyzer_degraded'
   | 'writer_failed'
+  | 'plan_unrecoverable'
+  | 'inventory_unsafe'
 
 export type SimulatedTurn = {
   status: string
@@ -94,6 +105,10 @@ export function turnOutcomeMessage(turn: SimulatedTurn): string {
       return 'Writer generation failed — no message was sent. Every configured writer model failed or returned unusable output; check the backend logs.'
     case 'analyzer_degraded':
       return 'Full Auto sent nothing: the situation analyzer was degraded and failed closed.'
+    case 'plan_unrecoverable':
+      return 'A commercial plan could not be produced and recovery could not repair it, so nothing was sent. That names a broken sale, not a decision.'
+    case 'inventory_unsafe':
+      return 'Every candidate promised media that does not exist, and repairing them left nothing sendable. Nothing was sent, which is correct: the promise must never go out instead.'
     case 'no_send':
     default:
       return 'Full Auto decided to send nothing this turn.'
@@ -170,6 +185,10 @@ export async function fetchSimulationCreators(): Promise<SimulationCreator[]> {
         ? (creator.test_fans as Record<string, unknown>[]).map(fan => ({
             id: String(fan.id ?? ''),
             display_name: String(fan.display_name ?? fan.id ?? ''),
+            platform_fan_id:
+              typeof fan.platform_fan_id === 'string' ? fan.platform_fan_id : null,
+            ai_stack_profile:
+              typeof fan.ai_stack_profile === 'string' ? fan.ai_stack_profile : null,
           }))
         : [],
     }))
