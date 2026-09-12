@@ -23,6 +23,11 @@ const REFRESH_MS = 15 * 60 * 1000
 // The delivery queue moves on a scale of seconds, so it is polled far more often
 // than the six-hourly provider catalog check.
 const OPERATIONAL_REFRESH_MS = 60 * 1000
+// While a notice is on screen, poll far more often. A recovered backend used to
+// leave "Cleopatra cannot reach its database" in front of an operator for up to
+// a full minute after the database was answering again; the notice must clear as
+// soon as one successful probe says it should.
+const OPERATIONAL_RECOVERY_REFRESH_MS = 10 * 1000
 
 export default function SystemHealthBanner() {
   const [health, setHealth] = useState<ModelHealth | null>(null)
@@ -48,6 +53,11 @@ export default function SystemHealthBanner() {
     }
   }, [])
 
+  // Derived, not stored: the notice is a pure function of the last document, so
+  // a stale banner can only ever be one poll old.
+  const operationalNotice = describeOperationalHealth(operational)
+  const operationalDegraded = operationalNotice !== null
+
   useEffect(() => {
     const initial = window.setTimeout(() => {
       void refresh()
@@ -56,7 +66,9 @@ export default function SystemHealthBanner() {
     const interval = window.setInterval(() => void refresh(), REFRESH_MS)
     const operationalInterval = window.setInterval(
       () => void refreshOperational(),
-      OPERATIONAL_REFRESH_MS,
+      operationalDegraded
+        ? OPERATIONAL_RECOVERY_REFRESH_MS
+        : OPERATIONAL_REFRESH_MS,
     )
     const onFocus = () => {
       void refresh()
@@ -69,9 +81,8 @@ export default function SystemHealthBanner() {
       window.clearInterval(operationalInterval)
       window.removeEventListener('focus', onFocus)
     }
-  }, [refresh, refreshOperational])
+  }, [refresh, refreshOperational, operationalDegraded])
 
-  const operationalNotice = describeOperationalHealth(operational)
   const modelBannerVisible =
     health !== null && health.status !== 'healthy' && health.status !== 'unknown'
 
