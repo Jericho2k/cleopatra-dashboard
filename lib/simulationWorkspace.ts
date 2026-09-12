@@ -298,9 +298,98 @@ export function actionOutcomeMessage(outcome: string, messagesSent: number): str
   }
 }
 
-/** Dollar text for cents, or a dash when the value is unknown. */
+/**
+ * Dollar text for cents, or a dash when the value is unknown.
+ *
+ * null and undefined are unknown, not zero. Most of these fields — an explicit
+ * budget, a highest confirmed purchase, a last declined price — mean something
+ * quite different when absent than when they are genuinely $0, and rendering
+ * "$0" for "he has never said" would be a misreading the operator then acts on.
+ */
 export function centsToDollars(cents: unknown): string {
+  if (cents === null || cents === undefined || cents === '') return '—'
   const value = Number(cents)
   if (!Number.isFinite(value)) return '—'
   return `$${(value / 100).toFixed(2).replace(/\.00$/, '')}`
+}
+
+// ---------------------------------------------------------------------------
+// The owner-only simulation catalog mirror
+// ---------------------------------------------------------------------------
+//
+// A mirror copies one creator's vault METADATA into the test creator's catalog
+// so simulated planning exercises the real coherence, escalation, media-type and
+// allocation logic instead of a three-set toy vault.
+//
+// It is deliberately not a copy. Mirrored rows are marked `simulation_only` —
+// live planning filters them out — and carry a rewritten `sim:` media id, which
+// is not a platform media id and cannot become one. Both barriers are the
+// backend's; nothing here weakens either, and this control only starts and
+// removes the mirror.
+
+export type MirrorResult = {
+  source_creator_id: string
+  target_creator_id: string
+  media_mirrored: number
+  sets_mirrored: number
+  media_removed: number
+  sets_removed: number
+}
+
+export async function mirrorSimulationCatalog(
+  sourceCreatorId: string,
+  targetCreatorId: string,
+): Promise<MirrorResult> {
+  const response = await apiFetch('/simulation/catalog/mirror', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      source_creator_id: sourceCreatorId,
+      target_creator_id: targetCreatorId,
+    }),
+  })
+  const body = await response.json().catch(() => ({}))
+  if (!response.ok) {
+    throw new Error(
+      typeof body?.detail === 'string'
+        ? body.detail
+        : `Could not mirror the catalog (${response.status})`,
+    )
+  }
+  return body as MirrorResult
+}
+
+export async function deleteSimulationCatalogMirror(
+  sourceCreatorId: string,
+  targetCreatorId: string,
+): Promise<MirrorResult> {
+  const response = await apiFetch('/simulation/catalog/mirror/delete', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      source_creator_id: sourceCreatorId,
+      target_creator_id: targetCreatorId,
+    }),
+  })
+  const body = await response.json().catch(() => ({}))
+  if (!response.ok) {
+    throw new Error(
+      typeof body?.detail === 'string'
+        ? body.detail
+        : `Could not remove the mirror (${response.status})`,
+    )
+  }
+  return body as MirrorResult
+}
+
+/** What a mirror run did, in one sentence. */
+export function mirrorSummary(result: MirrorResult): string {
+  const parts: string[] = []
+  if (result.sets_mirrored) parts.push(`${result.sets_mirrored} sets`)
+  if (result.media_mirrored) parts.push(`${result.media_mirrored} media`)
+  if (result.sets_removed) parts.push(`${result.sets_removed} sets removed`)
+  if (result.media_removed) parts.push(`${result.media_removed} media removed`)
+  return parts.length > 0
+    ? `Mirrored ${parts.join(', ')}. Marked TEST / SIMULATION and not deliverable.`
+    : 'Nothing to mirror.'
 }

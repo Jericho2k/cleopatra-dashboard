@@ -51,7 +51,10 @@ import {
 import {
   actionOutcomeMessage,
   createSimulationTestFan,
+  deleteSimulationCatalogMirror,
   fetchSimulationState,
+  mirrorSimulationCatalog,
+  mirrorSummary,
   runSimulationActionNow,
   type SimulationScheduledAction,
   type SimulationState,
@@ -85,6 +88,8 @@ export default function SimulatorPage() {
   const [lastActionResult, setLastActionResult] = useState('')
   const [creatingFan, setCreatingFan] = useState(false)
   const [newFanName, setNewFanName] = useState('')
+  const [mirrorSourceId, setMirrorSourceId] = useState('')
+  const [mirroring, setMirroring] = useState(false)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
   // Guards a late history read from overwriting a newer one after a fan switch.
@@ -266,6 +271,33 @@ export default function SimulatorPage() {
     }
   }
 
+  /**
+   * Mirror another creator's vault metadata into this test creator's catalog.
+   *
+   * Owner only, and it does not make anything deliverable: mirrored rows are
+   * marked simulation_only (live planning filters them out) and carry rewritten
+   * `sim:` media ids, which are not platform ids and are refused by every
+   * delivery path. The point is realistic PLANNING input — coherence grouping,
+   * escalation, photo/video mixes, multi-step allocation, price probing inside
+   * approved bounds — which a thin test vault cannot exercise at all.
+   */
+  const runMirror = async (remove: boolean) => {
+    if (!creatorId || !mirrorSourceId || mirroring) return
+    setMirroring(true)
+    setError('')
+    setNotice('')
+    try {
+      const result = remove
+        ? await deleteSimulationCatalogMirror(mirrorSourceId, creatorId)
+        : await mirrorSimulationCatalog(mirrorSourceId, creatorId)
+      setNotice(mirrorSummary(result))
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : String(caught))
+    } finally {
+      setMirroring(false)
+    }
+  }
+
   const setFanProfile = async (profileId: string) => {
     if (!creatorId || !fanId) return
     setError('')
@@ -391,6 +423,49 @@ export default function SimulatorPage() {
             Creates a real, persistent simulation fan with a generated{' '}
             <code>test_</code> id. It cannot become a live Fansly fan: the
             platform id is produced by the backend, never by this form.
+          </div>
+        </div>
+
+        {/* Simulation catalog. Owner only, and never visible to an agency. */}
+        <div style={{ borderTop: '1px solid var(--border)', paddingTop: 10 }}>
+          <div style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--text-muted)', marginBottom: 6 }}>
+            Simulation catalog
+          </div>
+          <select
+            value={mirrorSourceId}
+            onChange={event => setMirrorSourceId(event.target.value)}
+            style={{ ...PANEL, width: '100%', padding: '6px 8px', color: 'var(--text-primary)', fontSize: 12 }}
+          >
+            <option value="">Mirror from…</option>
+            {creators
+              .filter(row => row.id !== creatorId)
+              .map(row => (
+                <option key={row.id} value={row.id}>{row.name}</option>
+              ))}
+          </select>
+          <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
+            <button
+              type="button"
+              onClick={() => void runMirror(false)}
+              disabled={!mirrorSourceId || mirroring}
+              style={{ ...PANEL, flex: 1, padding: '5px 8px', color: 'var(--silver)', fontSize: 11, cursor: mirroring ? 'wait' : 'pointer' }}
+            >
+              {mirroring ? 'Working…' : 'Mirror / refresh'}
+            </button>
+            <button
+              type="button"
+              onClick={() => void runMirror(true)}
+              disabled={!mirrorSourceId || mirroring}
+              style={{ ...PANEL, padding: '5px 8px', color: 'var(--text-secondary)', fontSize: 11, cursor: mirroring ? 'wait' : 'pointer' }}
+            >
+              Remove
+            </button>
+          </div>
+          <div style={{ fontSize: 10, color: 'var(--text-faint)', marginTop: 6, lineHeight: 1.5 }}>
+            Copies vault metadata so simulated planning has realistic content.
+            Mirrored rows are badged TEST / SIMULATION and carry rewritten{' '}
+            <code>sim:</code> ids — they are excluded from live planning and can
+            never be delivered. The source creator&apos;s vault is never written to.
           </div>
         </div>
       </div>
