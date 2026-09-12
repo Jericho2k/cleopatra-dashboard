@@ -13,8 +13,12 @@ type VaultSet = {
   media_ids: string[]; preview_media_id: string | null
   suggested_price: number | null; tags: string[] | null
   base_price_cents: number | null; min_price_cents: number | null; max_price_cents: number | null
-  status: 'draft' | 'approved' | 'archived'; source: 'ai' | 'manual'
+  status: 'draft' | 'approved' | 'archived'; source: 'ai' | 'manual' | 'simulation_mirror'
   metadata_version: number | null
+  // Owner-only mirrored test content. Excluded from live package planning and
+  // impossible to deliver, so it must never look like sellable inventory here.
+  simulation_only?: boolean | null
+  source_creator_id?: string | null
 }
 type Thumb = { thumbnail_url: string | null; url: string | null; mimetype: string | null }
 type VaultMedia = { fansly_media_id: string; thumbnail_url: string | null; url: string | null; mimetype: string | null; explicitness_level: number | null; album_title: string | null }
@@ -317,6 +321,15 @@ export default function SetsPage() {
                 onChange={e => setSets(prev => prev.map(x => x.id === s.id ? { ...x, title: e.target.value } : x))}
                 onBlur={e => patchSet(s.id, { title: e.target.value })}
                 style={{ flex: 1, background: 'transparent', border: 'none', color: 'var(--text-primary)', fontSize: 15, fontWeight: 600 }} />
+              {s.simulation_only ? (
+                <span
+                  title="Mirrored test content. Never offered to a real fan and never deliverable."
+                  style={{ fontSize: 11, fontWeight: 700, letterSpacing: 0.4, padding: '2px 8px', borderRadius: 999,
+                    background: 'rgba(240,165,0,0.15)', color: '#d9aa52',
+                    border: '1px solid rgba(240,165,0,0.45)' }}>
+                  TEST / SIMULATION
+                </span>
+              ) : null}
               <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 999,
                 background: s.status === 'approved' ? 'rgba(76,175,130,0.15)' : 'rgba(200,200,200,0.1)',
                 color: s.status === 'approved' ? 'var(--green)' : 'var(--text-muted)' }}>

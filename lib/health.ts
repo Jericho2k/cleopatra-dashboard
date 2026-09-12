@@ -46,13 +46,39 @@ export function describeOperationalHealth(
   const fatal = health.fatal_reasons ?? []
   const parts: string[] = []
 
-  if (fatal.some(reason => reason.startsWith('database_unreachable'))) {
+  // Confirmed, sustained inability to reach the database. The backend only
+  // publishes this once repeated probes have failed for long enough, so it is
+  // the one database signal worth a red banner.
+  if (
+    fatal.some(
+      reason =>
+        reason.startsWith('database_unavailable') ||
+        // Pre-hysteresis name. Kept so a dashboard deployed ahead of the
+        // backend does not silently stop reporting a real outage.
+        reason.startsWith('database_unreachable'),
+    )
+  ) {
     return {
-      message: 'Cleopatra cannot reach its database. Messages are not being processed.',
+      message: 'Database unavailable. Message processing is paused.',
       detail: fatal.join(', '),
       critical: true,
     }
   }
+
+  // Repeated failures that have not yet been confirmed as an outage. Worth
+  // saying, not worth alarming: the backend is retrying and the queue is durable.
+  if (reasons.some(reason => reason.startsWith('database_unstable'))) {
+    return {
+      message: 'Database connectivity is unstable. Cleopatra is retrying.',
+      detail: [...fatal, ...reasons].join(', '),
+      critical: false,
+    }
+  }
+
+  // A single failed probe (``database_probe_failed_unconfirmed``) is
+  // deliberately not matched here. One recycled connection is not an incident,
+  // and a banner that flickers on every blip is a banner operators learn to
+  // ignore — which is how a real outage gets missed.
 
   if (reasons.some(reason => reason.startsWith('queue_oldest_pending_age_exceeds'))) {
     parts.push(
@@ -72,6 +98,12 @@ export function describeOperationalHealth(
   }
   if (reasons.includes('model_gate_saturated')) {
     parts.push('AI capacity is saturated; replies are queued rather than dropped.')
+  }
+  if (reasons.includes('message_identity_index_missing')) {
+    parts.push(
+      'A database migration is pending (message identity). Incoming messages are ' +
+        'being de-duplicated without it, which is not race-safe.',
+    )
   }
 
   if (parts.length === 0) return null

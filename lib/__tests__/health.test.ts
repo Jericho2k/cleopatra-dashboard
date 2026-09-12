@@ -44,14 +44,26 @@ describe('describeOperationalHealth', () => {
     expect(notice?.message).toContain('queued rather than dropped')
   })
 
-  it('surfaces an unreachable database above everything else', () => {
+  it('surfaces a confirmed database outage above everything else', () => {
+    const notice = describeOperationalHealth({
+      status: 'unhealthy',
+      fatal_reasons: ['database_unavailable:timeout'],
+      degraded_reasons: ['queue_unreadable'],
+    })
+    expect(notice?.message).toContain('Database unavailable')
+    expect(notice?.message).toContain('Message processing is paused')
+    expect(notice?.critical).toBe(true)
+  })
+
+  it('still reports the pre-hysteresis outage reason name', () => {
+    // A dashboard deployed ahead of the backend must not silently stop
+    // reporting a real outage because the reason string was renamed.
     const notice = describeOperationalHealth({
       status: 'unhealthy',
       fatal_reasons: ['database_unreachable:timeout'],
-      degraded_reasons: ['queue_unreadable'],
     })
-    expect(notice?.message).toContain('cannot reach its database')
     expect(notice?.critical).toBe(true)
+    expect(notice?.message).toContain('Database unavailable')
   })
 
   it('ignores backend reasons it does not recognise', () => {
