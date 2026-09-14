@@ -1,15 +1,5 @@
 export type SpendTier = 'whale' | 'active' | 'casual' | 'cold'
 
-export type StageType =
-  | 'COLD_OPEN'
-  | 'WARMING_UP'
-  | 'FLIRTING'
-  | 'PRE_UPSELL'
-  | 'UPSELL_ACTIVE'
-  | 'OBJECTION'
-  | 'RETENTION'
-  | 'HIGH_VALUE'
-
 export interface Fan {
   id: string
   display_name: string
@@ -40,22 +30,6 @@ export interface Message {
   was_ai_suggested: boolean
   was_selected: boolean
   media_context?: any
-}
-
-export interface Creator {
-  id: string
-  name: string
-  platform_username: string
-  platform: string
-}
-
-export interface SuggestionResponse {
-  suggestions: string[]
-  /** REL-001 — true when the situation analysis behind these suggestions was
-   *  fabricated because the analyzer failed. The copy is still usable, but it
-   *  was not written against a real reading of the conversation. */
-  analysis_degraded?: boolean
-  analysis_degraded_reason?: string
 }
 
 /** Where a list came from. Cleopatra owns 'local' lists; 'fansly' lists mirror

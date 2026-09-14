@@ -49,6 +49,7 @@ import {
   canSimulate,
   fetchSimulationCapabilities,
   fetchSimulationCreators,
+  describeSimulationFailure,
   sendSimulatedFanMessage,
   simulatePpvOutcome,
   turnOutcomeMessage,
@@ -227,7 +228,7 @@ export default function SimulatorPage() {
         setNotice(turnOutcomeMessage(turn))
       }
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : String(caught))
+      setError(describeSimulationFailure(caught))
     } finally {
       setBusy(false)
       await refresh()
@@ -245,7 +246,7 @@ export default function SimulatorPage() {
         setNotice('There is no pending simulated PPV for this fan.')
       }
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : String(caught))
+      setError(describeSimulationFailure(caught))
     } finally {
       setBusy(false)
       await refresh()
@@ -262,7 +263,7 @@ export default function SimulatorPage() {
         `${action.label}: ${actionOutcomeMessage(result.outcome, result.messages_sent)}`,
       )
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : String(caught))
+      setError(describeSimulationFailure(caught))
     } finally {
       setBusyActionId(null)
       await refresh()
@@ -288,7 +289,7 @@ export default function SimulatorPage() {
         `Created ${created.display_name} (${created.platform_fan_id}). No history, no purchases, no learned state.`,
       )
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : String(caught))
+      setError(describeSimulationFailure(caught))
     } finally {
       setCreatingFan(false)
     }
@@ -315,7 +316,7 @@ export default function SimulatorPage() {
         : await mirrorSimulationCatalog(mirrorSourceId, creatorId)
       setNotice(mirrorSummary(result))
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : String(caught))
+      setError(describeSimulationFailure(caught))
     } finally {
       setMirroring(false)
     }
@@ -344,7 +345,7 @@ export default function SimulatorPage() {
       )
       await loadState()
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : String(caught))
+      setError(describeSimulationFailure(caught))
     }
   }
 

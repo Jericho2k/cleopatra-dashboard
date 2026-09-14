@@ -30,11 +30,7 @@ type Policy = {
   payday_reengagement_enabled: boolean
   payday_send_hour_local: number
   timezone: string
-  offer_two_packages: boolean
-  quick_package_target_cents: number
-  full_package_target_cents: number
-  session_min_steps: number
-  session_max_steps: number
+  next_offer_target_cents: number
   post_purchase_cooldown_messages: number
   require_purchase_before_next_step: boolean
   require_operator_ppv_approval: boolean
@@ -119,11 +115,7 @@ const DEFAULT_POLICY: Policy = {
   payday_reengagement_enabled: true,
   payday_send_hour_local: 18,
   timezone: 'UTC',
-  offer_two_packages: true,
-  quick_package_target_cents: 2500,
-  full_package_target_cents: 6000,
-  session_min_steps: 2,
-  session_max_steps: 4,
+  next_offer_target_cents: 2500,
   post_purchase_cooldown_messages: 2,
   require_purchase_before_next_step: true,
   require_operator_ppv_approval: false,
@@ -292,15 +284,6 @@ export default function MonetizationPage() {
 
   async function savePolicy() {
     if (!creatorId) return
-    if (policy.session_min_steps > policy.session_max_steps) {
-      setMessage('Minimum session steps cannot exceed maximum session steps.')
-      return
-    }
-    if (policy.quick_package_target_cents >= policy.full_package_target_cents && policy.offer_two_packages) {
-      setMessage('The full-session price must be higher than the quick-session price.')
-      return
-    }
-
     setSaving(true)
     setMessage('')
     try {
@@ -370,30 +353,23 @@ export default function MonetizationPage() {
               <Invariant label="Media always requires payment" />
             </Card>
 
-            <Card title="Session shape">
-              <Toggle label="Offer two packages" checked={policy.offer_two_packages} onChange={(value) => update('offer_two_packages', value)} />
+            <Card title="Offers">
               <Grid>
-                {/* Renamed, not removed. These two amounts were labelled
-                    "Quick-session target $" and "Full-session target $", which
-                    read as the price the customer pays. They are not: since the
-                    content-bounded pricing work, package_from_sequence prices an
-                    offer from the approved range of the sets in it and the
-                    per-fan probe position. What these amounts actually do is
-                    decide HOW MUCH CONTENT goes into each of the two session
-                    shapes — a bigger budget selects a longer, richer sequence.
-                    Presenting them as prices was the misleading part. */}
-                <MoneyField label="Short session content budget" cents={policy.quick_package_target_cents} onChange={(value) => update('quick_package_target_cents', value)} />
-                <MoneyField label="Long session content budget" cents={policy.full_package_target_cents} onChange={(value) => update('full_package_target_cents', value)} disabled={!policy.offer_two_packages} />
-                <NumberField label="Minimum PPV steps" value={policy.session_min_steps} min={1} max={8} onChange={(value) => update('session_min_steps', value)} />
-                <NumberField label="Maximum PPV steps" value={policy.session_max_steps} min={1} max={8} onChange={(value) => update('session_max_steps', value)} />
+                {/* One amount, because there is one next offer. The pair it
+                    replaces ("short session" / "long session" content budgets)
+                    existed only to build the two-branch menu the fan was shown;
+                    that menu is gone, so a second budget would be a switch with
+                    nothing behind it. */}
+                <MoneyField label="Next-offer content budget" cents={policy.next_offer_target_cents} onChange={(value) => update('next_offer_target_cents', value)} />
+                <NumberField label="Text messages after a purchase before the next offer" value={policy.post_purchase_cooldown_messages} min={0} max={20} onChange={(value) => update('post_purchase_cooldown_messages', value)} />
               </Grid>
-              <Invariant label="Purchase confirmation is required before every next PPV step" />
-              <NumberField label="Text messages between purchased PPV steps" value={policy.post_purchase_cooldown_messages} min={0} max={20} onChange={(value) => update('post_purchase_cooldown_messages', value)} />
+              <Invariant label="Purchase confirmation is required before every next unlock" />
               <Hint>
-                These two amounts size the CONTENT in each session shape, not what the customer pays.
-                A bigger budget selects a longer, richer sequence. The actual price comes from the approved
-                price range of the sets that ended up in it, and from where Pricing strategy says to probe
-                this particular fan inside that range. An explicit fan budget is the only hard current ceiling.
+                The fan is shown one next unlock at a time, with its price, and is never told a session
+                total or what might come after it. This amount sizes the CONTENT considered for that next
+                unlock — it is not what he pays. The price comes from the approved price range of the set
+                that ends up chosen and from where Pricing strategy says to probe this particular fan
+                inside that range. An explicit fan budget is the only hard current ceiling.
               </Hint>
             </Card>
 
@@ -836,18 +812,14 @@ const FIELD_HELP: Record<string, string> = {
   'Hybrid teaser messages': 'Maximum free teaser messages before the commercial layer must transition or stop.',
   'Free text messages': 'Maximum text-only session allowance when Free text allowed is selected.',
   'Free-session cooldown (hours)': 'How long the fan must wait before another free text allowance can begin.',
-  'Offer two packages': 'Present quick and full approved package choices instead of a single option.',
-  'Short session content budget': 'How much content goes into the shorter session shape. NOT the price: the price comes from the approved range of the sets selected, and from Pricing strategy.',
-  'Long session content budget': 'How much content goes into the longer session shape. NOT the price, for the same reason as the short session.',
-  'Minimum PPV steps': 'Minimum number of purchase-gated steps used when an approved sequence supports it.',
-  'Maximum PPV steps': 'Maximum number of purchase-gated steps the session planner may create.',
-  'Text messages between purchased PPV steps': 'Conversation turns to wait after a confirmed unlock before offering the next step.',
+  'Next-offer content budget': 'How much content the next unlock is sized around. NOT the price: the price comes from the approved range of the set selected, and from Pricing strategy.',
+  'Text messages after a purchase before the next offer': 'Conversation turns to stay in the moment after a confirmed unlock before anything else is offered.',
   'Pause before every auto-generated locked PPV and wait for operator approval': 'Creates one exact, durable approval item. Nothing is sent until an operator accepts it.',
   'Local send hour': 'Preferred hour in the creator timezone for a known-payday follow-up.',
   'Purchase window (hours)': 'How long a locked PPV remains payment-pending before it is treated as abandoned.',
   'Purchase recheck (minutes)': 'How often the durable worker checks the platform for an unlock.',
   'Recent activity suppression (hours)': 'A scheduled follow-up is skipped when the fan has returned within this window.',
-  'Pending offer window (hours)': 'How long exact presented options remain pending when the fan disappears without choosing.',
+  'Pending offer window (hours)': 'How long the exact presented offer remains pending when the fan disappears without answering.',
   'Abandoned offer delay (hours)': 'Delay after offer expiry before one contextual recovery message may be sent.',
   'Post-session delay (hours)': 'Delay after a completed paid session before one contextual follow-up may be sent.',
   'Abandoned PPV delay (hours)': 'Delay after a locked PPV goes unpaid before one contextual recovery message may be sent.',

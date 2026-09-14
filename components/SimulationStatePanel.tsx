@@ -137,25 +137,25 @@ export default function SimulationStatePanel({
       <Section title="Commercial status">
         <Row label="Status" value={text(commercial.status) ?? 'IDLE'} />
         <Row label="Wants" value={text(commercial.desired_experience) ?? '—'} />
+        {/* One offer, singular. The row used to join an ordered array with
+            "·" because the fan was shown two at once; there is no array to
+            join any more, and no ordinal for him to pick from. */}
         <Row
           label="Pending offer"
           value={
-            Array.isArray(commercial.offered_packages)
-            && (commercial.offered_packages as unknown[]).length > 0
-              ? (commercial.offered_packages as Record<string, unknown>[])
-                  .map(
-                    option =>
-                      `${text(option.label) ?? 'option'} ${centsToDollars(option.price_cents)}`,
-                  )
-                  .join(' · ')
+            commercial.pending_offer && typeof commercial.pending_offer === 'object'
+              ? (() => {
+                  const offer = commercial.pending_offer as Record<string, unknown>
+                  return `${text(offer.label) ?? 'offer'} ${centsToDollars(offer.price_cents)}`
+                })()
               : 'none'
           }
         />
         <Row
-          label="Selected"
+          label="Accepted"
           value={
-            commercial.selected_package_id
-              ? `${text(commercial.selected_package_label) ?? 'package'} ${centsToDollars(commercial.selected_package_price_cents)}`
+            commercial.accepted_offer_id
+              ? `${text(commercial.accepted_offer_label) ?? 'offer'} ${centsToDollars(commercial.accepted_offer_price_cents)}`
               : 'none'
           }
         />

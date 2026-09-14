@@ -16,7 +16,7 @@
  * only thing the client learns is one boolean about itself.
  */
 
-import { apiFetch } from './api'
+import { ApiError, apiFetch, apiJson } from './api'
 
 export type SimulationCapabilities = {
   auto_simulation: boolean
@@ -195,30 +195,29 @@ export async function fetchSimulationCreators(): Promise<SimulationCreator[]> {
     .filter((creator: SimulationCreator) => creator.id !== '')
 }
 
-/** Send one simulated fan message and wait for the Auto turn it triggers. */
+/**
+ * Send one simulated fan message and wait for the Auto turn it triggers.
+ *
+ * A turn runs the analyzer, the writer (including its retry schedule) and the
+ * extractor inside one request, so it is genuinely slow and needs its own
+ * ceiling rather than the browser's. Every failure comes back as an `ApiError`
+ * that says which layer failed, so the UI never has to render "Failed to fetch".
+ */
 export async function sendSimulatedFanMessage(
   creatorId: string,
   fanId: string,
   message: string,
   fast: boolean,
 ): Promise<SimulatedTurn> {
-  const response = await apiFetch(
+  return apiJson<SimulatedTurn>(
     `/creator/${creatorId}/fan/${fanId}/simulate-inbound`,
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ message, fast }),
     },
+    { label: 'The simulated turn' },
   )
-  const body = await response.json().catch(() => ({}))
-  if (!response.ok) {
-    throw new Error(
-      typeof body?.detail === 'string'
-        ? body.detail
-        : `Simulation failed (${response.status})`,
-    )
-  }
-  return body as SimulatedTurn
 }
 
 export async function simulatePpvOutcome(
@@ -226,21 +225,40 @@ export async function simulatePpvOutcome(
   fanId: string,
   outcome: 'purchase' | 'decline',
 ): Promise<Record<string, unknown>> {
-  const response = await apiFetch(
+  return apiJson<Record<string, unknown>>(
     `/creator/${creatorId}/fan/${fanId}/simulate-${outcome}`,
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({}),
     },
+    { label: `The simulated ${outcome}`, timeoutMs: 60_000 },
   )
-  const body = await response.json().catch(() => ({}))
-  if (!response.ok) {
-    throw new Error(
-      typeof body?.detail === 'string'
-        ? body.detail
-        : `Simulation failed (${response.status})`,
-    )
+}
+
+/**
+ * One line the operator can act on, from whatever the call threw.
+ *
+ * The kind is what matters: a network failure means look at connectivity, a
+ * server failure means look at the backend logs (and the error id says which
+ * line), a timeout means the turn is probably still running.
+ */
+export function describeSimulationFailure(caught: unknown): string {
+  if (caught instanceof ApiError) {
+    const suffix = caught.errorId ? ` (error ${caught.errorId})` : ''
+    switch (caught.kind) {
+      case 'network':
+        return `Network: ${caught.message}`
+      case 'timeout':
+        return `Timeout: ${caught.message}`
+      case 'server':
+        return `Backend ${caught.status ?? 500}: ${caught.message}${suffix}`
+      case 'malformed':
+        return `Malformed response: ${caught.message}`
+      case 'client':
+      default:
+        return `Rejected ${caught.status ?? ''}: ${caught.message}${suffix}`.trim()
+    }
   }
-  return body as Record<string, unknown>
+  return caught instanceof Error ? caught.message : String(caught)
 }
