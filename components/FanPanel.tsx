@@ -35,8 +35,8 @@ type FullAutoStatus = {
     last_abandoned_ppv_at: string | null
     desired_experience?: string | null
     confirmed_budget_cents?: number | null
-    selected_package_label?: string | null
-    selected_package_price_cents?: number | null
+    accepted_offer_label?: string | null
+    accepted_offer_price_cents?: number | null
     last_session_experience?: string | null
     last_session_revenue_cents?: number | null
   }
@@ -802,8 +802,8 @@ export default function FanPanel({ fan, creatorId, onHistoryLoaded, showToast, o
                         ['Last active', fan.last_active ? formatOperationalTime(fan.last_active) : null],
                         ['Commercial state', fullAutoStatus.commercial_state.status],
                         ['Requested experience', fullAutoStatus.commercial_state.desired_experience],
-                        ['Selected package', fullAutoStatus.commercial_state.selected_package_label],
-                        ['Selected price', fullAutoStatus.commercial_state.selected_package_price_cents != null ? formatTrackedMoney(fullAutoStatus.commercial_state.selected_package_price_cents) : null],
+                        ['Accepted offer', fullAutoStatus.commercial_state.accepted_offer_label],
+                        ['Accepted price', fullAutoStatus.commercial_state.accepted_offer_price_cents != null ? formatTrackedMoney(fullAutoStatus.commercial_state.accepted_offer_price_cents) : null],
                         ['Lifecycle', fullAutoStatus.buyer_lifecycle?.stage],
                         ['Confirmed purchases', fullAutoStatus.buyer_lifecycle?.purchase_count],
                         ['Confirmed revenue', fullAutoStatus.buyer_lifecycle?.purchase_revenue_cents != null ? formatTrackedMoney(fullAutoStatus.buyer_lifecycle.purchase_revenue_cents) : null],

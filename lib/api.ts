@@ -24,6 +24,119 @@ export async function apiFetch(path: string, init: RequestInit = {}): Promise<Re
   return fetch(apiUrl(path), { ...init, headers })
 }
 
+/**
+ * What actually went wrong with a backend call, rather than "Failed to fetch".
+ *
+ * `fetch` rejects with a bare TypeError for every network-layer outcome there
+ * is: the backend being unreachable, a request that was cut off, a CORS-blocked
+ * response (which is what an unhandled 500 used to look like), and an abort.
+ * Rendering that message verbatim is what left the Simulator saying "Failed to
+ * fetch" while the backend had already logged a full traceback — with nothing
+ * on screen to say whether to look at the network, the server, or neither.
+ */
+export type ApiFailureKind =
+  | 'network'
+  | 'timeout'
+  | 'server'
+  | 'client'
+  | 'malformed'
+
+export class ApiError extends Error {
+  readonly kind: ApiFailureKind
+  readonly status?: number
+  /** Correlates with the backend log line for the same failure, when it sent one. */
+  readonly errorId?: string
+
+  constructor(
+    message: string,
+    kind: ApiFailureKind,
+    options: { status?: number; errorId?: string } = {},
+  ) {
+    super(message)
+    this.name = 'ApiError'
+    this.kind = kind
+    this.status = options.status
+    this.errorId = options.errorId
+  }
+}
+
+/** Default ceiling for a simulated turn: it runs analyzer, writer and extractor. */
+export const LONG_REQUEST_TIMEOUT_MS = 180_000
+
+/**
+ * A backend call whose failures are legible: does the caller need to look at
+ * the network, the server, or the response body?
+ *
+ * Returns the parsed JSON body on success and throws an `ApiError` otherwise,
+ * so callers never have to distinguish a rejected promise from a non-ok
+ * response themselves.
+ */
+export async function apiJson<T>(
+  path: string,
+  init: RequestInit = {},
+  options: { timeoutMs?: number; label?: string } = {},
+): Promise<T> {
+  const timeoutMs = options.timeoutMs ?? LONG_REQUEST_TIMEOUT_MS
+  const label = options.label ?? 'The request'
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), timeoutMs)
+
+  let response: Response
+  try {
+    response = await apiFetch(path, { ...init, signal: controller.signal })
+  } catch {
+    if (controller.signal.aborted) {
+      throw new ApiError(
+        `${label} did not finish within ${Math.round(timeoutMs / 1000)}s and was ` +
+          'cancelled. The backend may still be working on it — check the server logs.',
+        'timeout',
+      )
+    }
+    throw new ApiError(
+      `${label} never reached the backend (network error, backend unreachable, ` +
+        'or a response the browser refused to read). Nothing was processed.',
+      'network',
+    )
+  } finally {
+    clearTimeout(timer)
+  }
+
+  const text = await response.text().catch(() => '')
+  let body: unknown = undefined
+  if (text) {
+    try {
+      body = JSON.parse(text)
+    } catch {
+      body = undefined
+    }
+  }
+  const record = (body && typeof body === 'object' ? body : {}) as Record<string, unknown>
+  const detail = typeof record.detail === 'string' ? record.detail : ''
+  const errorId = typeof record.error_id === 'string' ? record.error_id : undefined
+
+  if (!response.ok) {
+    const kind: ApiFailureKind = response.status >= 500 ? 'server' : 'client'
+    const fallback =
+      kind === 'server'
+        ? `The backend failed handling ${label.toLowerCase()} (HTTP ${response.status}).`
+        : `${label} was rejected (HTTP ${response.status}).`
+    throw new ApiError(detail || fallback, kind, {
+      status: response.status,
+      errorId,
+    })
+  }
+
+  if (body === undefined) {
+    throw new ApiError(
+      `${label} returned HTTP ${response.status} with a body the browser could ` +
+        'not read as JSON.',
+      'malformed',
+      { status: response.status },
+    )
+  }
+  return body as T
+}
+
 export async function warmBackend() {
   apiFetch('/health').catch(() => {})
 }

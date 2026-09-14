@@ -57,9 +57,6 @@ export type CreatorAIStack = {
   effective: { ai_stack_profile: string; ai_stack_source: string }
 }
 
-/** The value the picker uses for "no override, follow the production default". */
-export const INHERIT = ''
-
 /**
  * Human wording for where an effective profile came from.
  *
