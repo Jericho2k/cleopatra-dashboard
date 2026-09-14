@@ -15,6 +15,14 @@
  *   RIGHT   the persisted state of the selected test fan, and its pending
  *           scheduled actions with a Run now control
  *
+ * Below 1024px those three do not fit side by side, so a segmented control
+ * moves between them and the chat is the surface you land on. Every pane stays
+ * mounted in that mode — the whole workspace is state on THIS component, so the
+ * selected fan, the draft in the composer, the fan's AI stack profile and the
+ * loaded state panel all survive switching. Which panes are on screen is
+ * decided by a media query reading `data-pane`; nothing here measures the
+ * window.
+ *
  * The transcript is read from the same `messages` rows the production Chats view
  * reads. It survives a refresh, leaving and returning, a browser restart and
  * coming back tomorrow, because it was never anywhere else. The previous
@@ -84,6 +92,10 @@ export default function SimulatorPage() {
   const [state, setState] = useState<SimulationState | null>(null)
   const [stateLoading, setStateLoading] = useState(false)
   const [draft, setDraft] = useState('')
+  // Which pane a narrow viewport is showing. Chat is the default surface, the
+  // way it is the default on a desktop with all three up. Desktop CSS ignores
+  // this entirely, so setting it there is harmless.
+  const [pane, setPane] = useState<'chat' | 'list' | 'state'>('chat')
   const [fast, setFast] = useState(true)
   const [showDebug, setShowDebug] = useState(false)
   const [busy, setBusy] = useState(false)
@@ -341,19 +353,24 @@ export default function SimulatorPage() {
   if (!allowed) return null
 
   return (
-    <div
-      style={{
-        height: '100%',
-        display: 'grid',
-        gridTemplateColumns: 'minmax(200px, 240px) minmax(0, 1fr) minmax(260px, 320px)',
-        gap: 12,
-        padding: 16,
-        color: 'var(--text-primary)',
-        overflow: 'hidden',
-      }}
-    >
+    <div style={{ height: '100%', display: 'flex', flexDirection: 'column', color: 'var(--text-primary)', overflow: 'hidden' }}>
+      {/* Pane switcher. Hidden on desktop, where all three are already up. */}
+      <div className="cleo-segmented" role="tablist" aria-label="Simulator panes">
+        <button type="button" role="tab" data-active={pane === 'chat'} aria-selected={pane === 'chat'} onClick={() => setPane('chat')}>
+          Chat
+        </button>
+        <button type="button" role="tab" data-active={pane === 'list'} aria-selected={pane === 'list'} onClick={() => setPane('list')}>
+          Fans &amp; setup
+        </button>
+        <button type="button" role="tab" data-active={pane === 'state'} aria-selected={pane === 'state'} onClick={() => setPane('state')}>
+          State
+        </button>
+      </div>
+
+      <div className="cleo-panes cleo-panes-sim" data-pane={pane}>
       {/* LEFT — persistent test conversations */}
-      <div style={{ ...PANEL, padding: 12, overflow: 'auto', display: 'flex', flexDirection: 'column', gap: 12 }}>
+      <div className="cleo-pane cleo-pane-list">
+        <div style={{ ...PANEL, minHeight: '100%', padding: 12, display: 'flex', flexDirection: 'column', gap: 12 }}>
         <div>
           <div style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--text-muted)' }}>
             Creator
@@ -384,7 +401,7 @@ export default function SimulatorPage() {
             <button
               key={entry.id}
               type="button"
-              onClick={() => setFanId(entry.id)}
+              onClick={() => { setFanId(entry.id); setPane('chat') }}
               style={{
                 display: 'block',
                 width: '100%',
@@ -487,8 +504,10 @@ export default function SimulatorPage() {
         </div>
       </div>
 
+      </div>
+
       {/* CENTRE — the complete persisted conversation */}
-      <div style={{ ...PANEL, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+      <div className="cleo-pane cleo-pane-chat" style={{ ...PANEL }}>
         <div style={{ padding: '10px 14px', borderBottom: '1px solid var(--border)' }}>
           <h1 style={{ margin: 0, fontSize: 14, letterSpacing: '0.06em', textTransform: 'uppercase', fontFamily: 'var(--font-display)' }}>
             {fan?.display_name ?? 'Simulator'}
@@ -522,7 +541,7 @@ export default function SimulatorPage() {
           </div>
         )}
 
-        <div style={{ padding: 12, borderTop: '1px solid var(--border)', display: 'flex', flexDirection: 'column', gap: 8 }}>
+        <div className="cleo-composer" style={{ padding: 12, borderTop: '1px solid var(--border)', display: 'flex', flexDirection: 'column', gap: 8 }}>
           <div style={{ display: 'flex', gap: 8 }}>
             <input
               value={draft}
@@ -535,7 +554,7 @@ export default function SimulatorPage() {
               }}
               placeholder="type as fan..."
               disabled={busy || !fanId}
-              style={{ ...PANEL, flex: 1, padding: '8px 10px', color: 'var(--text-primary)' }}
+              style={{ ...PANEL, flex: 1, minWidth: 0, padding: '8px 10px', color: 'var(--text-primary)' }}
             />
             <button
               type="button"
@@ -543,6 +562,7 @@ export default function SimulatorPage() {
               disabled={busy || !fanId || draft.trim() === ''}
               style={{
                 ...PANEL,
+                flexShrink: 0,
                 padding: '8px 14px',
                 cursor: busy ? 'wait' : 'pointer',
                 color: 'var(--silver)',
@@ -556,7 +576,7 @@ export default function SimulatorPage() {
           {/* Simulator-only controls. Deliberately below the composer and
               visually separate, so the conversation itself never reads as a
               debug console. */}
-          <div style={{ display: 'flex', gap: 14, alignItems: 'center', flexWrap: 'wrap', fontSize: 11, color: 'var(--text-muted)' }}>
+          <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', fontSize: 11, color: 'var(--text-muted)' }}>
             <label style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
               <input type="checkbox" checked={fast} onChange={event => setFast(event.target.checked)} />
               Fast replies
@@ -594,7 +614,7 @@ export default function SimulatorPage() {
       </div>
 
       {/* RIGHT — persisted state and delayed behaviour */}
-      <div style={{ overflow: 'auto' }}>
+      <div className="cleo-pane cleo-pane-state">
         <SimulationStatePanel
           state={state}
           loading={stateLoading}
@@ -628,6 +648,7 @@ export default function SimulatorPage() {
             ) : null
           }
         />
+      </div>
       </div>
     </div>
   )

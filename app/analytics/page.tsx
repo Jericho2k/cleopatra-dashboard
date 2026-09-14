@@ -106,38 +106,38 @@ export default function OverviewPage() {
   const attention = (health?.summary.failed_actions ?? 0) + (health?.summary.human_review ?? 0) + approvals.length
 
   return (
-    <main style={{ height: '100%', overflow: 'auto', background: 'var(--bg-base)', color: 'var(--text-primary)' }}>
-      <div style={{ maxWidth: 1080, margin: '0 auto', padding: '32px 28px 80px' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 20, marginBottom: 24 }}>
+    <main className="cleo-page-scroll" style={{ background: 'var(--bg-base)', color: 'var(--text-primary)' }}>
+      <div className="cleo-page-inner" style={{ maxWidth: 1080, margin: '0 auto' }}>
+        <div className="cleo-page-head" style={{ marginBottom: 24 }}>
           <div>
             <div style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.14em', color: 'var(--text-muted)' }}>Agency operations</div>
             <h1 style={{ margin: '5px 0 6px', fontFamily: 'var(--font-display)', fontSize: 28 }}>Overview</h1>
             <div style={{ color: 'var(--text-muted)', fontSize: 13 }}>The current state of Full Auto, revenue, approvals, and exceptions.</div>
           </div>
-          <div style={{ display: 'flex', gap: 8 }}>
-            <select value={creatorId} onChange={event => setCreatorId(event.target.value)} style={{ padding: '8px 10px', borderRadius: 7, border: '1px solid var(--border)', background: 'var(--bg-surface)', color: 'var(--text-primary)' }}>
+          <div className="cleo-page-head-actions">
+            <select value={creatorId} onChange={event => setCreatorId(event.target.value)} style={{ minWidth: 0, padding: '8px 10px', borderRadius: 7, border: '1px solid var(--border)', background: 'var(--bg-surface)', color: 'var(--text-primary)' }}>
               {creators.map(creator => <option key={creator.id} value={creator.id}>{creator.name}</option>)}
             </select>
-            <button type='button' onClick={() => void loadOverview(creatorId)} disabled={!creatorId || loading} style={{ padding: '8px 12px', borderRadius: 7, border: '1px solid var(--border)', background: 'var(--bg-surface)', color: 'var(--text-secondary)', cursor: 'pointer' }}>{loading ? 'Refreshing…' : 'Refresh'}</button>
+            <button type='button' onClick={() => void loadOverview(creatorId)} disabled={!creatorId || loading} style={{ padding: '8px 12px', borderRadius: 7, border: '1px solid var(--border)', background: 'var(--bg-surface)', color: 'var(--text-secondary)', cursor: 'pointer', whiteSpace: 'nowrap' }}>{loading ? 'Refreshing…' : 'Refresh'}</button>
           </div>
         </div>
 
         {message && <div style={{ padding: '10px 12px', marginBottom: 14, borderRadius: 8, border: '1px solid rgba(229,118,137,0.4)', color: '#e57689', fontSize: 12 }}>{message}</div>}
 
-        <div style={{ ...card, marginBottom: 14, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 16 }}>
-          <div>
+        <div style={{ ...card, marginBottom: 14, display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
+          <div style={{ minWidth: 0 }}>
             <div style={{ fontSize: 14, fontWeight: 700 }}>{selected?.name || 'Creator'}</div>
             <div style={{ color: 'var(--text-muted)', fontSize: 12, marginTop: 3 }}>
               Full Auto {selected?.auto_mode ? 'is on' : 'is off'} · {preview?.eligible ?? 0} of {preview?.total ?? 0} current fans eligible
             </div>
           </div>
-          <div style={{ textAlign: 'right' }}>
+          <div style={{ minWidth: 0, marginLeft: 'auto', textAlign: 'right' }}>
             <div style={{ color: attention ? '#e57689' : 'var(--green)', fontWeight: 700, fontSize: 13 }}>{attention ? `${attention} need attention` : 'Healthy'}</div>
             <div style={{ color: 'var(--text-muted)', fontSize: 10, marginTop: 3 }}>Chats reconciled {selected?.last_chat_reconcile_at ? new Date(selected.last_chat_reconcile_at).toLocaleString() : 'not yet'}</div>
           </div>
         </div>
 
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, minmax(0, 1fr))', gap: 10, marginBottom: 18 }}>
+        <div className="cleo-grid-metrics" style={{ marginBottom: 18 }}>
           <Metric label='Confirmed revenue' value={`$${stats.revenue}`} />
           <Metric label='Fans' value={stats.total} />
           <Metric label='Buyers' value={stats.buyers} />
@@ -152,7 +152,7 @@ export default function OverviewPage() {
           </div>
         )}
 
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, minmax(0, 1fr))', gap: 10, marginBottom: 18 }}>
+        <div className="cleo-grid-metrics" style={{ marginBottom: 18 }}>
           <Metric label='Payment pending' value={health?.summary.payment_pending ?? 0} />
           <Metric label='Follow-ups due' value={health?.summary.followups_pending ?? 0} />
           <Metric label='PPV approvals' value={approvals.length} alert={approvals.length > 0} />
@@ -165,13 +165,13 @@ export default function OverviewPage() {
             <SectionTitle title='PPV approvals' subtitle='Exact prepared sends waiting for an operator.' />
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
               {approvals.map(approval => (
-                <div key={approval.id} style={{ padding: 12, borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg-elevated)', display: 'flex', justifyContent: 'space-between', gap: 14 }}>
-                  <div>
+                <div key={approval.id} style={{ padding: 12, borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg-elevated)', display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', gap: 12 }}>
+                  <div style={{ minWidth: 180, flex: 1 }}>
                     <div style={{ fontSize: 13, fontWeight: 650 }}>{approval.fans?.display_name || 'Fan'} · ${(approval.price_cents / 100).toFixed(0)}</div>
                     <div style={{ color: 'var(--text-muted)', fontSize: 11, marginTop: 3 }}>{approval.media_ids.length} media{approval.approved_experience ? ` · ${approval.approved_experience}` : ''}</div>
                     <div style={{ color: 'var(--text-secondary)', fontSize: 12, marginTop: 6 }}>{approval.message_content || 'just for you...'}</div>
                   </div>
-                  <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                  <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
                     <SmallButton onClick={() => void resolveApproval(approval.id, 'reject')} disabled={resolving === approval.id}>Reject</SmallButton>
                     <SmallButton primary onClick={() => void resolveApproval(approval.id, 'approve')} disabled={resolving === approval.id}>{resolving === approval.id ? 'Sending…' : 'Approve & send'}</SmallButton>
                   </div>
@@ -188,13 +188,13 @@ export default function OverviewPage() {
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
               {health.fans.map(fan => (
-                <Link key={fan.fan_id} href='/' style={{ textDecoration: 'none', padding: 12, borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg-elevated)', display: 'flex', justifyContent: 'space-between', gap: 14 }}>
-                  <div>
+                <Link key={fan.fan_id} href='/' style={{ textDecoration: 'none', padding: 12, borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg-elevated)', display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', gap: 10 }}>
+                  <div style={{ minWidth: 0, flex: 1 }}>
                     <div style={{ color: 'var(--text-primary)', fontSize: 13, fontWeight: 650 }}>{fan.display_name}</div>
                     <div style={{ color: 'var(--text-muted)', fontSize: 11, marginTop: 3 }}>{fan.commercial_state}{fan.next_followup_type ? ` · ${fan.next_followup_type}` : ''}</div>
                     {fan.failed_actions[0]?.last_error && <div style={{ color: '#e57689', fontSize: 11, marginTop: 5 }}>{fan.failed_actions[0].action_type}: {fan.failed_actions[0].last_error}</div>}
                   </div>
-                  <div style={{ color: fan.needs_human_review || fan.failed_actions.length ? '#e57689' : 'var(--text-secondary)', fontSize: 11 }}>Open chat →</div>
+                  <div style={{ color: fan.needs_human_review || fan.failed_actions.length ? '#e57689' : 'var(--text-secondary)', fontSize: 11, whiteSpace: 'nowrap', alignSelf: 'center' }}>Open chat →</div>
                 </Link>
               ))}
             </div>
@@ -206,7 +206,7 @@ export default function OverviewPage() {
 }
 
 function Metric({ label, value, alert = false }: { label: string; value: string | number; alert?: boolean }) {
-  return <div style={{ ...card, padding: 14, borderColor: alert ? 'rgba(229,118,137,0.5)' : 'var(--border)', background: alert ? 'rgba(229,118,137,0.08)' : 'var(--bg-surface)' }}><div style={{ color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', fontSize: 10 }}>{label}</div><div style={{ fontFamily: 'var(--font-display)', fontSize: 23, marginTop: 5, color: alert ? '#e57689' : 'var(--text-primary)' }}>{value}</div></div>
+  return <div style={{ ...card, padding: 14, borderColor: alert ? 'rgba(229,118,137,0.5)' : 'var(--border)', background: alert ? 'rgba(229,118,137,0.08)' : 'var(--bg-surface)' }}><div style={{ color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', fontSize: 10, overflowWrap: 'anywhere' }}>{label}</div><div style={{ fontFamily: 'var(--font-display)', fontSize: 23, marginTop: 5, color: alert ? '#e57689' : 'var(--text-primary)' }}>{value}</div></div>
 }
 
 function SectionTitle({ title, subtitle }: { title: string; subtitle: string }) {

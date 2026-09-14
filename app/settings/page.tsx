@@ -677,16 +677,21 @@ export default function SettingsPage() {
   }
 
   return (
-    <div style={{
-      height: '100vh',
+    <div className="settings-shell" style={{
+      height: '100%',
       display: 'flex',
       background: 'var(--bg-base)',
       color: 'var(--text-primary)',
       fontFamily: 'var(--font-body)',
       overflow: 'hidden',
     }}>
-      {/* Sidebar */}
-      <aside style={{
+      {/*
+        Section rail. Below 768px it becomes a header strip: the creator picker
+        stays full width and the section list turns into a horizontally
+        scrolling row of tabs, so the sections stay one tap away instead of
+        costing a whole screen. See .settings-* in app/responsive.css.
+      */}
+      <aside className="settings-aside" style={{
         width: 220,
         flexShrink: 0,
         background: 'var(--bg-surface)',
@@ -695,7 +700,7 @@ export default function SettingsPage() {
         flexDirection: 'column',
         overflow: 'hidden',
       }}>
-        <div style={{
+        <div className="settings-title" style={{
           padding: '20px 16px 14px',
           borderBottom: '1px solid var(--border-subtle)',
           flexShrink: 0,
@@ -709,11 +714,11 @@ export default function SettingsPage() {
           }}>
             SETTINGS
           </div>
-          <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
+          <div className="settings-title-sub" style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
             Workspace preferences
           </div>
         </div>
-        <div style={{ padding: '16px', borderBottom: '1px solid var(--border)' }}>
+        <div className="settings-creator" style={{ padding: '16px', borderBottom: '1px solid var(--border)' }}>
           <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 8, textTransform: 'uppercase' }}>
             Creator
           </div>
@@ -746,21 +751,23 @@ export default function SettingsPage() {
             )}
           </div>
           {/* Add / Delete creator */}
-          <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
+          {/* "Reconnect Fansly" alone is wider than a third of the rail, so
+              without wrapping the Delete control is pushed off the edge. */}
+          <div className="cleo-actionbar" style={{ gap: 6, marginTop: 8 }}>
             <button type="button" onClick={openAddCreator} style={{
-              flex: 1, padding: '5px', fontSize: 11,
+              flex: '1 1 auto', minWidth: 0, padding: '5px', fontSize: 11,
               background: 'var(--bg-elevated)', border: '1px solid var(--border)',
               borderRadius: 6, color: 'var(--text-secondary)', cursor: 'pointer',
             }}>+ Add Creator</button>
             <button type="button" onClick={openReconnectCreator} disabled={!selectedCreatorId} style={{
-              flex: 1, padding: '5px', fontSize: 11,
+              flex: '1 1 auto', minWidth: 0, padding: '5px', fontSize: 11,
               background: 'var(--bg-elevated)', border: '1px solid var(--border)',
               borderRadius: 6, color: 'var(--text-secondary)',
               cursor: selectedCreatorId ? 'pointer' : 'not-allowed',
               opacity: selectedCreatorId ? 1 : 0.5,
             }}>Reconnect Fansly</button>
             <button type="button" onClick={() => selectedCreatorId && deleteCreator(selectedCreatorId)} style={{
-              padding: '5px 10px', fontSize: 11,
+              flex: '0 1 auto', minWidth: 0, padding: '5px 10px', fontSize: 11,
               background: 'transparent', border: '1px solid var(--border)',
               borderRadius: 6, color: 'var(--text-muted)', cursor: 'pointer',
             }}>Delete</button>
@@ -780,11 +787,13 @@ export default function SettingsPage() {
 
         </div>
 
-        <ul style={{ listStyle: 'none', padding: '8px', margin: 0, flex: 1 }}>
+        <ul className="settings-sections" style={{ listStyle: 'none', padding: '8px', margin: 0, flex: 1 }}>
           {sectionsFor(ownerTools).map(section => (
             <li key={section}>
               <button
                 type="button"
+                className="settings-section-btn"
+                data-active={activeSection === section ? 'true' : 'false'}
                 onClick={() => setActiveSection(section)}
                 style={{
                   width: '100%',
@@ -799,6 +808,7 @@ export default function SettingsPage() {
                   color: activeSection === section ? 'var(--text-primary)' : 'var(--text-muted)',
                   fontSize: 13,
                   fontWeight: activeSection === section ? 500 : 400,
+                  whiteSpace: 'nowrap',
                 }}
               >
                 {section}
@@ -814,14 +824,14 @@ export default function SettingsPage() {
       </aside>
 
       {/* Content area */}
-      <div style={{ flex: 1, overflow: 'auto', padding: 32 }}>
+      <div className="settings-content">
         <div style={{ maxWidth: 600 }}>
           {!selectedCreatorId ? (
             <div style={{ color: 'var(--text-muted)', fontSize: 13 }}>Select a creator to load settings.</div>
           ) : contentLoading ? (
             <div>
-              <div style={{ height: 22, width: 180, background: 'var(--bg-elevated)', borderRadius: 6, marginBottom: 12 }} />
-              <div style={{ height: 14, width: 320, background: 'var(--bg-elevated)', borderRadius: 6, marginBottom: 24 }} />
+              <div style={{ height: 22, width: 180, maxWidth: '100%', background: 'var(--bg-elevated)', borderRadius: 6, marginBottom: 12 }} />
+              <div style={{ height: 14, width: 320, maxWidth: '100%', background: 'var(--bg-elevated)', borderRadius: 6, marginBottom: 24 }} />
               <div style={{ height: 72, width: '100%', background: 'var(--bg-elevated)', borderRadius: 8, marginBottom: 12 }} />
               <div style={{ height: 72, width: '100%', background: 'var(--bg-elevated)', borderRadius: 8, marginBottom: 12 }} />
               <div style={{ height: 72, width: '100%', background: 'var(--bg-elevated)', borderRadius: 8 }} />
@@ -1128,7 +1138,7 @@ export default function SettingsPage() {
                 </button>
               </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 8, marginBottom: 20 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(110px, 1fr))', gap: 8, marginBottom: 20 }}>
                 {([
                   ['all', 'All chats', 'Every fan unless explicitly excluded'],
                   ['new_only', 'Only new chats', 'Synced fans with no creator reply yet'],
@@ -1179,7 +1189,7 @@ export default function SettingsPage() {
                     })}
                   </div>
 
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 16 }}>
+                  <div className="cleo-field-row" style={{ gap: 10, marginBottom: 16 }}>
                     <label style={{ fontSize: 11, color: 'var(--text-muted)' }}>Minimum total spend ($)
                       <input type="number" min="0" value={audiencePolicy.min_total_spend ?? ''} onChange={event => setAudiencePolicy(p => ({ ...p, min_total_spend: event.target.value === '' ? null : Number(event.target.value) }))}
                         style={{ display: 'block', width: '100%', boxSizing: 'border-box', marginTop: 5, padding: '7px 9px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg-main)', color: 'var(--text-primary)' }} />
@@ -1191,7 +1201,7 @@ export default function SettingsPage() {
                   </div>
 
                   {audienceLists.length > 0 && (
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+                    <div className="cleo-field-row" style={{ gap: 14 }}>
                       {([
                         ['include_list_ids', 'Include lists'],
                         ['exclude_list_ids', 'Exclude lists'],
@@ -1266,7 +1276,7 @@ export default function SettingsPage() {
                       {' '}{audiencePreview.ineligible} are blocked by an exclusion, per-fan Off, human review, or the selected rules.
                     </div>
                   ) : (
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                    <div className="cleo-field-row" style={{ gap: 12 }}>
                       <div style={{ padding: 10, borderRadius: 7, background: 'var(--bg-main)' }}>
                         <div style={{ color: '#e0a83a', fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 5 }}>Active now — master switch Off</div>
                         <div><span style={{ color: 'var(--text-primary)', fontWeight: 700 }}>{audiencePreview.eligible}</span> fans are explicitly enabled per fan.</div>
@@ -1412,7 +1422,7 @@ export default function SettingsPage() {
                       type="number" min="0" inputMode="numeric"
                       value={caps[key]} placeholder={ph}
                       onChange={e => setCaps(p => ({ ...p, [key]: e.target.value }))}
-                      style={{ width: 140, background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: 6, color: 'var(--text-primary)', padding: '8px 12px', fontSize: 13 }}
+                      style={{ width: 140, maxWidth: '100%', background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: 6, color: 'var(--text-primary)', padding: '8px 12px', fontSize: 13 }}
                     />
                   </div>
                 ))}
@@ -1444,7 +1454,7 @@ export default function SettingsPage() {
                     type="number" min="0" inputMode="numeric"
                     value={caps.whaleHandoff} placeholder="e.g. 500"
                     onChange={e => setCaps(p => ({ ...p, whaleHandoff: e.target.value }))}
-                    style={{ width: 160, background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: 6, color: 'var(--text-primary)', padding: '8px 12px', fontSize: 13 }}
+                    style={{ width: 160, maxWidth: '100%', background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: 6, color: 'var(--text-primary)', padding: '8px 12px', fontSize: 13 }}
                   />
                 </div>
               </div>
@@ -1630,7 +1640,7 @@ export default function SettingsPage() {
         }}>
           <div style={{
             background: 'var(--bg-surface)', border: '1px solid var(--border)',
-            borderRadius: 12, padding: 24, width: 400,
+            borderRadius: 12, padding: 24, width: '100%', maxWidth: 400, maxHeight: 'calc(100dvh - 40px)', overflowY: 'auto',
           }}>
             {connectStep === 'credentials' ? (
               <>
@@ -1770,7 +1780,7 @@ export default function SettingsPage() {
       )}
       {toast && (
         <div style={{
-          position: 'fixed', bottom: 24, right: 24,
+          position: 'fixed', bottom: 24, right: 24, maxWidth: 'calc(100vw - 24px)',
           padding: '12px 20px', borderRadius: 8, zIndex: 999,
           background: toast.type === 'success' ? 'rgba(76,175,130,0.9)' : 'rgba(255,80,80,0.9)',
           color: 'white', fontSize: 13, fontWeight: 500,

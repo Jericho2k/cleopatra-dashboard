@@ -13,6 +13,12 @@ export interface FanPanelProps {
   onInsertMessage?: (text: string) => void
   onHistoryLoaded?: () => void
   showToast?: (message: string) => void
+  /**
+   * Narrow-viewport navigation back to the thread. Below 1024px this panel is
+   * a screen of its own rather than a column beside the conversation, so it
+   * needs its own way back. Hidden by CSS wherever both are already visible.
+   */
+  onBack?: () => void
 }
 
 type Tab = 'profile' | 'sales'
@@ -116,7 +122,7 @@ function formatTrackedMoney(cents: unknown): string {
   return Number.isFinite(parsed) ? `$${(parsed / 100).toFixed(parsed % 100 ? 2 : 0)}` : 'Not learned yet'
 }
 
-export default function FanPanel({ fan, creatorId, onHistoryLoaded, showToast }: FanPanelProps) {
+export default function FanPanel({ fan, creatorId, onHistoryLoaded, showToast, onBack }: FanPanelProps) {
   const recoveryTick = useRealtimeRecovery()
   const [activeTab, setActiveTab] = useState<Tab>('profile')
   const [showMemberNote, setShowMemberNote] = useState(false)
@@ -369,12 +375,27 @@ export default function FanPanel({ fan, creatorId, onHistoryLoaded, showToast }:
   if (!fan) {
     return (
       <aside style={{
-        height: '100vh', width: '100%', background: 'var(--bg-surface)',
+        height: '100%', width: '100%', background: 'var(--bg-surface)',
         borderLeft: '1px solid var(--border)', display: 'flex',
-        alignItems: 'center', justifyContent: 'center',
-        color: 'var(--text-muted)', fontSize: 14,
+        flexDirection: 'column', gap: 14,
+        alignItems: 'center', justifyContent: 'center', padding: 20,
+        color: 'var(--text-muted)', fontSize: 14, textAlign: 'center',
       }}>
         Select a conversation.
+        {onBack && (
+          <button
+            type="button"
+            className="cleo-only-compact"
+            onClick={onBack}
+            style={{
+              padding: '8px 14px', borderRadius: 8,
+              border: '1px solid var(--border)', background: 'var(--bg-elevated)',
+              color: 'var(--text-secondary)', fontSize: 13, cursor: 'pointer',
+            }}
+          >
+            ‹ Back
+          </button>
+        )}
       </aside>
     )
   }
@@ -394,14 +415,33 @@ export default function FanPanel({ fan, creatorId, onHistoryLoaded, showToast }:
   return (
     <>
     <aside style={{
-      height: '100vh', width: '100%', background: 'var(--bg-surface)',
+      height: '100%', width: '100%', background: 'var(--bg-surface)',
       borderLeft: '1px solid var(--border)', display: 'flex',
       flexDirection: 'column', overflow: 'hidden',
     }}>
       {/* Fan header - always visible */}
       <div style={{ padding: '16px 20px 0', flexShrink: 0 }}>
-        <div style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 12 }}>
-          FAN PROFILE
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
+          {onBack && (
+            <button
+              type="button"
+              className="cleo-only-compact"
+              onClick={onBack}
+              aria-label="Back to conversation"
+              style={{
+                width: 34, height: 34, flexShrink: 0, padding: 0,
+                alignItems: 'center', justifyContent: 'center',
+                border: '1px solid var(--border)', borderRadius: 8,
+                background: 'var(--bg-elevated)', color: 'var(--text-secondary)',
+                fontSize: 17, lineHeight: 1, cursor: 'pointer',
+              }}
+            >
+              ‹
+            </button>
+          )}
+          <div style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+            FAN PROFILE
+          </div>
         </div>
         <div style={{ display: 'flex', gap: 10, marginBottom: 16 }}>
           <div style={{ flex: 1, ...CARD_STYLE }}>
@@ -693,7 +733,7 @@ export default function FanPanel({ fan, creatorId, onHistoryLoaded, showToast }:
                     <div style={{ fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.6, marginBottom: 12 }}>
                       {aiSummary.summary}
                     </div>
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                    <div className="cleo-field-row" style={{ gap: 8 }}>
                       {[
                         { label: 'Emotional type', value: aiSummary.emotional_type },
                         { label: 'Spending', value: aiSummary.spending_behavior },
@@ -756,7 +796,7 @@ export default function FanPanel({ fan, creatorId, onHistoryLoaded, showToast }:
                 </button>
                 {showAdvanced && (
                   <div style={{ ...CARD_STYLE, marginTop: 8, padding: 12 }}>
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 7 }}>
+                    <div className="cleo-field-row" style={{ gap: 7 }}>
                       {[
                         ['Auto eligibility', fullAutoStatus.auto_mode_reason],
                         ['Last active', fan.last_active ? formatOperationalTime(fan.last_active) : null],
@@ -940,7 +980,7 @@ export default function FanPanel({ fan, creatorId, onHistoryLoaded, showToast }:
           display: 'flex', alignItems: 'center', justifyContent: 'center',
         }}
       >
-        <div onClick={e => e.stopPropagation()} style={{ width: 'min(1000px, 92vw)', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12 }}>
+        <div onClick={e => e.stopPropagation()} style={{ width: 'min(1000px, 92vw)', maxWidth: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12, padding: '0 10px' }}>
           <div style={{ color: 'rgba(255,255,255,0.75)', fontSize: 12 }}>
             PPV media {mediaPreview.index + 1} of {mediaPreview.items.length}
           </div>
@@ -950,25 +990,27 @@ export default function FanPanel({ fan, creatorId, onHistoryLoaded, showToast }:
               src={currentPreview.url}
               controls
               autoPlay
-              style={{ maxHeight: '70vh', maxWidth: '88vw', borderRadius: 8 }}
+              style={{ maxHeight: '62dvh', maxWidth: '100%', borderRadius: 8 }}
             />
           ) : (
             <img
               key={currentPreview.mediaId}
               src={currentPreview.url}
               alt="PPV media preview"
-              style={{ maxHeight: '70vh', maxWidth: '88vw', objectFit: 'contain', borderRadius: 8 }}
+              style={{ maxHeight: '62dvh', maxWidth: '100%', objectFit: 'contain', borderRadius: 8 }}
             />
           )}
           {mediaPreview.items.length > 1 && (
             <>
               <button type="button" aria-label="Previous media" onClick={() => setMediaPreview(current => current ? { ...current, index: (current.index - 1 + current.items.length) % current.items.length } : current)}
+                className="cleo-lightbox-prev"
                 style={{ position: 'fixed', left: 24, top: '50%', transform: 'translateY(-50%)', width: 40, height: 48, borderRadius: 8, border: '1px solid rgba(255,255,255,0.2)', background: 'rgba(0,0,0,0.55)', color: 'white', fontSize: 24, cursor: 'pointer' }}>‹</button>
               <button type="button" aria-label="Next media" onClick={() => setMediaPreview(current => current ? { ...current, index: (current.index + 1) % current.items.length } : current)}
+                className="cleo-lightbox-next"
                 style={{ position: 'fixed', right: 24, top: '50%', transform: 'translateY(-50%)', width: 40, height: 48, borderRadius: 8, border: '1px solid rgba(255,255,255,0.2)', background: 'rgba(0,0,0,0.55)', color: 'white', fontSize: 24, cursor: 'pointer' }}>›</button>
               <div style={{ display: 'flex', gap: 7, maxWidth: '88vw', overflowX: 'auto', padding: 3 }}>
                 {mediaPreview.items.map((item, index) => (
-                  <button key={item.mediaId} type="button" onClick={() => setMediaPreview(current => current ? { ...current, index } : current)}
+                  <button key={item.mediaId} type="button" className="cleo-tap-sm" onClick={() => setMediaPreview(current => current ? { ...current, index } : current)}
                     style={{ width: 58, height: 58, flexShrink: 0, padding: 0, borderRadius: 6, overflow: 'hidden', cursor: 'pointer', border: index === mediaPreview.index ? '2px solid var(--purple)' : '1px solid rgba(255,255,255,0.2)', background: '#111' }}>
                     {item.mimetype?.startsWith('video') ? (
                       <div style={{ color: 'white', fontSize: 18, lineHeight: '56px' }}>▶</div>
@@ -983,6 +1025,7 @@ export default function FanPanel({ fan, creatorId, onHistoryLoaded, showToast }:
         </div>
         <button
           onClick={() => setMediaPreview(null)}
+          className="cleo-lightbox-close"
           style={{
             position: 'fixed', top: 20, right: 20,
             background: 'rgba(255,255,255,0.1)', border: 'none',

@@ -1,0 +1,933 @@
+/* =============================================================================
+   Cleopatra responsive layer
+   -----------------------------------------------------------------------------
+   The dashboard is written with inline styles, and that is not being changed
+   here. What this file adds is the small set of shared primitives the pages opt
+   into with a className, so mobile behaviour lives in ONE place instead of in
+   hundreds of per-component ternaries. Two consequences worth knowing:
+
+     * Inline styles beat class selectors, so a rule that has to override an
+       inline declaration is marked !important. That is deliberate and confined
+       to this file. Where a component could simply drop the inline declaration
+       instead, it did.
+     * Nothing here branches on JavaScript. Layout that changes between phone
+       and desktop is a media query; layout that changes with app state is a
+       data- attribute the media query reads. Server and client therefore render
+       identical markup, so none of this can cause a hydration mismatch.
+
+   Breakpoints
+     <= 767px    phone           single pane, drawer navigation
+     768-1023px  tablet          two panes, condensed grids
+     >= 1024px   desktop         unchanged from before this pass
+   ========================================================================== */
+
+:root {
+  /* env() is only non-zero when the viewport is declared viewport-fit=cover,
+     which app/layout.tsx does. The fallbacks keep every other browser at 0. */
+  --cleo-safe-top: env(safe-area-inset-top, 0px);
+  --cleo-safe-bottom: env(safe-area-inset-bottom, 0px);
+  --cleo-safe-left: env(safe-area-inset-left, 0px);
+  --cleo-safe-right: env(safe-area-inset-right, 0px);
+
+  /* Height the software keyboard is currently covering. Written by AppShell
+     from visualViewport; 0 on every desktop browser and whenever no keyboard
+     is up. The shell subtracts it so a composer pinned to the bottom of the
+     app stays above the keyboard instead of behind it. */
+  --cleo-kb-inset: 0px;
+
+  /* Fixed mobile top bar. Zero on desktop, where the rail is the navigation. */
+  --cleo-topbar-h: 0px;
+
+  --cleo-page-pad: 32px;
+  --cleo-page-pad-y: 32px;
+}
+
+html {
+  height: 100%;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+body {
+  height: 100vh;
+  height: 100dvh;
+  max-width: 100%;
+  overflow: hidden;
+  overscroll-behavior-y: none;
+}
+
+/* Nothing in the app may push the page itself sideways. Wide content gets a
+   contained scroller (.cleo-scroll-x) rather than widening the document. */
+html,
+body {
+  overflow-x: hidden;
+}
+
+img,
+video {
+  max-width: 100%;
+}
+
+/* -------------------------------------------------------------------------
+   App shell
+   ---------------------------------------------------------------------- */
+
+.cleo-shell {
+  display: flex;
+  width: 100%;
+  height: calc(100vh - var(--cleo-kb-inset));
+  height: calc(100dvh - var(--cleo-kb-inset));
+  overflow: hidden;
+}
+
+.cleo-main {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  padding-top: var(--cleo-topbar-h);
+}
+
+/* Fixed top bar. Mobile only; `display` is flipped on in the phone query. */
+.cleo-topbar {
+  display: none;
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 1300;
+  align-items: center;
+  gap: 10px;
+  height: var(--cleo-topbar-h);
+  padding: var(--cleo-safe-top) calc(12px + var(--cleo-safe-right)) 0
+    calc(8px + var(--cleo-safe-left));
+  background: var(--bg-surface);
+  border-bottom: 1px solid var(--border);
+}
+
+.cleo-topbar-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 42px;
+  height: 42px;
+  flex-shrink: 0;
+  border: none;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.cleo-topbar-title {
+  font-family: var(--font-display);
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: var(--silver);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cleo-nav-scrim {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: 1350;
+  background: rgba(0, 0, 0, 0.55);
+}
+
+/* Drawer header, mobile only: the rail's own hamburger is hidden there. */
+.cleo-nav-drawer-head {
+  display: none;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 2px 6px 10px;
+  margin-bottom: 6px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.cleo-nav[data-expanded='false'] .cleo-nav-label {
+  display: none;
+}
+
+/* The Sign out row and nav rows are the app's primary navigation; on a phone
+   they get a real touch target rather than a 40px desktop row. */
+@media (max-width: 767px) {
+  :root {
+    --cleo-topbar-h: calc(52px + var(--cleo-safe-top));
+    --cleo-page-pad: 16px;
+    --cleo-page-pad-y: 18px;
+  }
+
+  .cleo-topbar {
+    display: flex;
+  }
+
+  .cleo-nav {
+    position: fixed !important;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    z-index: 1400;
+    width: min(84vw, 288px) !important;
+    padding: calc(14px + var(--cleo-safe-top)) 8px
+      calc(14px + var(--cleo-safe-bottom)) calc(8px + var(--cleo-safe-left)) !important;
+    overflow-y: auto !important;
+    overflow-x: hidden !important;
+    transform: translateX(-102%);
+    transition: transform 0.22s ease;
+  }
+
+  .cleo-nav[data-open='true'] {
+    transform: translateX(0);
+    box-shadow: 0 0 48px rgba(0, 0, 0, 0.65);
+  }
+
+  .cleo-nav-scrim[data-open='true'] {
+    display: block;
+  }
+
+  /* Always labelled in the drawer, whatever the desktop rail is set to. */
+  .cleo-nav .cleo-nav-label {
+    display: inline !important;
+  }
+
+  .cleo-nav-hamburger {
+    display: none !important;
+  }
+
+  .cleo-nav-drawer-head {
+    display: flex;
+  }
+
+  .cleo-nav .nav-item,
+  .cleo-nav .cleo-nav-signout {
+    height: 46px !important;
+  }
+}
+
+@media (min-width: 768px) and (max-width: 1023px) {
+  :root {
+    --cleo-page-pad: 22px;
+    --cleo-page-pad-y: 24px;
+  }
+}
+
+/* -------------------------------------------------------------------------
+   Visibility helpers (CSS only, so markup is identical on server and client)
+   ---------------------------------------------------------------------- */
+
+.cleo-only-phone {
+  display: none !important;
+}
+
+/* Shown on anything narrower than a desktop: phone AND tablet. */
+.cleo-only-compact {
+  display: none !important;
+}
+
+@media (max-width: 767px) {
+  .cleo-only-phone {
+    display: inline-flex !important;
+  }
+  .cleo-hide-phone {
+    display: none !important;
+  }
+}
+
+@media (max-width: 1023px) {
+  .cleo-only-compact {
+    display: inline-flex !important;
+  }
+  .cleo-hide-compact {
+    display: none !important;
+  }
+}
+
+/* -------------------------------------------------------------------------
+   Multi-pane workspaces (Chats, Simulator)
+
+   The pane that is showing is app state, so it is a data- attribute on the
+   container; which panes the viewport can afford is a media query. Desktop
+   ignores the attribute entirely and shows every pane, exactly as before.
+
+   Pane ELEMENTS carry no inline styles on purpose. An inline `display` would
+   outrank every rule below and the hiding would silently stop working, so each
+   pane's own layout lives here and its contents style themselves.
+   ---------------------------------------------------------------------- */
+
+.cleo-panes {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  overflow: hidden;
+}
+
+.cleo-panes > .cleo-pane {
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  overflow: hidden;
+}
+
+.cleo-panes > .cleo-pane-chat {
+  display: flex;
+  flex-direction: column;
+}
+
+.cleo-panes > .cleo-pane-list,
+.cleo-panes > .cleo-pane-state {
+  display: block;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+.cleo-panes > .cleo-pane-fan {
+  display: block;
+}
+
+/* Chats: list / chat / fan profile. */
+.cleo-panes-chat {
+  grid-template-columns: 280px minmax(0, 1fr) 280px;
+}
+
+.cleo-panes-chat > .cleo-pane-list {
+  overflow: hidden;
+}
+
+/* Tablet keeps the conversation list beside the thread and swaps the fan
+   profile in for the thread on demand — squeezing three panes into 768px is
+   what made this unusable in the first place. */
+@media (min-width: 768px) and (max-width: 1023px) {
+  .cleo-panes-chat {
+    grid-template-columns: 244px minmax(0, 1fr);
+  }
+  .cleo-panes-chat > .cleo-pane-fan {
+    display: none;
+  }
+  .cleo-panes-chat[data-pane='fan'] > .cleo-pane-chat {
+    display: none;
+  }
+  .cleo-panes-chat[data-pane='fan'] > .cleo-pane-fan {
+    display: block;
+  }
+}
+
+/* Phone: exactly one pane, messenger style. The [data-pane] rules below are
+   more specific than the blanket hide, so they win without !important. */
+@media (max-width: 767px) {
+  .cleo-panes {
+    display: block;
+    grid-template-columns: none;
+  }
+  .cleo-panes > .cleo-pane {
+    display: none;
+  }
+  .cleo-panes[data-pane='chat'] > .cleo-pane-chat {
+    display: flex;
+  }
+  .cleo-panes[data-pane='list'] > .cleo-pane-list,
+  .cleo-panes[data-pane='fan'] > .cleo-pane-fan,
+  .cleo-panes[data-pane='state'] > .cleo-pane-state {
+    display: block;
+  }
+}
+
+/* Simulator: setup / chat / state. */
+.cleo-panes-sim {
+  grid-template-columns: minmax(200px, 240px) minmax(0, 1fr) minmax(260px, 320px);
+  gap: 12px;
+  padding: 16px;
+}
+
+@media (min-width: 768px) and (max-width: 1023px) {
+  .cleo-panes-sim {
+    grid-template-columns: minmax(180px, 210px) minmax(0, 1fr);
+    padding: 12px;
+  }
+  .cleo-panes-sim > .cleo-pane-state {
+    display: none;
+  }
+  .cleo-panes-sim[data-pane='state'] > .cleo-pane-chat {
+    display: none;
+  }
+  .cleo-panes-sim[data-pane='state'] > .cleo-pane-state {
+    display: block;
+  }
+}
+
+@media (max-width: 767px) {
+  .cleo-panes-sim {
+    padding: 0;
+    gap: 0;
+  }
+}
+
+/* Segmented switcher used to move between panes on small screens. */
+.cleo-segmented {
+  display: none;
+  flex-shrink: 0;
+  gap: 6px;
+  padding: 8px calc(10px + var(--cleo-safe-left)) 8px
+    calc(10px + var(--cleo-safe-right));
+  background: var(--bg-surface);
+  border-bottom: 1px solid var(--border);
+}
+
+.cleo-segmented > button {
+  flex: 1;
+  min-height: 38px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.cleo-segmented > button[data-active='true'] {
+  background: var(--bg-elevated);
+  border-color: var(--border-strong);
+  color: var(--text-primary);
+}
+
+@media (max-width: 1023px) {
+  .cleo-segmented {
+    display: flex;
+  }
+}
+
+/* Back / forward affordance inside a pane header. */
+.cleo-pane-back {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  flex-shrink: 0;
+  margin-right: 2px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-elevated);
+  color: var(--text-secondary);
+  font-size: 17px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+@media (max-width: 767px) {
+  .cleo-pane-back {
+    display: inline-flex;
+  }
+}
+
+/* -------------------------------------------------------------------------
+   Page scaffolding
+   ---------------------------------------------------------------------- */
+
+.cleo-page {
+  height: 100%;
+  box-sizing: border-box;
+  overflow-y: auto;
+  overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
+  padding: var(--cleo-page-pad-y) calc(var(--cleo-page-pad) + var(--cleo-safe-right))
+    calc(var(--cleo-page-pad-y) + var(--cleo-safe-bottom))
+    calc(var(--cleo-page-pad) + var(--cleo-safe-left));
+}
+
+/* For pages whose scroller and content box are separate elements. */
+.cleo-page-scroll {
+  height: 100%;
+  overflow-y: auto;
+  overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
+}
+
+.cleo-page-inner {
+  box-sizing: border-box;
+  padding: 32px calc(28px + var(--cleo-safe-right)) 80px
+    calc(28px + var(--cleo-safe-left));
+}
+
+@media (max-width: 767px) {
+  .cleo-page-inner {
+    padding: 18px calc(16px + var(--cleo-safe-right))
+      calc(56px + var(--cleo-safe-bottom)) calc(16px + var(--cleo-safe-left));
+  }
+}
+
+/* Title beside a control (creator picker, refresh). Wraps instead of
+   crushing the select into an unreadable sliver. */
+.cleo-page-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+/* Opt-in vertical centring for heads whose title and control are one line.
+   Scoped above the phone breakpoint: once the head stacks, centring would
+   centre the title and the select horizontally too. */
+@media (min-width: 768px) {
+  .cleo-page-head--center {
+    align-items: center;
+  }
+}
+
+.cleo-page-head > .cleo-page-head-actions {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+@media (max-width: 767px) {
+  .cleo-page-head {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+  }
+  .cleo-page-head > .cleo-page-head-actions {
+    width: 100%;
+  }
+  .cleo-page-head > .cleo-page-head-actions > * {
+    flex: 1;
+    min-width: 0;
+  }
+}
+
+/* Any row of buttons that must never run off the side of the screen. */
+.cleo-actionbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* -------------------------------------------------------------------------
+   Grids
+   ---------------------------------------------------------------------- */
+
+.cleo-grid-metrics {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.cleo-grid-auto {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 10px;
+}
+
+.cleo-grid-3 {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.cleo-grid-2 {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+@media (max-width: 1023px) {
+  .cleo-grid-metrics {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 767px) {
+  .cleo-grid-metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+  .cleo-grid-auto {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+  .cleo-grid-3,
+  .cleo-grid-2 {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 10px;
+  }
+}
+
+/* Two fields side by side on desktop, stacked once they would be too narrow
+   to type into. */
+.cleo-field-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+@media (max-width: 767px) {
+  .cleo-field-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* A row of cards or thumbnails whose tiles must not spill sideways. */
+.cleo-tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(var(--cleo-tile, 140px), 1fr));
+  gap: 12px;
+}
+
+@media (max-width: 767px) {
+  .cleo-tiles {
+    grid-template-columns: repeat(auto-fill, minmax(var(--cleo-tile-sm, 104px), 1fr));
+    gap: 8px;
+  }
+}
+
+/* A settings/policy card. 20px of padding on each side of a 320px screen is
+   a sixth of the width before any content exists. */
+.cleo-card {
+  padding: 20px;
+}
+
+@media (max-width: 767px) {
+  .cleo-card {
+    padding: 15px 13px;
+  }
+}
+
+/* A form's primary commit control. On a phone it goes full width rather than
+   sitting as a small target somewhere in the middle of the row. */
+@media (max-width: 767px) {
+  .cleo-primary-action {
+    display: block;
+    width: 100%;
+    min-height: 44px;
+  }
+}
+
+/* -------------------------------------------------------------------------
+   Settings
+   ---------------------------------------------------------------------- */
+
+.settings-content {
+  flex: 1;
+  min-width: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 32px calc(32px + var(--cleo-safe-right))
+    calc(32px + var(--cleo-safe-bottom)) calc(32px + var(--cleo-safe-left));
+}
+
+@media (max-width: 767px) {
+  /* Rail above content instead of beside it. A 220px column plus a 600px form
+     needs 820px; a phone has 390. */
+  .settings-shell {
+    flex-direction: column !important;
+  }
+
+  .settings-aside {
+    width: 100% !important;
+    flex-shrink: 0;
+    border-right: none !important;
+    border-bottom: 1px solid var(--border) !important;
+  }
+
+  /* Sections become a scrolling tab strip, so choosing one costs a swipe
+     rather than a screen. */
+  .settings-sections {
+    display: flex;
+    gap: 6px;
+    flex: 0 0 auto !important;
+    padding: 6px calc(8px + var(--cleo-safe-right)) 0 calc(8px + var(--cleo-safe-left)) !important;
+    max-width: 100%;
+    overflow-x: auto;
+    overflow-y: hidden;
+    overscroll-behavior-x: contain;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+
+  .settings-sections::-webkit-scrollbar {
+    display: none;
+  }
+
+  .settings-sections > li {
+    flex-shrink: 0;
+  }
+
+  /* The page title block costs a fifth of a phone screen before any setting
+     is visible. */
+  .settings-title {
+    padding: 12px calc(14px + var(--cleo-safe-right)) 10px
+      calc(14px + var(--cleo-safe-left)) !important;
+  }
+
+  .settings-title-sub {
+    display: none;
+  }
+
+  .settings-creator {
+    padding: 12px calc(14px + var(--cleo-safe-right)) 12px
+      calc(14px + var(--cleo-safe-left)) !important;
+  }
+
+  /* The desktop indicator is a left border, which reads as nothing once the
+     sections are a horizontal strip. */
+  .settings-section-btn {
+    border-left: none !important;
+    border-bottom: 2px solid transparent !important;
+    border-radius: 6px 6px 0 0 !important;
+    margin-bottom: 0 !important;
+  }
+
+  .settings-section-btn[data-active='true'] {
+    border-bottom-color: var(--silver) !important;
+  }
+
+  .settings-content {
+    padding: 18px calc(16px + var(--cleo-safe-right))
+      calc(40px + var(--cleo-safe-bottom)) calc(16px + var(--cleo-safe-left));
+  }
+}
+
+@media (min-width: 768px) and (max-width: 1023px) {
+  .settings-aside {
+    width: 200px !important;
+  }
+  .settings-content {
+    padding: 24px calc(20px + var(--cleo-safe-right))
+      calc(24px + var(--cleo-safe-bottom)) calc(20px + var(--cleo-safe-left));
+  }
+}
+
+/* 40px of padding inside a card on a 320px screen leaves 240px for the form. */
+.cleo-login-card {
+  padding: 40px;
+}
+
+@media (max-width: 767px) {
+  .cleo-login-card {
+    padding: 28px 20px;
+  }
+}
+
+/* -------------------------------------------------------------------------
+   Contained overflow — never the page
+   ---------------------------------------------------------------------- */
+
+.cleo-scroll-x {
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-x: contain;
+}
+
+/* Horizontally scrolling strip of chips/tabs (open creator tabs, settings
+   sections). Children must not shrink or they concertina. */
+.cleo-tabstrip {
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-x: contain;
+  scrollbar-width: none;
+}
+
+.cleo-tabstrip::-webkit-scrollbar {
+  display: none;
+}
+
+.cleo-tabstrip > * {
+  flex-shrink: 0;
+}
+
+/* -------------------------------------------------------------------------
+   Dialogs and sheets
+   ---------------------------------------------------------------------- */
+
+.cleo-modal {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  overflow-y: auto;
+}
+
+.cleo-modal-card {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: var(--cleo-modal-w, 480px);
+  max-height: calc(100dvh - 48px);
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+@media (max-width: 767px) {
+  .cleo-modal {
+    align-items: flex-end;
+    padding: calc(12px + var(--cleo-safe-top)) calc(10px + var(--cleo-safe-right))
+      calc(10px + var(--cleo-safe-bottom)) calc(10px + var(--cleo-safe-left));
+  }
+  .cleo-modal-card {
+    max-width: 100%;
+    max-height: calc(100dvh - var(--cleo-safe-top) - var(--cleo-safe-bottom) - 22px);
+  }
+}
+
+/* Media beside its metadata on desktop, stacked and scrollable on a phone. */
+.cleo-modal-split {
+  display: flex;
+  gap: 20px;
+  align-items: flex-start;
+}
+
+@media (max-width: 767px) {
+  .cleo-modal-split {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+    width: 100%;
+  }
+  .cleo-modal-split > * {
+    width: 100% !important;
+    max-width: 100% !important;
+    flex-shrink: 1 !important;
+  }
+  .cleo-modal-split img,
+  .cleo-modal-split video {
+    max-width: 100% !important;
+    max-height: 42dvh !important;
+  }
+}
+
+/* Full-screen media viewers: keep the close/next controls inside the safe
+   area rather than under the notch or the home indicator. */
+.cleo-lightbox-close {
+  top: calc(16px + var(--cleo-safe-top)) !important;
+  right: calc(16px + var(--cleo-safe-right)) !important;
+}
+
+.cleo-lightbox-prev {
+  left: calc(10px + var(--cleo-safe-left)) !important;
+}
+
+.cleo-lightbox-next {
+  right: calc(10px + var(--cleo-safe-right)) !important;
+}
+
+/* -------------------------------------------------------------------------
+   Chat composer
+   ---------------------------------------------------------------------- */
+
+@media (max-width: 767px) {
+  .cleo-composer {
+    padding: 10px calc(12px + var(--cleo-safe-right))
+      calc(10px + var(--cleo-safe-bottom)) calc(12px + var(--cleo-safe-left)) !important;
+    /* With the keyboard up the thread above can collapse to nothing, but the
+       composer itself must never grow past the screen either. */
+    max-height: 62dvh;
+    overflow-y: auto;
+  }
+  .cleo-messages {
+    padding: 14px calc(12px + var(--cleo-safe-right)) 14px
+      calc(12px + var(--cleo-safe-left)) !important;
+  }
+  .cleo-chat-header {
+    padding: 10px calc(12px + var(--cleo-safe-right)) 10px
+      calc(12px + var(--cleo-safe-left)) !important;
+    gap: 8px !important;
+  }
+
+  /* Who the thread is with owns the first row; the auto toggle and the stage
+     badge take the second. Trying to fit all five controls on one 320px line
+     is what made the Profile control unreachable. */
+  .cleo-chat-header > .cleo-chat-id {
+    flex: 1 1 100% !important;
+  }
+
+  .cleo-chat-header > .cleo-chat-auto {
+    margin-left: 0;
+  }
+}
+
+/* Tablet has the room for one row, but only if it is allowed to give way. */
+@media (max-width: 1023px) {
+  .cleo-chat-header {
+    flex-wrap: wrap !important;
+  }
+}
+
+/* -------------------------------------------------------------------------
+   Touch targets and iOS focus zoom
+   ---------------------------------------------------------------------- */
+
+@media (max-width: 767px) {
+  /* Mobile Safari zooms the viewport whenever a focused field is under 16px,
+     and it does not zoom back out — which is exactly how this app ended up
+     needing horizontal scrolling. Opt individual controls out with
+     .cleo-keep-font when 16px would break their layout. */
+  input:not([type='checkbox']):not([type='radio']):not([type='range']):not(
+      .cleo-keep-font
+    ),
+  select:not(.cleo-keep-font),
+  textarea:not(.cleo-keep-font) {
+    font-size: 16px !important;
+  }
+
+  select,
+  input:not([type='checkbox']):not([type='radio']):not([type='range']):not(
+      .cleo-keep-font
+    ) {
+    max-width: 100%;
+  }
+
+  /* Practical tap targets for real controls. Icon chips drawn on top of a
+     thumbnail opt out with .cleo-tap-sm — 36px would swallow the image. */
+  button:not(.cleo-tap-sm):not(.cleo-topbar-btn),
+  select:not(.cleo-tap-sm) {
+    min-height: 36px;
+  }
+
+  input[type='checkbox'],
+  input[type='radio'] {
+    width: 18px;
+    height: 18px;
+  }
+}
+
+/* -------------------------------------------------------------------------
+   Misc components
+   ---------------------------------------------------------------------- */
+
+/* The health banner is fixed to the top of the viewport; on a phone the app's
+   own top bar lives there, so it sits underneath it. */
+.cleo-health-banner {
+  padding-left: calc(16px + var(--cleo-safe-left)) !important;
+  padding-right: calc(16px + var(--cleo-safe-right)) !important;
+}
+
+@media (max-width: 767px) {
+  .cleo-health-banner {
+    top: var(--cleo-topbar-h) !important;
+  }
+}
+
+/* Toasts anchored to a corner need to clear the home indicator. */
+.cleo-toast {
+  bottom: calc(24px + var(--cleo-safe-bottom)) !important;
+}
+
+@media (max-width: 767px) {
+  .cleo-toast {
+    left: calc(12px + var(--cleo-safe-left)) !important;
+    right: calc(12px + var(--cleo-safe-right)) !important;
+    transform: none !important;
+    text-align: center;
+  }
+}

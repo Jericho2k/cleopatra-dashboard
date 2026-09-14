@@ -339,11 +339,11 @@ export default function SetsPage() {
   const pickerVault = pickerVaultAll.slice(0, pickerLimit)
 
   return (
-    <div style={{ height: '100vh', overflowY: 'auto', boxSizing: 'border-box', padding: 32, maxWidth: 900, margin: '0 auto' }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+    <div className="cleo-page" style={{ maxWidth: 900, margin: '0 auto' }}>
+      <div className="cleo-page-head cleo-page-head--center" style={{ marginBottom: 6 }}>
         <div style={{ fontSize: 22, fontWeight: 700 }}>Sets</div>
         <select value={creatorId ?? ''} onChange={e => setCreatorId(e.target.value)}
-          style={{ minWidth: 180, background: 'var(--bg-elevated)', border: '1px solid var(--border)', color: 'var(--text-primary)', borderRadius: 6, padding: '6px 10px', fontSize: 13 }}>
+          style={{ minWidth: 0, maxWidth: '100%', background: 'var(--bg-elevated)', border: '1px solid var(--border)', color: 'var(--text-primary)', borderRadius: 6, padding: '6px 10px', fontSize: 13 }}>
           {creators.length === 0 && <option value="">No creators</option>}
           {creators.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
         </select>
@@ -352,7 +352,7 @@ export default function SetsPage() {
         Curate photo sets and individual videos the AI can sell. Only <b>approved</b> assets are available in auto-mode.
       </div>
 
-      <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 20 }}>
+      <div className="cleo-actionbar" style={{ marginBottom: 20 }}>
         <button onClick={generate} disabled={generating || !creatorId}
           style={{ padding: '8px 14px', borderRadius: 8, border: '1px solid var(--silver)', background: 'rgba(200,200,200,0.1)', color: 'var(--silver)', fontSize: 13, cursor: 'pointer' }}>
           {generating ? 'Generating…' : '✦ Generate sellable assets'}
@@ -361,7 +361,7 @@ export default function SetsPage() {
           style={{ padding: '8px 14px', borderRadius: 8, border: '1px dashed var(--border)', background: 'transparent', color: 'var(--text-muted)', fontSize: 13, cursor: 'pointer' }}>
           + New set
         </button>
-        <div style={{ flex: 1 }} />
+        <div className="cleo-hide-phone" style={{ flex: 1 }} />
         {(['all', 'draft', 'approved'] as const).map(f => (
           <button key={f} onClick={() => setFilter(f)} style={{
             padding: '6px 12px', borderRadius: 999, fontSize: 12, cursor: 'pointer',
@@ -376,11 +376,11 @@ export default function SetsPage() {
         : shown.length === 0 ? <div style={{ color: 'var(--text-muted)', fontSize: 13 }}>No sellable assets yet — generate from the vault, or “+ New set” to build one by hand.</div>
         : shown.map(s => (
           <div key={s.id} style={{ border: '1px solid var(--border)', borderRadius: 10, padding: 14, marginBottom: 14, background: 'var(--bg-elevated)' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
+            <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8, marginBottom: 10 }}>
               <input value={s.title}
                 onChange={e => setSets(prev => prev.map(x => x.id === s.id ? { ...x, title: e.target.value } : x))}
                 onBlur={e => patchSet(s.id, { title: e.target.value })}
-                style={{ flex: 1, background: 'transparent', border: 'none', color: 'var(--text-primary)', fontSize: 15, fontWeight: 600 }} />
+                style={{ flex: 1, minWidth: 140, background: 'transparent', border: 'none', color: 'var(--text-primary)', fontSize: 15, fontWeight: 600 }} />
               {s.simulation_only ? (
                 <span
                   title={
@@ -413,7 +413,7 @@ export default function SetsPage() {
                 color: 'var(--text-secondary)', padding: '8px 10px', fontSize: 12, lineHeight: 1.45,
               }}
             />
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: -2, marginBottom: 10 }}>
+            <div className="cleo-actionbar" style={{ gap: 10, marginTop: -2, marginBottom: 10 }}>
               <button
                 type="button"
                 onClick={() => void generateDescription(s.id)}
@@ -443,7 +443,7 @@ export default function SetsPage() {
                 </span>
               )}
             </div>
-            <div style={{ display: 'flex', gap: 16, alignItems: 'center', marginBottom: 10, fontSize: 12, color: 'var(--text-muted)' }}>
+            <div className="cleo-actionbar" style={{ gap: 12, marginBottom: 10, fontSize: 12, color: 'var(--text-muted)' }}>
               <span>{isIndividualVideo(s) ? '1 video' : `${s.media_ids.length} pcs`}</span>
               <label style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
                 explicit
@@ -498,37 +498,37 @@ export default function SetsPage() {
                         onError={e => { (e.target as HTMLImageElement).style.display = 'none' }} />
                       : <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-faint)' }}>🎬</div>}
                     {t?.mimetype?.startsWith('video') && <span style={{ position: 'absolute', left: 4, bottom: 4, padding: '1px 5px', borderRadius: 4, background: 'rgba(0,0,0,0.72)', color: '#fff', fontSize: 9 }}>VIDEO</span>}
-                    <button title="Preview image" onClick={() => patchSet(s.id, { preview_media_id: mid })}
+                    <button title="Preview image" className="cleo-tap-sm" onClick={() => patchSet(s.id, { preview_media_id: mid })}
                       style={{ position: 'absolute', left: 2, top: 2, border: 'none', borderRadius: 4, cursor: 'pointer',
                         background: isPreview ? 'var(--silver)' : 'rgba(0,0,0,0.5)', color: isPreview ? '#000' : '#fff', fontSize: 10, padding: '1px 4px' }}>★</button>
-                    <button title="Remove" onClick={() => removeMedia(s, mid)}
+                    <button title="Remove" className="cleo-tap-sm" onClick={() => removeMedia(s, mid)}
                       style={{ position: 'absolute', right: 2, top: 2, border: 'none', borderRadius: 4, cursor: 'pointer',
                         background: 'rgba(0,0,0,0.6)', color: '#fff', fontSize: 11, lineHeight: 1, padding: '2px 5px' }}>×</button>
                   </div>
                 )
               })}
             </div>
-            <div style={{ display: 'flex', gap: 8 }}>
+            <div className="cleo-actionbar" style={{ gap: 8 }}>
               {s.status === 'approved'
                 ? <button onClick={() => patchSet(s.id, { status: 'draft' })} style={{ padding: '6px 12px', borderRadius: 6, border: '1px solid var(--border)', background: 'transparent', color: 'var(--text-muted)', fontSize: 12, cursor: 'pointer' }}>Unapprove</button>
                 : <button onClick={() => void approveSet(s)} disabled={!canApprove(s) || descriptionBusy.has(s.id)} style={{ padding: '6px 12px', borderRadius: 6, border: '1px solid var(--green)', background: 'rgba(76,175,130,0.15)', color: 'var(--green)', fontSize: 12, cursor: 'pointer', opacity: !canApprove(s) || descriptionBusy.has(s.id) ? 0.5 : 1 }}>Approve</button>}
               <div style={{ flex: 1 }} />
-              <button onClick={() => del(s.id)} style={{ padding: '6px 12px', borderRadius: 6, border: 'none', background: 'transparent', color: 'var(--text-faint)', fontSize: 12, cursor: 'pointer' }}>Delete</button>
+              <button onClick={() => del(s.id)}  style={{ padding: '6px 12px', borderRadius: 6, border: 'none', background: 'transparent', color: 'var(--text-faint)', fontSize: 12, cursor: 'pointer' }}>Delete</button>
             </div>
           </div>
         ))}
 
       {preview && (
-        <div onClick={() => setPreview(null)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.85)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, cursor: 'zoom-out' }}>
-          {preview.isVideo ? <video src={preview.url} controls autoPlay style={{ maxWidth: '90vw', maxHeight: '90vh' }} />
-            : <img src={preview.url} alt="" style={{ maxWidth: '90vw', maxHeight: '90vh', objectFit: 'contain' }} />}
+        <div onClick={() => setPreview(null)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.85)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, cursor: 'zoom-out', padding: 'calc(12px + var(--cleo-safe-top)) 12px calc(12px + var(--cleo-safe-bottom))' }}>
+          {preview.isVideo ? <video src={preview.url} controls autoPlay style={{ maxWidth: '100%', maxHeight: '86dvh' }} />
+            : <img src={preview.url} alt="" style={{ maxWidth: '100%', maxHeight: '86dvh', objectFit: 'contain' }} />}
         </div>
       )}
 
       {picker && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', zIndex: 1100, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: 12, width: 'min(880px, 92vw)', maxHeight: '86vh', display: 'flex', flexDirection: 'column' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: 16, borderBottom: '1px solid var(--border)' }}>
+        <div className="cleo-modal" style={{ zIndex: 1100, background: 'rgba(0,0,0,0.7)' }}>
+          <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: 12, width: 'min(880px, 100%)', maxHeight: '86dvh', display: 'flex', flexDirection: 'column' }}>
+            <div className="cleo-actionbar" style={{ gap: 10, padding: 16, borderBottom: '1px solid var(--border)' }}>
               <div style={{ fontWeight: 600 }}>Add to set</div>
               <select value={albumFilter} onChange={e => { setAlbumFilter(e.target.value); setPickerLimit(60) }}
                 style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border)', color: 'var(--text-primary)', borderRadius: 6, padding: '5px 8px', fontSize: 12 }}>
@@ -537,7 +537,7 @@ export default function SetsPage() {
               <span style={{ fontSize: 11, color: 'var(--text-faint)' }}>
                 {pickerVaultAll.length} items{pickerVaultAll.length > pickerVault.length ? ` · showing ${pickerVault.length}` : ''}
               </span>
-              <div style={{ flex: 1 }} />
+              <div className="cleo-hide-phone" style={{ flex: 1 }} />
               <button onClick={addSelected} disabled={selected.size === 0}
                 style={{ padding: '6px 14px', borderRadius: 6, border: '1px solid var(--green)', background: 'rgba(76,175,130,0.15)', color: 'var(--green)', fontSize: 13, cursor: 'pointer', opacity: selected.size ? 1 : 0.5 }}>Add {selected.size || ''}</button>
               <button onClick={() => setPicker(null)} style={{ padding: '6px 12px', borderRadius: 6, border: '1px solid var(--border)', background: 'transparent', color: 'var(--text-muted)', fontSize: 13, cursor: 'pointer' }}>Cancel</button>
@@ -626,7 +626,7 @@ function SetPricing({
               if (fixed) onFixed(value)
               else onAnchor(value)
             }}
-            style={{ width: 72, background: 'var(--bg-surface)', border: '1px solid var(--border)', color: 'var(--text-primary)', borderRadius: 6, padding: '4px 6px', fontSize: 12 }}
+            style={{ width: 88, maxWidth: '100%', background: 'var(--bg-surface)', border: '1px solid var(--border)', color: 'var(--text-primary)', borderRadius: 6, padding: '4px 6px', fontSize: 12 }}
           />
         </label>
         <span style={{ fontSize: 11, color: fixed ? 'var(--text-muted)' : 'var(--green)' }}>
@@ -702,7 +702,7 @@ function SetPricing({
                   if (!Number.isFinite(min)) return
                   onRange(min, contract.maxCents / 100)
                 }}
-                style={{ width: 70, marginLeft: 4, background: 'var(--bg-surface)', border: '1px solid var(--border)', color: 'var(--text-primary)', borderRadius: 6, padding: '4px 6px', fontSize: 12 }}
+                style={{ width: 88, maxWidth: '100%', marginLeft: 4, background: 'var(--bg-surface)', border: '1px solid var(--border)', color: 'var(--text-primary)', borderRadius: 6, padding: '4px 6px', fontSize: 12 }}
               />
             </label>
             <label style={{ fontSize: 11, color: 'var(--text-muted)' }}>
@@ -717,7 +717,7 @@ function SetPricing({
                   if (!Number.isFinite(max)) return
                   onRange(contract.minCents / 100, max)
                 }}
-                style={{ width: 70, marginLeft: 4, background: 'var(--bg-surface)', border: '1px solid var(--border)', color: 'var(--text-primary)', borderRadius: 6, padding: '4px 6px', fontSize: 12 }}
+                style={{ width: 88, maxWidth: '100%', marginLeft: 4, background: 'var(--bg-surface)', border: '1px solid var(--border)', color: 'var(--text-primary)', borderRadius: 6, padding: '4px 6px', fontSize: 12 }}
               />
             </label>
             {category && (

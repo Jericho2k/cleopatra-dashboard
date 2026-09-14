@@ -327,8 +327,8 @@ export default function MonetizationPage() {
   )
 
   return (
-    <main style={{ height: '100%', overflow: 'auto', background: 'var(--bg-main)', color: 'var(--text-primary)' }}>
-      <div style={{ maxWidth: 980, margin: '0 auto', padding: '34px 28px 80px' }}>
+    <main className="cleo-page-scroll" style={{ background: 'var(--bg-main)', color: 'var(--text-primary)' }}>
+      <div className="cleo-page-inner" style={{ maxWidth: 980, margin: '0 auto' }}>
         <div style={{ marginBottom: 26 }}>
           <div style={{ fontSize: 11, letterSpacing: '0.16em', color: 'var(--text-muted)', textTransform: 'uppercase' }}>
             Full Auto
@@ -357,7 +357,7 @@ export default function MonetizationPage() {
         ) : (
           <>
             <Card title="Sexting strategy">
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 10 }}>
+              <div className="cleo-grid-3">
                 <ModeCard mode="PAID_ONLY" title="Paid only" text="Brief warm-up, then sell. No free explicit service." />
                 <ModeCard mode="HYBRID_TEASER" title="Hybrid teaser" text="Limited text preview, then transition to paid options." />
                 <ModeCard mode="FREE_TEXT_ALLOWED" title="Free text allowed" text="Text-only experience can continue within the configured allowance." />
@@ -414,7 +414,7 @@ export default function MonetizationPage() {
                       {featureGateWarning(pricing)}
                     </div>
                   )}
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 10 }}>
+                  <div className="cleo-grid-3">
                     {pricing.presets.map(option => {
                       const active = pricing.effective_preset === option.preset
                       return (
@@ -517,8 +517,8 @@ export default function MonetizationPage() {
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 14 }}>
                   {approvals.map(approval => (
                     <div key={approval.id} style={{ padding: 12, border: '1px solid var(--border)', borderRadius: 9, background: 'var(--bg-elevated)' }}>
-                      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }}>
-                        <div>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }}>
+                        <div style={{ minWidth: 160, flex: 1 }}>
                           <div style={{ fontSize: 13, fontWeight: 650 }}>
                             {approval.fans?.display_name || 'Fan'} · ${(approval.price_cents / 100).toFixed(0)}
                           </div>
@@ -527,7 +527,7 @@ export default function MonetizationPage() {
                           </div>
                           <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 6 }}>{approval.message_content || 'just for you...'}</div>
                         </div>
-                        <div style={{ display: 'flex', gap: 6 }}>
+                        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                           <button type="button" disabled={resolvingApproval === approval.id} onClick={() => void resolveApproval(approval.id, 'reject')}
                             style={{ ...buttonStyle, width: 'auto', padding: '7px 10px', background: 'transparent', color: 'var(--text-secondary)', borderColor: 'var(--border)' }}>
                             Reject
@@ -615,7 +615,7 @@ export default function MonetizationPage() {
 
             {health && (
               <Card title="Production health">
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: 10 }}>
+                <div className="cleo-grid-auto">
                   <Metric label="Payment pending" value={health.summary.payment_pending} />
                   <Metric label="PPV approvals" value={approvals.length} alert={approvals.length > 0} />
                   <Metric label="Follow-ups" value={health.summary.followups_pending} />
@@ -646,8 +646,8 @@ export default function MonetizationPage() {
                 {health.fans.length > 0 && (
                   <div style={{ marginTop: 14, display: 'flex', flexDirection: 'column', gap: 8 }}>
                     {health.fans.slice(0, 8).map((fan) => (
-                      <div key={fan.fan_id} style={{ padding: '10px 12px', border: '1px solid var(--border)', borderRadius: 8, display: 'flex', justifyContent: 'space-between', gap: 12 }}>
-                        <div>
+                      <div key={fan.fan_id} style={{ padding: '10px 12px', border: '1px solid var(--border)', borderRadius: 8, display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', gap: 8 }}>
+                        <div style={{ minWidth: 0 }}>
                           <div style={{ fontSize: 13, color: 'var(--text-primary)' }}>{fan.display_name}</div>
                           <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
                             {fan.commercial_state}{fan.next_followup_type ? ` · ${fan.next_followup_type}` : ''}
@@ -664,7 +664,7 @@ export default function MonetizationPage() {
                   <div style={{ marginTop: 16 }}>
                     <div style={{ fontSize: 12, fontWeight: 650, color: 'var(--text-primary)', marginBottom: 8 }}>Recently confirmed scheduled deliveries</div>
                     {(health.recent_deliveries ?? []).slice(0, 8).map((delivery) => (
-                      <div key={delivery.action_id} style={{ padding: '8px 10px', borderTop: '1px solid var(--border)', fontSize: 11.5, color: 'var(--text-secondary)', display: 'flex', justifyContent: 'space-between', gap: 12 }}>
+                      <div key={delivery.action_id} style={{ padding: '8px 10px', borderTop: '1px solid var(--border)', fontSize: 11.5, color: 'var(--text-secondary)', display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', gap: 8 }}>
                         <span>{delivery.display_name} · {delivery.action_type.replaceAll('_', ' ')}</span>
                         <span style={{ color: 'var(--text-muted)' }}>{delivery.confirmed_at ? new Date(delivery.confirmed_at).toLocaleString() : 'confirmed'}</span>
                       </div>
@@ -682,7 +682,7 @@ export default function MonetizationPage() {
                 {message}
               </div>
             )}
-            <button onClick={() => void savePolicy()} disabled={saving || !creatorId} style={buttonStyle}>
+            <button onClick={() => void savePolicy()} disabled={saving || !creatorId} className="cleo-primary-action" style={buttonStyle}>
               {saving ? 'Saving…' : 'Save monetization policy'}
             </button>
           </>
@@ -716,7 +716,7 @@ export default function MonetizationPage() {
 
 function Card({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <section style={{ padding: 20, marginBottom: 14, background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: 14 }}>
+    <section className="cleo-card" style={{ marginBottom: 14, background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: 14 }}>
       <h2 style={{ margin: '0 0 16px', fontSize: 17 }}>{title}</h2>
       {children}
     </section>
@@ -724,7 +724,9 @@ function Card({ title, children }: { title: string; children: React.ReactNode })
 }
 
 function Grid({ children }: { children: React.ReactNode }) {
-  return <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 14, marginTop: 14 }}>{children}</div>
+  // Two fields across on a roomy viewport, one once each would be too narrow
+  // to read its own label — see .cleo-grid-2 in app/responsive.css.
+  return <div className="cleo-grid-2" style={{ marginTop: 14 }}>{children}</div>
 }
 
 function Hint({ children }: { children: React.ReactNode }) {

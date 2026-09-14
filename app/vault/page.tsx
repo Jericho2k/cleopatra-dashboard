@@ -18,6 +18,7 @@ import {
   type VaultAlbum,
   type VaultGridItem,
 } from '../../lib/vault'
+import { modalWidth, tileSize } from '../../lib/responsive'
 
 const VAULT_CATEGORY_RANGES: Record<string, { min: number; max: number }> = {
   teaser_clothed: { min: 0, max: 0 },
@@ -191,9 +192,12 @@ function vaultSyncPresentation(overview: VaultCategorizationOverview | null) {
   }
 }
 
+// The tile fills its grid track (see .cleo-tiles) rather than being pinned at
+// 100px, so a 320px screen shows three usefully sized thumbnails per row
+// instead of two with a dead column beside them. aspect-ratio keeps them square.
 const THUMBNAIL_BOX: React.CSSProperties = {
-  width: 100,
-  height: 100,
+  width: '100%',
+  aspectRatio: '1 / 1',
   borderRadius: 6,
   background: 'var(--bg-elevated)',
   border: '1px solid var(--border)',
@@ -720,13 +724,13 @@ export default function VaultPage() {
   const syncPresentation = vaultSyncPresentation(categorizationOverview)
 
   return (
-    <div style={{ height: '100vh', overflowY: 'auto', boxSizing: 'border-box', padding: 32 }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20, maxWidth: 1100, marginLeft: 'auto', marginRight: 'auto' }}>
+    <div className="cleo-page">
+      <div className="cleo-page-head cleo-page-head--center" style={{ marginBottom: 20, maxWidth: 1100, marginLeft: 'auto', marginRight: 'auto' }}>
         <div style={{ fontFamily: 'var(--font-display)', fontSize: 20, fontWeight: 700, letterSpacing: '0.02em', color: 'var(--silver)' }}>
           VAULT
         </div>
         <select value={selectedCreatorId ?? ''} onChange={e => setSelectedCreatorId(e.target.value)}
-          style={{ minWidth: 180, background: 'var(--bg-elevated)', border: '1px solid var(--border)', color: 'var(--text-primary)', borderRadius: 6, padding: '6px 10px', fontSize: 13 }}>
+          style={{ minWidth: 0, maxWidth: '100%', background: 'var(--bg-elevated)', border: '1px solid var(--border)', color: 'var(--text-primary)', borderRadius: 6, padding: '6px 10px', fontSize: 13 }}>
           {creators.length === 0 && <option value="">No creators</option>}
           {creators.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
         </select>
@@ -740,7 +744,7 @@ export default function VaultPage() {
                 border: `1px solid ${syncPresentation.needsAttention ? 'rgba(229,118,137,0.65)' : 'var(--border)'}`,
                 borderRadius: 8, background: 'var(--bg-elevated)',
               }}>
-                <div style={{ minWidth: 220, flex: 1 }}>
+                <div style={{ minWidth: 180, flex: '1 1 180px' }}>
                   <div style={{ color: syncPresentation.needsAttention ? '#e57689' : 'var(--text-primary)', fontSize: 12, fontWeight: 600 }}>
                     {syncingVault ? 'Updating vault…' : syncPresentation.title}
                   </div>
@@ -783,7 +787,9 @@ export default function VaultPage() {
                   <div
                     style={{
                       position: 'absolute', zIndex: 30, right: 0, top: 'calc(100% + 6px)',
-                      width: 270, padding: 6, borderRadius: 8,
+                      width: 270, maxWidth: 'calc(100vw - 32px)',
+                      maxHeight: '60dvh', overflowY: 'auto',
+                      padding: 6, borderRadius: 8,
                       border: '1px solid var(--border)', background: 'var(--bg-surface)',
                       boxShadow: '0 12px 30px rgba(0,0,0,0.35)',
                     }}
@@ -937,11 +943,11 @@ export default function VaultPage() {
               </div>
 
               {!selectedAlbum && (
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
+                <div className="cleo-tiles" style={tileSize(140, 104)}>
                   <div
                     onClick={() => setSelectedAlbum(ALL_ALBUMS)}
                     style={{
-                      width: 140, padding: '16px 12px', borderRadius: 8,
+                      padding: '16px 12px', borderRadius: 8,
                       border: '1px solid var(--border)', cursor: 'pointer',
                       background: 'var(--bg-elevated)',
                       display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8,
@@ -959,7 +965,7 @@ export default function VaultPage() {
                       key={album.title}
                       onClick={() => setSelectedAlbum(album.title)}
                       style={{
-                        width: 140, padding: '16px 12px', borderRadius: 8,
+                        padding: '16px 12px', borderRadius: 8,
                         border: '1px solid var(--border)', cursor: 'pointer',
                         background: 'var(--bg-elevated)',
                         display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8,
@@ -990,7 +996,7 @@ export default function VaultPage() {
                   <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 16 }}>
                     {selectedAlbum === ALL_ALBUMS ? 'All Media' : selectedAlbum}
                   </div>
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                  <div className="cleo-tiles" style={tileSize(104, 84)}>
                     {albumRows.map(item => (
                       <div
                         key={item.id}
@@ -1033,29 +1039,23 @@ export default function VaultPage() {
               {previewItem && previewEdits && (
                 <div
                   onClick={() => { setPreviewItem(null); setPreviewEdits(null) }}
-                  style={{
-                    position: 'fixed', inset: 0, zIndex: 1000,
-                    background: 'rgba(0,0,0,0.85)',
-                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    padding: 24,
-                  }}
+                  className="cleo-modal"
+                  style={{ zIndex: 1000, background: 'rgba(0,0,0,0.85)' }}
                 >
                   <div
                     onClick={e => e.stopPropagation()}
-                    style={{
-                      display: 'flex', gap: 20, maxWidth: '90vw', maxHeight: '90vh',
-                      alignItems: 'flex-start',
-                    }}
+                    className="cleo-modal-split cleo-modal-card"
+                    style={{ ...modalWidth(1000), overflowY: 'auto' }}
                   >
                     {/* Media */}
-                    <div style={{ flexShrink: 0, maxWidth: '60vw' }}>
+                    <div style={{ flexShrink: 0, maxWidth: '60vw', minWidth: 0 }}>
                       {/* The ORIGINAL here: full resolution is what the
                           operator opened this for, and it is the only place
                           that justifies downloading it. */}
                       {isVideo(previewItem) ? (
-                        <video src={previewImageSource(previewItem) ?? undefined} controls style={{ maxHeight: '80vh', maxWidth: '60vw', borderRadius: 8, background: '#000' }} />
+                        <video src={previewImageSource(previewItem) ?? undefined} controls style={{ maxHeight: '78dvh', maxWidth: '60vw', borderRadius: 8, background: '#000' }} />
                       ) : (
-                        <img src={previewImageSource(previewItem) ?? undefined} alt="Vault media preview" style={{ maxHeight: '80vh', maxWidth: '60vw', objectFit: 'contain', borderRadius: 8 }} />
+                        <img src={previewImageSource(previewItem) ?? undefined} alt="Vault media preview" style={{ maxHeight: '78dvh', maxWidth: '60vw', objectFit: 'contain', borderRadius: 8 }} />
                       )}
                       <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', marginTop: 6, textAlign: 'center' }}>
                         {previewItem.filename}
@@ -1066,7 +1066,7 @@ export default function VaultPage() {
                     <div style={{
                       width: 280, flexShrink: 0,
                       background: 'var(--bg-surface)', border: '1px solid var(--border)',
-                      borderRadius: 12, padding: 20, overflowY: 'auto', maxHeight: '80vh',
+                      borderRadius: 12, padding: 20, overflowY: 'auto', maxHeight: '78dvh',
                     }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
                         <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>
@@ -1344,17 +1344,15 @@ export default function VaultPage() {
       {showUploadModal && (
         <div
           onClick={() => { if (!uploadingVault) { setShowUploadModal(false); setUploadFile(null); setUploadPreview(null); setUploadNotes(''); setUploadAlbum(''); setNewAlbumName('') } }}
-          style={{
-            position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 200,
-          }}
+          className="cleo-modal"
+          style={{ background: 'rgba(0,0,0,0.6)', zIndex: 200 }}
         >
           <div
             onClick={e => e.stopPropagation()}
+            className="cleo-modal-card"
             style={{
               background: 'var(--bg-surface)', border: '1px solid var(--border)',
-              borderRadius: 12, padding: 24, width: 480, maxWidth: '95vw',
-              maxHeight: '90vh', overflowY: 'auto',
+              borderRadius: 12, padding: 24,
             }}
           >
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
@@ -1566,8 +1564,8 @@ export default function VaultPage() {
       )}
 
       {toast && (
-        <div style={{
-          position: 'fixed', bottom: 24, left: '50%', transform: 'translateX(-50%)',
+        <div className="cleo-toast" style={{
+          position: 'fixed', bottom: 24, left: '50%', transform: 'translateX(-50%)', maxWidth: 'calc(100vw - 24px)',
           padding: '10px 18px', borderRadius: 8, fontSize: 13, zIndex: 2000,
           background: toast.type === 'error' ? 'rgba(255,80,80,0.15)' : 'rgba(76,175,130,0.15)',
           border: `1px solid ${toast.type === 'error' ? 'rgba(255,80,80,0.4)' : 'rgba(76,175,130,0.4)'}`,

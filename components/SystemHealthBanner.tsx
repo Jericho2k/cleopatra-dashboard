@@ -131,6 +131,7 @@ export default function SystemHealthBanner() {
     <div
       role="alert"
       aria-live="polite"
+      className="cleo-health-banner"
       style={{
         position: 'fixed',
         zIndex: 500,

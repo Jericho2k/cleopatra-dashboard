@@ -142,6 +142,10 @@ export default function Page() {
   const [activeListId, setActiveListId] = useState<string | null>(null)
   const [syncingChats, setSyncingChats] = useState(false)
   const [conversationsLoading, setConversationsLoading] = useState(false)
+  // Which of the three panes a narrow viewport is showing. Desktop renders all
+  // three regardless and the CSS ignores this attribute entirely, so no
+  // window measuring happens here and server and client render the same tree.
+  const [mobilePane, setMobilePane] = useState<'list' | 'chat' | 'fan'>('list')
 
   const activeTab = tabs.find(t => t.id === activeTabId) ?? null
 
@@ -618,6 +622,9 @@ export default function Page() {
   const handleSelectFan = useCallback((fan: Fan) => {
     const tab = tabsRef.current.find(candidate => candidate.id === activeTabIdRef.current)
     if (!tab) return
+    // Phone behaves like a messaging app: picking a conversation opens it
+    // full-screen. On desktop this is a no-op the layout never reads.
+    setMobilePane('chat')
     updateTab(tab.id, {
       activeFan: fan,
       conversations: tab.conversations.map(c =>
@@ -630,6 +637,7 @@ export default function Page() {
     const tab = tabsRef.current.find(candidate => candidate.id === activeTabIdRef.current)
     const creator = creatorsRef.current.find(c => c.id === id)
     if (!creator || !tab) return
+    setMobilePane('list')
     updateTab(tab.id, {
       creatorId: id,
       creatorName: creator.name,
@@ -1035,13 +1043,13 @@ export default function Page() {
   }, [handleHistoryLoaded, recoveryTick])
 
   if (authLoading) return (
-    <div style={{ height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--bg-base)', color: 'var(--text-muted)', fontFamily: 'var(--font-body)' }}>
+    <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--bg-base)', color: 'var(--text-muted)', fontFamily: 'var(--font-body)' }}>
       Loading...
     </div>
   )
 
   return (
-    <div style={{ height: '100vh', display: 'flex', flexDirection: 'column', overflow: 'hidden', background: 'var(--bg-base)' }}>
+    <div style={{ height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden', background: 'var(--bg-base)' }}>
       <style>{`
         @keyframes fadeIn {
           from { opacity: 0; transform: translateY(-4px); }
@@ -1052,7 +1060,9 @@ export default function Page() {
           50% { opacity: 0.4; }
         }
       `}</style>
-      {/* Tabs bar */}
+      {/* Tabs bar. One open creator per chip; on a phone there is not room for
+          several, so the strip scrolls sideways inside itself rather than
+          making the whole page scroll. */}
       <div style={{
         display: 'flex',
         alignItems: 'center',
@@ -1064,6 +1074,12 @@ export default function Page() {
         gap: 2,
         position: 'relative',
       }}>
+        {/* The chips scroll inside this box. The "+" control deliberately sits
+            outside it, because its dropdown would be clipped by the scroller. */}
+        <div
+          className="cleo-tabstrip"
+          style={{ display: 'flex', alignItems: 'center', gap: 2, flex: 1, minWidth: 0 }}
+        >
         {tabs.map((tab) => {
           const totalUnread = Object.values(tab.unreadCounts).reduce((a, b) => a + b, 0)
           return (
@@ -1092,7 +1108,12 @@ export default function Page() {
                 setDraggedTabId(null)
               }}
               onDragEnd={() => setDraggedTabId(null)}
-              onClick={() => setActiveTabId(tab.id)}
+              onClick={() => {
+                setActiveTabId(tab.id)
+                // A tab with nothing open would otherwise land a phone on the
+                // empty thread screen instead of that creator's inbox.
+                if (!tab.activeFan) setMobilePane('list')
+              }}
               style={{
                 display: 'flex',
                 alignItems: 'center',
@@ -1159,8 +1180,10 @@ export default function Page() {
           )
         })}
 
+        </div>
+
         {/* + button with dropdown */}
-        <div style={{ position: 'relative' }}>
+        <div style={{ position: 'relative', flexShrink: 0 }}>
           <button
             type="button"
             onClick={() => setShowNewTabDropdown(v => !v)}
@@ -1185,13 +1208,16 @@ export default function Page() {
             <div style={{
               position: 'absolute',
               top: 36,
-              left: 0,
+              right: 0,
               background: 'var(--bg-elevated)',
               border: '1px solid var(--border)',
               borderRadius: 8,
               padding: 4,
               zIndex: 100,
               minWidth: 160,
+              maxWidth: 'calc(100vw - 24px)',
+              maxHeight: '60dvh',
+              overflowY: 'auto',
               boxShadow: '0 8px 24px rgba(0,0,0,0.4)',
               animation: 'fadeIn 0.1s ease',
             }}>
@@ -1255,9 +1281,17 @@ export default function Page() {
         )}
       </div>
 
-      {/* Main content */}
-      <div style={{ flex: 1, display: 'grid', gridTemplateColumns: '280px 1fr 280px', overflow: 'hidden' }}>
-        <div style={{ height: '100%', overflow: 'hidden' }}>
+      {/*
+        Main content.
+
+        Desktop is unchanged: conversation list, thread and fan profile side by
+        side. Below 1024px the panes are shown one (tablet: two) at a time and
+        `data-pane` says which — see .cleo-panes in app/responsive.css. Every
+        pane stays mounted in every mode, so scroll position, the draft in the
+        composer and each pane's own loaded state survive switching.
+      */}
+      <div className="cleo-panes cleo-panes-chat" data-pane={mobilePane}>
+        <div className="cleo-pane cleo-pane-list">
           <Sidebar
             conversations={activeTab?.conversations ?? []}
             conversationsLoading={conversationsLoading}
@@ -1281,8 +1315,10 @@ export default function Page() {
             onMarkAllRead={handleMarkAllRead}
           />
         </div>
-        <div style={{ height: '100%', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+        <div className="cleo-pane cleo-pane-chat">
           <ConversationView
+            onBack={() => setMobilePane('list')}
+            onOpenProfile={() => setMobilePane('fan')}
             fan={activeTab?.activeFan ?? null}
             creatorId={activeTab?.creatorId ?? ''}
             messages={activeTab?.messages ?? []}
@@ -1296,8 +1332,9 @@ export default function Page() {
             onLoadMore={loadMoreMessages}
           />
         </div>
-        <div style={{ height: '100%', overflow: 'hidden' }}>
+        <div className="cleo-pane cleo-pane-fan">
           <FanPanel
+          onBack={() => setMobilePane('chat')}
           fan={activeTab?.activeFan ?? null}
           creatorId={activeTab?.creatorId ?? ''}
           onHistoryLoaded={handleHistoryLoaded}
