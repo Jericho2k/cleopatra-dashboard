@@ -11,6 +11,7 @@ import {
   fixedPricePatch,
   pricingContract,
   rangePatch,
+  paidSellableBlockReason,
   restoreCategoryRangePatch,
   type CategoryRange,
 } from '../../lib/setPricing'
@@ -28,6 +29,10 @@ type VaultSet = {
   // as true: that is the column default and what the engine actually does.
   dynamic_pricing_enabled?: boolean | null
   content_category?: string | null
+  // Explicit authority over automatic selling (db/experience_director_v1.sql).
+  // False is a deliberate decision and outranks every inference; the tease
+  // categories are caught by the predicate whatever this says.
+  paid_sellable?: boolean | null
   status: 'draft' | 'approved' | 'archived'; source: 'ai' | 'manual' | 'simulation_mirror'
   metadata_version: number | null
   // Owner-only mirrored test content. Excluded from live package planning and
@@ -381,6 +386,18 @@ export default function SetsPage() {
                 onChange={e => setSets(prev => prev.map(x => x.id === s.id ? { ...x, title: e.target.value } : x))}
                 onBlur={e => patchSet(s.id, { title: e.target.value })}
                 style={{ flex: 1, minWidth: 140, background: 'transparent', border: 'none', color: 'var(--text-primary)', fontSize: 15, fontWeight: 600 }} />
+              {paidSellableBlockReason(s, categories) ? (
+                <span
+                  title={
+                    'Not eligible for an automatic offer, pricing or paid '
+                    + 'delivery. Kept in the vault for use as a free reward.'
+                  }
+                  style={{ fontSize: 11, fontWeight: 700, letterSpacing: 0.4, padding: '2px 8px', borderRadius: 999,
+                    background: 'rgba(240,165,0,0.12)', color: '#d9aa52',
+                    border: '1px solid rgba(240,165,0,0.35)' }}>
+                  NOT SELLABLE
+                </span>
+              ) : null}
               {s.simulation_only ? (
                 <span
                   title={
@@ -602,6 +619,27 @@ function SetPricing({
   const category = categoryRangeFor(s, categories)
   const position = anchorPosition(contract)
   const fixed = !contract.dynamic || contract.collapsed
+  const blocked = paidSellableBlockReason(s, categories)
+
+  // A price box on content the engine will never sell is not a harmless extra
+  // field — it reads as "set this and it will be sold". Teaser inventory stays
+  // in the vault on purpose (a free reward is a real use for it), so this says
+  // what it IS rather than hiding the set.
+  if (blocked) {
+    return (
+      <div style={{ marginBottom: 12, padding: '10px 12px', border: '1px solid rgba(240,165,0,0.35)', borderRadius: 8, background: 'rgba(240,165,0,0.06)' }}>
+        <div style={{ fontSize: 12, color: '#d9aa52', fontWeight: 600, marginBottom: 4 }}>
+          Not automatically sellable
+        </div>
+        <div style={{ fontSize: 11, color: 'var(--text-muted)', lineHeight: 1.5 }}>
+          {blocked === 'marked_not_paid_sellable'
+            ? 'This set is marked as not for sale.'
+            : 'Teaser content: the agency prices this category at $0. It is never offered automatically, never priced, and never delivered as a paid unlock.'}
+          {' '}It stays in the vault and can still be used as a free reward.
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div style={{ marginBottom: 12, padding: '10px 12px', border: '1px solid var(--border)', borderRadius: 8, background: 'var(--bg-base)' }}>

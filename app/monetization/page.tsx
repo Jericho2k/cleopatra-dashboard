@@ -31,7 +31,6 @@ type Policy = {
   payday_send_hour_local: number
   timezone: string
   next_offer_target_cents: number
-  post_purchase_cooldown_messages: number
   require_purchase_before_next_step: boolean
   require_operator_ppv_approval: boolean
   ppv_recheck_minutes: number
@@ -116,7 +115,6 @@ const DEFAULT_POLICY: Policy = {
   payday_send_hour_local: 18,
   timezone: 'UTC',
   next_offer_target_cents: 2500,
-  post_purchase_cooldown_messages: 2,
   require_purchase_before_next_step: true,
   require_operator_ppv_approval: false,
   ppv_recheck_minutes: 20,
@@ -361,9 +359,18 @@ export default function MonetizationPage() {
                     that menu is gone, so a second budget would be a switch with
                     nothing behind it. */}
                 <MoneyField label="Next-offer content budget" cents={policy.next_offer_target_cents} onChange={(value) => update('next_offer_target_cents', value)} />
-                <NumberField label="Text messages after a purchase before the next offer" value={policy.post_purchase_cooldown_messages} min={0} max={20} onChange={(value) => update('post_purchase_cooldown_messages', value)} />
               </Grid>
               <Invariant label="Purchase confirmation is required before every next unlock" />
+              {/* A post-purchase message counter used to live here — the dial
+                  that asked for N text turns before the next offer. It read a
+                  counter that one-unlock sessions made
+                  unreachable — a single-step plan completes on the purchase, and
+                  the completion path cleared the counter on the same line that
+                  would have set it — so the dial changed nothing at all. What
+                  replaced it is not a number an operator sets: after a confirmed
+                  unlock the conversation holds until it produces a real bridge,
+                  and a fan who asks for more moves it on immediately. */}
+              <Invariant label="After a purchase the conversation continues before anything else is offered" />
               <Hint>
                 The fan is shown one next unlock at a time, with its price, and is never told a session
                 total or what might come after it. This amount sizes the CONTENT considered for that next
@@ -813,7 +820,6 @@ const FIELD_HELP: Record<string, string> = {
   'Free text messages': 'Maximum text-only session allowance when Free text allowed is selected.',
   'Free-session cooldown (hours)': 'How long the fan must wait before another free text allowance can begin.',
   'Next-offer content budget': 'How much content the next unlock is sized around. NOT the price: the price comes from the approved range of the set selected, and from Pricing strategy.',
-  'Text messages after a purchase before the next offer': 'Conversation turns to stay in the moment after a confirmed unlock before anything else is offered.',
   'Pause before every auto-generated locked PPV and wait for operator approval': 'Creates one exact, durable approval item. Nothing is sent until an operator accepts it.',
   'Local send hour': 'Preferred hour in the creator timezone for a known-payday follow-up.',
   'Purchase window (hours)': 'How long a locked PPV remains payment-pending before it is treated as abandoned.',
