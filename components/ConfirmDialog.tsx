@@ -54,7 +54,7 @@ export default function ConfirmDialog({
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        padding: 20,
+        padding: 'calc(20px + var(--cleo-safe-top)) calc(20px + var(--cleo-safe-right)) calc(20px + var(--cleo-safe-bottom)) calc(20px + var(--cleo-safe-left))',
         background: 'rgba(3, 3, 5, 0.78)',
         backdropFilter: 'blur(10px)',
       }}
@@ -66,6 +66,8 @@ export default function ConfirmDialog({
         aria-describedby="confirm-dialog-description"
         style={{
           width: 'min(480px, 100%)',
+          maxHeight: '100%',
+          overflowY: 'auto',
           padding: 24,
           borderRadius: 14,
           border: '1px solid rgba(155, 143, 212, 0.32)',
@@ -94,7 +96,7 @@ export default function ConfirmDialog({
         >
           {description}
         </div>
-        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 9, marginTop: 24 }}>
+        <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'flex-end', gap: 9, marginTop: 24 }}>
           <button
             type="button"
             onClick={onCancel}

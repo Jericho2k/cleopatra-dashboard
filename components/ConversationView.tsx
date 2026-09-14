@@ -13,6 +13,7 @@ import {
   type PpvMediaMap,
 } from '../lib/ppvMedia'
 import { ChevronDown } from 'lucide-react'
+import { modalWidth } from '../lib/responsive'
 
 type OperatorPPVMedia = {
   id: string
@@ -61,6 +62,15 @@ export interface ConversationViewProps {
   onToggleAutoMode?: () => void | Promise<void>
   hasMoreMessages?: boolean
   onLoadMore?: () => void | Promise<void>
+  /**
+   * Narrow-viewport navigation. On a phone this pane IS the screen, so it has
+   * to carry its own way back to the conversation list and across to the fan
+   * profile. Both controls are hidden by CSS on desktop, where all three panes
+   * are on screen at once; the props are optional so the component still works
+   * standalone.
+   */
+  onBack?: () => void
+  onOpenProfile?: () => void
 }
 
 function getInitials(displayName: string): string {
@@ -122,6 +132,8 @@ function ConversationView({
   onToggleAutoMode,
   hasMoreMessages,
   onLoadMore,
+  onBack,
+  onOpenProfile,
 }: ConversationViewProps) {
   const [suggestions, setSuggestions] = useState<string[]>(['', '', ''])
   const recoveryTick = useRealtimeRecovery()
@@ -533,14 +545,33 @@ function ConversationView({
       <div
         style={{
           flex: 1,
+          height: '100%',
           display: 'flex',
+          flexDirection: 'column',
           alignItems: 'center',
           justifyContent: 'center',
+          gap: 14,
+          padding: 20,
+          textAlign: 'center',
           color: 'var(--text-muted)',
           fontSize: 14,
         }}
       >
         Select a conversation to start chatting.
+        {onBack && (
+          <button
+            type="button"
+            className="cleo-only-phone"
+            onClick={onBack}
+            style={{
+              padding: '8px 14px', borderRadius: 8,
+              border: '1px solid var(--border)', background: 'var(--bg-elevated)',
+              color: 'var(--text-secondary)', fontSize: 13, cursor: 'pointer',
+            }}
+          >
+            ‹ Conversations
+          </button>
+        )}
       </div>
     )
   }
@@ -592,14 +623,24 @@ function ConversationView({
       }}
     >
       {/* Top bar */}
-      <div style={{
+      <div className="cleo-chat-header" style={{
         flexShrink: 0, padding: '16px 24px',
         borderBottom: '1px solid var(--border)',
         display: 'flex', alignItems: 'center', gap: 12,
         background: 'var(--bg-surface)',
       }}>
-        {/* Left: avatar + name */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12, flex: 1, minWidth: 0 }}>
+        {/* Left: back (phone only), avatar + name */}
+        <div className="cleo-chat-id" style={{ display: 'flex', alignItems: 'center', gap: 12, flex: 1, minWidth: 0 }}>
+          {onBack && (
+            <button
+              type="button"
+              className="cleo-pane-back"
+              onClick={onBack}
+              aria-label="Back to conversations"
+            >
+              ‹
+            </button>
+          )}
           <div style={{
             width: 40, height: 40, borderRadius: '50%', flexShrink: 0,
             background: 'var(--bg-elevated)', border: '1px solid var(--border)',
@@ -608,14 +649,38 @@ function ConversationView({
           }}>
             {getInitials(fan.display_name)}
           </div>
-          <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>
+          <span style={{
+            fontWeight: 600, color: 'var(--text-primary)',
+            minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+          }}>
             {fan.display_name}
           </span>
+          {/* The fan profile is its own screen below 1024px, so the thread has
+              to be able to reach it. Hidden where the panel is already on
+              screen beside the thread. */}
+          {onOpenProfile && (
+            <button
+              type="button"
+              className="cleo-only-compact"
+              onClick={onOpenProfile}
+              style={{
+                marginLeft: 'auto', flexShrink: 0,
+                alignItems: 'center', justifyContent: 'center',
+                minHeight: 34, padding: '0 10px', borderRadius: 8,
+                border: '1px solid var(--border)', background: 'var(--bg-elevated)',
+                color: 'var(--text-secondary)', fontSize: 12, cursor: 'pointer',
+              }}
+            >
+              Profile ›
+            </button>
+          )}
         </div>
 
         {/* Right: auto toggle + stage badge */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
-          <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+        <div className="cleo-chat-auto" style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+          {/* The toggle beside it says the same thing; below a desktop the
+              label is just width taken from the fan's name. */}
+          <span className="cleo-hide-compact" style={{ fontSize: 11, color: 'var(--text-muted)' }}>
             Auto mode for this fan
           </span>
           <button
@@ -676,10 +741,13 @@ function ConversationView({
       {/* Messages */}
       <div
         ref={scrollContainerRef}
+        className="cleo-messages"
         style={{
           position: 'relative',
           flex: 1,
-          overflow: 'auto',
+          minHeight: 0,
+          overflowY: 'auto',
+          overflowX: 'hidden',
           padding: 24,
           display: 'flex',
           flexDirection: 'column',
@@ -740,8 +808,8 @@ function ConversationView({
             >
               {msg.content && (
                 <div style={{
-                  wordBreak: 'break-all',
-                  overflowWrap: 'break-word',
+                  wordBreak: 'normal',
+                  overflowWrap: 'anywhere',
                 }}
                 >
                   {msg.content}
@@ -921,6 +989,7 @@ function ConversationView({
 
       {/* Bottom */}
       <div
+        className="cleo-composer"
         style={{
           flexShrink: 0,
           padding: 16,
@@ -1006,7 +1075,7 @@ function ConversationView({
             </button>
           ))}
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', marginBottom: 12 }}>
+        <div className="cleo-actionbar" style={{ marginBottom: 12 }}>
           <button
             type="button"
             onClick={refetchSuggestions}
@@ -1036,13 +1105,12 @@ function ConversationView({
                 fontSize: 12,
                 cursor: 'pointer',
                 padding: '5px 12px',
-                marginLeft: 8,
               }}
             >
               Scripts
             </button>
           )}
-          <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8 }}>
+          <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
             <button
               type="button"
               onClick={() => void openPpvComposer('set')}
@@ -1188,15 +1256,14 @@ function ConversationView({
     {ppvComposerOpen && (
       <div
         onClick={() => { if (!ppvSending) setPpvComposerOpen(false) }}
-        style={{
-          position: 'fixed', inset: 0, zIndex: 1100, background: 'rgba(0,0,0,0.78)',
-          display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24,
-        }}
+        className="cleo-modal"
+        style={{ zIndex: 1100, background: 'rgba(0,0,0,0.78)' }}
       >
         <div
           onClick={event => event.stopPropagation()}
+          className="cleo-modal-card"
           style={{
-            width: 1000, maxWidth: '95vw', maxHeight: '90vh', overflow: 'auto',
+            ...modalWidth(1000),
             background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: 14, padding: 20,
           }}
         >
@@ -1418,7 +1485,7 @@ function ConversationView({
                 </>
               )}
 
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 160px', gap: 12, marginTop: 18 }}>
+              <div className="cleo-field-row" style={{ gridTemplateColumns: 'minmax(0, 1fr) 160px', marginTop: 18 }}>
                 <div>
                   <label style={{ display: 'block', fontSize: 11, color: 'var(--text-muted)', marginBottom: 5 }}>Message</label>
                   <input value={ppvMessage} onChange={event => setPpvMessage(event.target.value)}
@@ -1468,21 +1535,21 @@ function ConversationView({
           position: 'fixed', inset: 0, zIndex: 1200,
           background: 'rgba(0,0,0,0.85)',
           display: 'flex', alignItems: 'center', justifyContent: 'center',
-          padding: 24,
+          padding: 'calc(16px + var(--cleo-safe-top)) calc(16px + var(--cleo-safe-right)) calc(16px + var(--cleo-safe-bottom)) calc(16px + var(--cleo-safe-left))',
         }}
       >
-        <div onClick={e => e.stopPropagation()} style={{ flexShrink: 0, maxWidth: '80vw' }}>
+        <div onClick={e => e.stopPropagation()} style={{ maxWidth: '100%', minWidth: 0 }}>
           {mediaPreview.mimetype?.startsWith('video') ? (
             <video
               src={mediaPreview.url}
               controls
-              style={{ maxHeight: '80vh', maxWidth: '80vw', borderRadius: 8, background: '#000' }}
+              style={{ maxHeight: '80dvh', maxWidth: '100%', borderRadius: 8, background: '#000' }}
             />
           ) : (
             <img
               src={mediaPreview.url}
               alt="Media preview"
-              style={{ maxHeight: '80vh', maxWidth: '80vw', objectFit: 'contain', borderRadius: 8 }}
+              style={{ maxHeight: '80dvh', maxWidth: '100%', objectFit: 'contain', borderRadius: 8 }}
             />
           )}
           <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', marginTop: 6, textAlign: 'center' }}>

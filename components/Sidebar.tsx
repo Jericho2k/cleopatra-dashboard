@@ -14,6 +14,7 @@ import {
   isRealTimestamp,
   useMinuteTick,
 } from '../lib/relativeTime'
+import { modalWidth } from '../lib/responsive'
 
 /**
  * One relative timestamp, and the only thing in the sidebar that re-renders on
@@ -150,23 +151,31 @@ function Sidebar({
         .sidebar-row-actions { display: none; }
         .sidebar-row:hover .sidebar-row-actions,
         .sidebar-row:focus-within .sidebar-row-actions { display: flex; }
+        /* A touch screen has no hover, so reveal-on-hover means the per-row
+           actions (lists, mark read) simply do not exist on a phone. Show them
+           outright wherever the pointer cannot hover — and reserve the space
+           they occupy, because permanently visible actions overlaying the
+           message preview is not an improvement on not having them. */
+        @media (hover: none) {
+          .sidebar-row-actions { display: flex; }
+          .sidebar-row > button { padding-right: 60px !important; }
+        }
       `}</style>
 
       {/* List modal */}
       {listModal && (
         <div
-          style={{
-            position: 'fixed', inset: 0, zIndex: 200,
-            background: 'rgba(0,0,0,0.6)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-          }}
+          className="cleo-modal"
+          style={{ zIndex: 200, background: 'rgba(0,0,0,0.6)' }}
           onClick={() => setListModal(null)}
         >
           <div
             onClick={e => e.stopPropagation()}
+            className="cleo-modal-card"
             style={{
+              ...modalWidth(340),
               background: 'var(--bg-elevated)', border: '1px solid var(--border)',
-              borderRadius: 12, padding: 24, width: 300,
+              borderRadius: 12, padding: 24,
             }}
           >
             <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 16, color: 'var(--text-primary)' }}>
@@ -339,7 +348,7 @@ function Sidebar({
 
       <aside
         style={{
-          height: '100vh',
+          height: '100%',
           width: '100%',
           background: 'var(--bg-surface)',
           borderRight: '1px solid var(--border)',
@@ -546,19 +555,17 @@ function Sidebar({
         {/* Manage Lists panel */}
         {showListsPanel && (
           <div
-            style={{
-              position: 'fixed', inset: 0, zIndex: 200,
-              background: 'rgba(0,0,0,0.6)',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-            }}
+            className="cleo-modal"
+            style={{ zIndex: 200, background: 'rgba(0,0,0,0.6)' }}
             onClick={() => setShowListsPanel(false)}
           >
             <div
               onClick={e => e.stopPropagation()}
+              className="cleo-modal-card"
               style={{
+                ...modalWidth(420),
                 background: 'var(--bg-elevated)', border: '1px solid var(--border)',
-                borderRadius: 12, padding: 24, width: 420, maxHeight: '80vh',
-                overflow: 'auto', paddingBottom: 20,
+                borderRadius: 12, padding: 24, paddingBottom: 20,
               }}
             >
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
@@ -862,6 +869,7 @@ function Sidebar({
                         position: 'absolute', right: 8, top: '100%', zIndex: 50,
                         background: 'var(--bg-elevated)', border: '1px solid var(--border)',
                         borderRadius: 8, padding: 4, minWidth: 140,
+                        maxWidth: 'calc(100vw - 32px)', maxHeight: '50dvh', overflowY: 'auto',
                         boxShadow: '0 8px 24px rgba(0,0,0,0.4)',
                       }}
                     >

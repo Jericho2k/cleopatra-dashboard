@@ -24,19 +24,23 @@ export default function LoginPage() {
 
   return (
     <div style={{
-      height: '100vh',
+      // The shell is not mounted on this route and <body> does not scroll, so
+      // this box owns the scrolling when a small screen cannot fit the card.
+      height: '100dvh',
+      overflowY: 'auto',
       display: 'flex',
       alignItems: 'center',
       justifyContent: 'center',
       background: 'var(--bg-base)',
       fontFamily: 'var(--font-body)',
+      padding: 'calc(24px + var(--cleo-safe-top)) calc(16px + var(--cleo-safe-right)) calc(24px + var(--cleo-safe-bottom)) calc(16px + var(--cleo-safe-left))',
     }}>
-      <div style={{
-        width: 360,
+      <div className="cleo-login-card" style={{
+        width: '100%',
+        maxWidth: 360,
         background: 'var(--bg-surface)',
         border: '1px solid var(--border)',
         borderRadius: 16,
-        padding: 40,
       }}>
         <div style={{ textAlign: 'center', marginBottom: 32 }}>
           <div style={{
