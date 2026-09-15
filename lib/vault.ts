@@ -51,6 +51,14 @@ export const VAULT_DETAIL_COLUMNS = [
   'classification_source',
   'classification_confidence',
   'classified_at',
+  // Persistence and retrieval provenance. Read so the modal can say that an
+  // analysis stopped short, and why, in words an agency can act on.
+  'classification_status',
+  'classification_skip_reason',
+  'classification_retrieval_method',
+  'classification_media_bytes',
+  'classification_media_credits',
+  'classification_frames_sampled',
 ].join(', ')
 
 export const ALL_ALBUMS = '__all__'
@@ -149,4 +157,79 @@ export function patchLoadedRow<T extends { id: string }>(
   const next = rows.slice()
   next[index] = { ...next[index], ...changed }
   return next
+}
+
+
+// ---------------------------------------------------------------------------
+// How complete an item's analysis is
+// ---------------------------------------------------------------------------
+//
+// A video whose deep scan was skipped to avoid a large billed media transfer is
+// not broken, and it is not the agency's problem to fix. In our implementation
+// "protected media" means the signed CDN resource could not be sampled directly
+// and the billed media-download proxy would be needed — infrastructure
+// behaviour, not a creator privacy setting. So the UI never asks anyone to
+// "unprotect" or "make public" anything, and never mentions CDNs, signatures,
+// tokens or HTTP statuses.
+//
+// It says what happened, in one sentence, and stops.
+
+export type VaultClassificationStatus = 'complete' | 'partial' | 'pending' | 'unknown'
+
+export type VaultAnalysisItem = {
+  classification_status?: string | null
+  classified_at?: string | null
+  content_category?: string | null
+}
+
+export function classificationStatusOf(
+  item: VaultAnalysisItem | null | undefined,
+): VaultClassificationStatus {
+  const status = (item?.classification_status ?? '').trim().toLowerCase()
+  if (status === 'partial' || status === 'pending') return status
+  if (status === 'complete') return 'complete'
+  if (status === 'error') return 'pending'
+  // No status column yet, or a row that predates it: infer from whether there
+  // is a classification at all, so a backend deployed ahead of its migration
+  // still renders something truthful.
+  if (item?.classified_at && (item?.content_category ?? '').trim()) return 'complete'
+  return 'unknown'
+}
+
+export type AnalysisNotice = { title: string; detail: string } | null
+
+/**
+ * What to tell an ordinary agency operator about an incomplete analysis.
+ *
+ * Returns null when the analysis is complete or when nothing useful can be
+ * said — a notice that appears on every item teaches nobody anything.
+ */
+export function analysisNotice(
+  item: VaultAnalysisItem | null | undefined,
+): AnalysisNotice {
+  switch (classificationStatusOf(item)) {
+    case 'partial':
+      return {
+        title: 'Partial analysis',
+        detail:
+          'Thumbnail classified; deep video scan skipped to avoid a high media-transfer cost.',
+      }
+    case 'pending':
+      return {
+        title: 'Analysis pending',
+        detail:
+          'This video has not been analysed yet: a deep scan was skipped to avoid a high media-transfer cost. You can run a manual AI re-analysis on it.',
+      }
+    default:
+      return null
+  }
+}
+
+/** Megabytes moved through the billed media proxy for one item, or null. */
+export function transferMegabytes(
+  item: { classification_media_bytes?: number | null } | null | undefined,
+): number | null {
+  const bytes = Number(item?.classification_media_bytes ?? 0)
+  if (!Number.isFinite(bytes) || bytes <= 0) return null
+  return Math.round((bytes / (1024 * 1024)) * 10) / 10
 }

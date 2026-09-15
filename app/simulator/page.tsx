@@ -1,7 +1,7 @@
 'use client'
 
 /**
- * Owner-only Full Auto simulator — a persistent testing workspace.
+ * The Full Auto simulator — a persistent testing workspace.
  *
  * Type as the fan; the REAL Full Auto pipeline answers as the creator. Nothing
  * here is a second engine: the backend runs the same analyzer, commercial
@@ -29,10 +29,17 @@
  * version kept it in React state.
  *
  * The page renders nothing at all until the backend confirms the capability. An
- * ordinary agency account that navigates here directly sees the same empty
- * state as a route that does not exist, rather than an "access denied" screen
- * announcing a feature it may not use. The backend rejects the endpoints
- * independently; this is presentation only.
+ * account without it that navigates here directly sees the same empty state as
+ * a route that does not exist, rather than an "access denied" screen announcing
+ * a feature it may not use. The backend rejects the endpoints independently;
+ * this is presentation only.
+ *
+ * TWO TIERS. Agency operators simulate their own creators, with their own
+ * creators' approved vault. The cross-tenant catalog mirror is owner only, and
+ * for everyone else its panel is ABSENT rather than disabled — a greyed-out
+ * "Mirror from another creator" control would disclose that other creators
+ * exist and that somebody can copy between them, which is precisely what the
+ * backend refuses to reveal.
  */
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -46,6 +53,7 @@ import {
 } from '../../lib/aiStack'
 import { dedupeMessages } from '../../lib/messages'
 import {
+  canMirrorCatalog,
   canSimulate,
   fetchSimulationCapabilities,
   fetchSimulationCreators,
@@ -124,13 +132,15 @@ export default function SimulatorPage() {
       void fetchAIStackRegistry().then(found => {
         if (!cancelled) setRegistry(found)
       })
-      // Mirror SOURCES come from their own owner-only, cross-tenant listing.
-      // Using the simulator creator list here was the bug: that list is
-      // tenancy-scoped, so an agency-owned creator — which is exactly the
-      // vault worth mirroring — could never appear in it.
-      void fetchMirrorSources().then(rows => {
-        if (!cancelled) setMirrorSources(rows)
-      })
+      // Mirror SOURCES come from their own owner-only, cross-tenant listing,
+      // and are requested ONLY by an account the backend said may mirror.
+      // Asking on behalf of an agency would be a wasted 404 at best and, if
+      // the refusal were ever rendered, a disclosure at worst.
+      if (canMirrorCatalog(value)) {
+        void fetchMirrorSources().then(rows => {
+          if (!cancelled) setMirrorSources(rows)
+        })
+      }
     })
     return () => {
       cancelled = true
@@ -138,6 +148,7 @@ export default function SimulatorPage() {
   }, [])
 
   const allowed = canSimulate(capabilities)
+  const mayMirror = canMirrorCatalog(capabilities)
   const creator = useMemo(
     () => creators.find(row => row.id === creatorId) ?? null,
     [creators, creatorId],
@@ -455,7 +466,10 @@ export default function SimulatorPage() {
           </div>
         </div>
 
-        {/* Simulation catalog. Owner only, and never visible to an agency. */}
+        {/* Cross-tenant catalog mirror. Owner only, and ABSENT — not disabled
+            — for everyone else: a greyed-out control would still disclose that
+            other creators exist and that somebody can copy between them. */}
+        {mayMirror && (
         <div style={{ borderTop: '1px solid var(--border)', paddingTop: 10 }}>
           <div style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--text-muted)', marginBottom: 6 }}>
             Simulation catalog
@@ -503,6 +517,7 @@ export default function SimulatorPage() {
             excluded from live planning and impossible to deliver.
           </div>
         </div>
+        )}
       </div>
 
       </div>
