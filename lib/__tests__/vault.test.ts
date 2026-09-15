@@ -12,12 +12,15 @@ import {
   VAULT_GRID_COLUMNS,
   VAULT_PAGE_SIZE,
   albumTitleOf,
+  analysisNotice,
+  classificationStatusOf,
   gridImageSource,
   isVideo,
   patchLoadedRow,
   previewImageSource,
   summarizeAlbums,
   totalItems,
+  transferMegabytes,
 } from '../vault'
 
 const ORIGINAL = 'https://cdn.fansly.com/original.jpg?signature=abc'
@@ -185,5 +188,100 @@ describe('the vault page itself', () => {
   it('keeps the All view, paginated rather than in memory', () => {
     expect(ALL_ALBUMS).toBe('__all__')
     expect(source).toContain('ALL_ALBUMS')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// How complete an item's analysis is
+// ---------------------------------------------------------------------------
+//
+// A video whose deep scan was skipped to avoid a large billed media transfer is
+// not broken, and it is not the agency's problem to fix. In our implementation
+// "protected media" means the signed CDN resource could not be sampled directly
+// and the billed proxy would be needed — infrastructure behaviour, not a creator
+// privacy setting.
+
+describe('classificationStatusOf', () => {
+  it('reads the stored status', () => {
+    expect(classificationStatusOf({ classification_status: 'complete' })).toBe('complete')
+    expect(classificationStatusOf({ classification_status: 'partial' })).toBe('partial')
+    expect(classificationStatusOf({ classification_status: 'pending' })).toBe('pending')
+  })
+
+  it('treats an errored row as pending, because both mean "not done"', () => {
+    expect(classificationStatusOf({ classification_status: 'error' })).toBe('pending')
+  })
+
+  it('infers a status for a row that predates the column', () => {
+    // A backend deployed ahead of its migration must still render something
+    // truthful rather than labelling every item incomplete.
+    expect(
+      classificationStatusOf({
+        classified_at: '2026-01-01T00:00:00Z',
+        content_category: 'nude_photo',
+      }),
+    ).toBe('complete')
+    expect(classificationStatusOf({})).toBe('unknown')
+    expect(classificationStatusOf(null)).toBe('unknown')
+  })
+})
+
+describe('analysisNotice', () => {
+  it('explains a partial analysis in one plain sentence', () => {
+    const notice = analysisNotice({ classification_status: 'partial' })
+    expect(notice?.title).toBe('Partial analysis')
+    expect(notice?.detail).toBe(
+      'Thumbnail classified; deep video scan skipped to avoid a high media-transfer cost.',
+    )
+  })
+
+  it('says nothing at all about a complete analysis', () => {
+    // A notice on every item teaches nobody anything.
+    expect(analysisNotice({ classification_status: 'complete' })).toBeNull()
+    expect(analysisNotice({})).toBeNull()
+    expect(analysisNotice(null)).toBeNull()
+  })
+
+  it('points a pending item at the control that can resolve it', () => {
+    const notice = analysisNotice({ classification_status: 'pending' })
+    expect(notice?.title).toBe('Analysis pending')
+    expect(notice?.detail).toContain('manual AI re-analysis')
+  })
+
+  it('never exposes low-level CDN or auth jargon', () => {
+    // And never asks the agency to "unprotect" or "make public" anything: a
+    // protected asset is infrastructure behaviour, not a setting they own.
+    for (const status of ['partial', 'pending']) {
+      const notice = analysisNotice({ classification_status: status })
+      const text = `${notice?.title} ${notice?.detail}`.toLowerCase()
+      for (const jargon of [
+        'cdn',
+        'signed',
+        'token',
+        'auth',
+        '403',
+        'unprotect',
+        'make public',
+        'protected',
+        'expired',
+      ]) {
+        expect(text).not.toContain(jargon)
+      }
+    }
+  })
+})
+
+describe('transferMegabytes', () => {
+  it('reports what actually moved through the billed proxy', () => {
+    expect(transferMegabytes({ classification_media_bytes: 5 * 1024 * 1024 })).toBe(5)
+    expect(transferMegabytes({ classification_media_bytes: 1536 * 1024 })).toBe(1.5)
+  })
+
+  it('is null for every free retrieval path', () => {
+    // The normal case: direct range sampling transfers nothing billable, so
+    // there is no cost line to render.
+    expect(transferMegabytes({ classification_media_bytes: 0 })).toBeNull()
+    expect(transferMegabytes({})).toBeNull()
+    expect(transferMegabytes(null)).toBeNull()
   })
 })

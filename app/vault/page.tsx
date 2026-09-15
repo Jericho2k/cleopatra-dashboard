@@ -9,15 +9,22 @@ import {
   VAULT_DETAIL_COLUMNS,
   VAULT_GRID_COLUMNS,
   VAULT_PAGE_SIZE,
+  analysisNotice,
   gridImageSource,
   isVideo,
   patchLoadedRow,
   previewImageSource,
   summarizeAlbums,
   totalItems,
+  transferMegabytes,
   type VaultAlbum,
   type VaultGridItem,
 } from '../../lib/vault'
+import {
+  canSeeOperatorDiagnostics,
+  fetchSimulationCapabilities,
+  type SimulationCapabilities,
+} from '../../lib/simulation'
 import { modalWidth, tileSize } from '../../lib/responsive'
 
 const VAULT_CATEGORY_RANGES: Record<string, { min: number; max: number }> = {
@@ -263,6 +270,11 @@ export default function VaultPage() {
   const [albumRowsLoading, setAlbumRowsLoading] = useState(false)
   const [albumHasMore, setAlbumHasMore] = useState(false)
   const [previewItem, setPreviewItem] = useState<any>(null)
+  // Owner/operator diagnostics. Retrieval method, transfer credits, sampled
+  // frame count and classifier version are useful when tuning the media-cost
+  // guard and noise for everyone else, so they render only when the backend
+  // says this account may see them.
+  const [capabilities, setCapabilities] = useState<SimulationCapabilities | null>(null)
   const [previewLoading, setPreviewLoading] = useState(false)
   const [previewEdits, setPreviewEdits] = useState<{ content_category: string; ai_description: string; price_min: string; price_max: string; scene_location: string; scene_outfit: string; scene_lighting: string; scene_id: string } | null>(null)
   const [previewSaving, setPreviewSaving] = useState(false)
@@ -315,6 +327,18 @@ export default function VaultPage() {
     setToast({ message, type })
     setTimeout(() => setToast(null), 3000)
   }
+
+  // Never throws: a failure means "no diagnostics", which is the right answer
+  // for an ordinary agency operator anyway.
+  useEffect(() => {
+    let cancelled = false
+    void fetchSimulationCapabilities().then(value => {
+      if (!cancelled) setCapabilities(value)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   // creators — matches Sets page (chatter_creators scoped to the signed-in user)
   useEffect(() => {
@@ -1200,21 +1224,63 @@ export default function VaultPage() {
                         <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{previewItem.album_title || '—'}</div>
                       </div>
 
-                      <div style={{ marginBottom: 14, padding: '8px 10px', background: 'var(--bg-elevated)', borderRadius: 6 }}>
-                        <div style={{ fontSize: 10, color: 'var(--text-muted)', marginBottom: 4 }}>CLASSIFICATION QUALITY</div>
-                        <div style={{ fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.5 }}>
-                          Version {previewItem.classification_version ?? 0}
-                          {' · '}{previewItem.classification_source || 'legacy/unknown source'}
-                          {typeof previewItem.classification_confidence === 'number'
-                            ? ` · ${Math.round(previewItem.classification_confidence * 100)}% evidence confidence`
-                            : ''}
-                        </div>
-                        {previewItem.classification_model && (
-                          <div style={{ fontSize: 10, color: 'var(--text-faint)', marginTop: 2 }}>
-                            {previewItem.classification_model}
+                      {/* Incomplete analysis, in words an agency can act on.
+                          Deliberately says nothing about CDNs, signed links,
+                          tokens or HTTP statuses: a "protected" asset is
+                          infrastructure behaviour, not a creator privacy
+                          setting, and nobody should be asked to change one. */}
+                      {(() => {
+                        const notice = analysisNotice(previewItem)
+                        if (!notice) return null
+                        return (
+                          <div style={{ marginBottom: 14, padding: '8px 10px', background: 'var(--bg-elevated)', borderRadius: 6, borderLeft: '2px solid var(--text-muted)' }}>
+                            <div style={{ fontSize: 11, color: 'var(--text-secondary)', fontWeight: 600, marginBottom: 3 }}>
+                              {notice.title}
+                            </div>
+                            <div style={{ fontSize: 11, color: 'var(--text-muted)', lineHeight: 1.5 }}>
+                              {notice.detail}
+                            </div>
                           </div>
-                        )}
-                      </div>
+                        )
+                      })()}
+
+                      {/* Owner/operator only: how the pixels were obtained and
+                          what the transfer cost. Useful when tuning the
+                          media-cost guard, clutter in ordinary agency UX. */}
+                      {canSeeOperatorDiagnostics(capabilities) && (
+                        <div style={{ marginBottom: 14, padding: '8px 10px', background: 'var(--bg-elevated)', borderRadius: 6 }}>
+                          <div style={{ fontSize: 10, color: 'var(--text-muted)', marginBottom: 4 }}>CLASSIFICATION QUALITY</div>
+                          <div style={{ fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.5 }}>
+                            Version {previewItem.classification_version ?? 0}
+                            {' · '}{previewItem.classification_source || 'legacy/unknown source'}
+                            {typeof previewItem.classification_confidence === 'number'
+                              ? ` · ${Math.round(previewItem.classification_confidence * 100)}% evidence confidence`
+                              : ''}
+                          </div>
+                          <div style={{ fontSize: 10, color: 'var(--text-faint)', marginTop: 3, lineHeight: 1.6 }}>
+                            {previewItem.classification_model && (
+                              <div>{previewItem.classification_model}</div>
+                            )}
+                            {previewItem.classification_retrieval_method && (
+                              <div>retrieval: {previewItem.classification_retrieval_method}</div>
+                            )}
+                            {Number(previewItem.classification_frames_sampled ?? 0) > 0 && (
+                              <div>{previewItem.classification_frames_sampled} frames sampled</div>
+                            )}
+                            {transferMegabytes(previewItem) !== null && (
+                              <div>
+                                {transferMegabytes(previewItem)} MB transferred
+                                {Number(previewItem.classification_media_credits ?? 0) > 0
+                                  ? ` · ~${previewItem.classification_media_credits} credits`
+                                  : ''}
+                              </div>
+                            )}
+                            {previewItem.classification_skip_reason && (
+                              <div>skipped: {previewItem.classification_skip_reason}</div>
+                            )}
+                          </div>
+                        </div>
+                      )}
 
                       {/* Re-categorize button */}
                       <button

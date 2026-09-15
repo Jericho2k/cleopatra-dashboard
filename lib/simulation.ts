@@ -1,25 +1,36 @@
 /**
- * Owner-only Full Auto simulator: capability, navigation gating, and transcript.
+ * The Full Auto simulator: capabilities, navigation gating, and transcript.
  *
- * The backend is the security boundary. Everything here decides what to RENDER,
- * and renders nothing by default: an ordinary agency account must see no trace
- * that the simulator exists — no sidebar entry, no controls, no "access denied"
- * screen that advertises a feature it cannot use.
+ * The backend is the security boundary. Everything here decides what to RENDER.
  *
- * The capability therefore starts as `null` ("not answered yet") rather than
- * `false`, and the navigation only grows the extra entry once the backend has
- * positively said `auto_simulation: true`. A failed request, an offline backend,
- * a 404 and a plain `false` all collapse to the same thing: the feature does not
- * exist for this account.
+ * TWO TIERS, and the difference is what this module exists to express.
+ *
+ * `auto_simulation` — this account may open the simulator and use it on the
+ * creators it already holds. Ordinary agency operators have this.
+ *
+ * `simulation_mirror` — this account may use the CROSS-TENANT catalog mirror.
+ * Owner only. An agency account must see no trace of it: no control, no
+ * disabled button, no explanatory tooltip about a feature it cannot use. A
+ * disabled control is still a disclosure, so the mirror UI is not rendered at
+ * all rather than rendered inert.
+ *
+ * Every capability starts as `null` ("not answered yet") and is treated exactly
+ * like `false`, so nothing flashes into view and then disappears. A failed
+ * request, an offline backend, a 404 and a plain `false` all collapse to the
+ * same thing: that capability does not exist for this account.
  *
  * No allowlist, user id, or environment variable ever reaches the client. The
- * only thing the client learns is one boolean about itself.
+ * only thing the client learns is three booleans about itself.
  */
 
 import { ApiError, apiFetch, apiJson } from './api'
 
 export type SimulationCapabilities = {
   auto_simulation: boolean
+  /** May use the cross-tenant catalog mirror. Owner only. */
+  simulation_mirror: boolean
+  /** May see retrieval method, transfer credits and classifier internals. */
+  operator_diagnostics: boolean
 }
 
 export type SimulationTestFan = {
@@ -145,6 +156,34 @@ export function canSimulate(
 }
 
 /**
+ * Whether the cross-tenant mirror controls may render.
+ *
+ * Deliberately a separate question from `canSimulate`. An agency operator gets
+ * `true` from that and `false` from this, and the mirror panel is then absent
+ * rather than disabled — a greyed-out "Mirror from another creator" control
+ * would tell an agency that other creators exist and that somebody can copy
+ * between them, which is exactly what the backend refuses to disclose.
+ */
+export function canMirrorCatalog(
+  capabilities: SimulationCapabilities | null | undefined,
+): boolean {
+  return capabilities?.simulation_mirror === true
+}
+
+/**
+ * Whether low-level retrieval/cost diagnostics may render.
+ *
+ * Not a security boundary — the data describes the caller's own creators
+ * either way — but noise for an agency operator, who wants to know that an
+ * analysis was partial, not which retrieval method produced it.
+ */
+export function canSeeOperatorDiagnostics(
+  capabilities: SimulationCapabilities | null | undefined,
+): boolean {
+  return capabilities?.operator_diagnostics === true
+}
+
+/**
  * The navigation for this account. Identical to BASE_NAV for every ordinary
  * tenant — the Simulator entry is appended only on an explicit true.
  */
@@ -160,14 +199,27 @@ export function navEntries(
  * Never throws: any failure is "no capability", because a network error must
  * not be the reason a private feature becomes visible.
  */
+const NO_CAPABILITIES: SimulationCapabilities = {
+  auto_simulation: false,
+  simulation_mirror: false,
+  operator_diagnostics: false,
+}
+
 export async function fetchSimulationCapabilities(): Promise<SimulationCapabilities> {
   try {
     const response = await apiFetch('/simulation-capabilities')
-    if (!response.ok) return { auto_simulation: false }
+    if (!response.ok) return { ...NO_CAPABILITIES }
     const body = await response.json().catch(() => ({}))
-    return { auto_simulation: body?.auto_simulation === true }
+    return {
+      auto_simulation: body?.auto_simulation === true,
+      // An older backend sends neither field. Absent is false, so a deployment
+      // mid-rollout hides the mirror rather than showing a control whose
+      // endpoints would refuse it.
+      simulation_mirror: body?.simulation_mirror === true,
+      operator_diagnostics: body?.operator_diagnostics === true,
+    }
   } catch {
-    return { auto_simulation: false }
+    return { ...NO_CAPABILITIES }
   }
 }
 
