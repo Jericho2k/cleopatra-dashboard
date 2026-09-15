@@ -5,6 +5,11 @@ import type { Fan } from '../types'
 import { supabase } from '../lib/supabase'
 import { User } from 'lucide-react'
 import { apiFetch } from '../lib/api'
+import {
+  describeHistoryProgress,
+  summarizeHistoryImport,
+  type FanHistoryProgress,
+} from '../lib/fanHistory'
 import { useRealtimeRecovery } from '../lib/realtime-recovery'
 
 export interface FanPanelProps {
@@ -136,6 +141,11 @@ export default function FanPanel({ fan, creatorId, onHistoryLoaded, showToast, o
   const [salesLog, setSalesLog] = useState<SalesEntry[]>([])
   const [notSoldLog, setNotSoldLog] = useState<SalesEntry[]>([])
   const [loadingHistory, setLoadingHistory] = useState(false)
+  // Historical import is necessarily partial: API Fansly caps a chat page at ten
+  // messages, so a long conversation is hundreds of paid round trips and one
+  // press advances a durable cursor rather than finishing the job. The operator
+  // needs to see where that cursor is, not just what the last press returned.
+  const [historyProgress, setHistoryProgress] = useState<FanHistoryProgress | null>(null)
   const [details, setDetails] = useState({
     age: '', payday: '', hobbies: '', relationship_status: '',
   })
@@ -277,6 +287,25 @@ export default function FanPanel({ fan, creatorId, onHistoryLoaded, showToast, o
     }
   }, [fan?.id])
 
+  // The durable backfill checkpoint, read on open. Costs no provider call: the
+  // route reads the stored cursor, so it answers even with the connector off.
+  useEffect(() => {
+    let cancelled = false
+    setHistoryProgress(null)
+    if (!fan?.id || !creatorId) return
+    ;(async () => {
+      try {
+        const res = await apiFetch(`/fan-history/${creatorId}/${fan.id}`)
+        const data = await res.json()
+        if (!cancelled) setHistoryProgress(data.history ?? null)
+      } catch {
+        // History progress is informational. A panel that cannot show it is
+        // still a working panel, and a toast here would be noise on every open.
+      }
+    })()
+    return () => { cancelled = true }
+  }, [fan?.id, creatorId])
+
   useEffect(() => {
     if (!fan) return
     const channel = supabase
@@ -322,7 +351,8 @@ export default function FanPanel({ fan, creatorId, onHistoryLoaded, showToast, o
       )
       const data = await res.json()
       onHistoryLoaded?.()
-      showToast?.(`Imported ${data.imported} messages`)
+      setHistoryProgress(data.history ?? null)
+      showToast?.(summarizeHistoryImport(data))
     } finally {
       setLoadingHistory(false)
     }
@@ -410,6 +440,7 @@ export default function FanPanel({ fan, creatorId, onHistoryLoaded, showToast, o
     { id: 'profile', label: 'Profile', icon: <User size={14} /> },
     { id: 'sales', label: 'Sales', icon: <span style={{ fontSize: 12 }}>$</span> },
   ]
+  const historyLine = describeHistoryProgress(historyProgress)
   const currentPreview = mediaPreview?.items[mediaPreview.index]
 
   return (
@@ -475,6 +506,14 @@ export default function FanPanel({ fan, creatorId, onHistoryLoaded, showToast, o
             {loadingHistory ? 'Loading...' : '↓ Load History'}
           </button>
         </div>
+        {historyLine && (
+          <div style={{
+            fontSize: 11, color: 'var(--text-muted)', textAlign: 'right',
+            marginTop: -8, marginBottom: 12,
+          }}>
+            {historyLine}
+          </div>
+        )}
       </div>
 
       {/* Tab switcher */}
