@@ -1530,8 +1530,8 @@ export default function SettingsPage() {
                 >
                   <option value="">Production default</option>
                   {(aiStackRegistry?.profiles ?? []).map(profile => (
-                    <option key={profile.profile_id} value={profile.profile_id}>
-                      {profile.profile_id}
+                    <option key={profile.id} value={profile.id}>
+                      {profile.id}
                     </option>
                   ))}
                 </select>
@@ -1568,8 +1568,8 @@ export default function SettingsPage() {
                   style={{ width: '100%', maxWidth: 420, background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text-primary)', padding: '10px 12px', fontSize: 13, marginBottom: 14 }}
                 >
                   {(aiStackRegistry?.profiles ?? []).map(profile => (
-                    <option key={profile.profile_id} value={profile.profile_id}>
-                      {profile.label} ({profile.profile_id})
+                    <option key={profile.id} value={profile.id}>
+                      {profile.name} ({profile.id})
                     </option>
                   ))}
                 </select>
@@ -1591,7 +1591,7 @@ export default function SettingsPage() {
                       <div style={{ fontSize: 12.5, color: 'var(--text-secondary)', marginBottom: 14, lineHeight: 1.6 }}>
                         {selected.summary}
                       </div>
-                      {selected.stages.map(stage => (
+                      {(selected.stages ?? []).map(stage => (
                         <div
                           key={stage.stage}
                           style={{

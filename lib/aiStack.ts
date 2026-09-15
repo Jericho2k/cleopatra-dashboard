@@ -9,11 +9,27 @@
  * validates. There is no free-text provider or model field anywhere in this UI,
  * by construction.
  *
- * Everything here is owner-only. The routes are gated by the same simulator
- * allowlist, and an ordinary agency account gets the same 404 it gets for the
- * simulator itself — so, exactly as with the simulator, this module resolves to
- * "no capability" on any failure and the UI renders nothing rather than an
- * access-denied screen advertising a feature the account may not use.
+ * TWO DEPTHS, DECIDED BY THE BACKEND
+ * ----------------------------------
+ * An agency operator selects a stack in the Simulator, so it reads the registry
+ * — but only ever as `{ id, name }`. The routing behind each profile (provider,
+ * model, fallbacks, stage routing, prompt version, generation settings) is
+ * platform-owner diagnostics and the backend does not send it to anyone else.
+ *
+ * So `summary` and `stages` are OPTIONAL here. That is not defensive typing: it
+ * is the contract. Any UI that reads them is owner-gated already, and code that
+ * assumes they exist would be assuming an authorization result it does not
+ * have. `registry.diagnostics` says plainly which depth arrived.
+ *
+ * The redaction is the server's, not this module's. Nothing here can restore a
+ * field the response did not carry, which is the point: a value the dashboard
+ * merely declines to render has still reached the browser.
+ *
+ * Selection and override routes stay gated by the simulator allowlist, and an
+ * account that may not simulate gets the same 404 the simulator itself gives —
+ * so this module resolves to "no capability" on any failure and the UI renders
+ * nothing rather than an access-denied screen advertising a feature the account
+ * may not use.
  */
 
 import { apiFetch } from './api'
@@ -36,17 +52,24 @@ export type AIStackStage = {
 }
 
 export type AIStackProfile = {
-  profile_id: string
-  label: string
-  summary: string
-  stages: AIStackStage[]
+  /** The stable identifier sent back when this profile is selected. */
+  id: string
+  /** The product-level display name, e.g. "Cleo V3". */
+  name: string
+  /** Owner-only diagnostics. Absent for an agency account. */
+  summary?: string
+  /** Owner-only diagnostics. Absent for an agency account. */
+  stages?: AIStackStage[]
 }
 
 export type AIStackRegistry = {
   profiles: AIStackProfile[]
   /** What AI_STACK_PROFILE currently resolves to on the deployment. */
   environment_profile: string
-  environment_variable: string
+  /** Owner-only: the name of the deployment variable behind it. */
+  environment_variable?: string
+  /** Whether this account received the routing detail at all. */
+  diagnostics: boolean
 }
 
 export type CreatorAIStack = {
@@ -81,8 +104,7 @@ export function profileLabel(
   profileId: string | null | undefined,
 ): string {
   if (!profileId) return '—'
-  const found = registry?.profiles.find(profile => profile.profile_id === profileId)
-  return found?.label ?? profileId
+  return findProfile(registry, profileId)?.name ?? profileId
 }
 
 export function findProfile(
@@ -90,7 +112,7 @@ export function findProfile(
   profileId: string | null | undefined,
 ): AIStackProfile | null {
   if (!registry || !profileId) return null
-  return registry.profiles.find(profile => profile.profile_id === profileId) ?? null
+  return registry.profiles.find(profile => profile.id === profileId) ?? null
 }
 
 /**
@@ -114,6 +136,30 @@ export function describeStage(stage: AIStackStage): string {
 }
 
 /**
+ * One registry row, at whatever depth the backend served it.
+ *
+ * Returns null for a row with no usable identifier, which is dropped rather
+ * than rendered as a nameless option nobody can select.
+ */
+export function normalizeProfile(raw: unknown): AIStackProfile | null {
+  if (!raw || typeof raw !== 'object') return null
+  const row = raw as Record<string, unknown>
+  // `profile_id`/`label` are the owner payload's names for the same two facts.
+  // Accepted so one shape serves both depths and a backend that has not shipped
+  // the reduced view yet still fills the dropdown.
+  const id = typeof row.id === 'string' ? row.id : row.profile_id
+  const name = typeof row.name === 'string' ? row.name : row.label
+  if (typeof id !== 'string' || !id) return null
+  const profile: AIStackProfile = {
+    id,
+    name: typeof name === 'string' && name ? name : id,
+  }
+  if (typeof row.summary === 'string') profile.summary = row.summary
+  if (Array.isArray(row.stages)) profile.stages = row.stages as AIStackStage[]
+  return profile
+}
+
+/**
  * Read the registry. Returns null when the account may not see it.
  *
  * Never throws: a failure and a refusal are the same thing to the UI, which
@@ -125,7 +171,23 @@ export async function fetchAIStackRegistry(): Promise<AIStackRegistry | null> {
     if (!response.ok) return null
     const body = await response.json().catch(() => null)
     if (!body || !Array.isArray(body.profiles)) return null
-    return body as AIStackRegistry
+    const profiles = (body.profiles as unknown[])
+      .map(normalizeProfile)
+      .filter((profile): profile is AIStackProfile => profile !== null)
+    return {
+      profiles,
+      environment_profile: String(body.environment_profile ?? ''),
+      environment_variable:
+        typeof body.environment_variable === 'string'
+          ? body.environment_variable
+          : undefined,
+      // An older backend sends neither the flag nor the reduced shape, so the
+      // presence of stage detail is what it means by "diagnostics".
+      diagnostics:
+        typeof body.diagnostics === 'boolean'
+          ? body.diagnostics
+          : profiles.some(profile => profile.stages !== undefined),
+    }
   } catch {
     return null
   }
@@ -199,6 +261,11 @@ export async function saveSimulationFanAIStack(
  * The backend records this inside `messages.media_context.ai_stack`. Older rows
  * predate it and return null, which is reported as "unknown" rather than being
  * attributed to whatever profile happens to be current.
+ *
+ * `profile` is the only field an agency account ever receives: the backend
+ * redacts the rest of the marker out of the simulated-turn response, exactly as
+ * it redacts the registry. Everything after `profile` is therefore optional and
+ * owner-only, and the UI reading it is gated accordingly.
  */
 export type MessageAIStack = {
   profile: string

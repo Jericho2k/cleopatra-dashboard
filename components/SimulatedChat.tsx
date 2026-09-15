@@ -45,6 +45,18 @@ type Props = {
   messages: Message[]
   loading: boolean
   showDebug: boolean
+  /**
+   * Whether this account may see the AI stack's ROUTING, not just which
+   * profile answered.
+   *
+   * The backend redacts provider, model, writer route and prompt version out
+   * of the simulated-turn response for anyone who is not the platform owner.
+   * This transcript, though, is read straight from the `messages` table, where
+   * the marker is persisted in full — so the same boundary is applied again
+   * here rather than relying on the response shape for rows that never came
+   * through it.
+   */
+  operatorDiagnostics: boolean
 }
 
 const UNRESOLVED = { url: null, thumbnail_url: null, mimetype: null }
@@ -55,6 +67,7 @@ export default function SimulatedChat({
   messages,
   loading,
   showDebug,
+  operatorDiagnostics,
 }: Props) {
   const [media, setMedia] = useState<SimulationMedia>({})
   // FE-007's rule, applied here too: what to request is derived from the
@@ -154,6 +167,7 @@ export default function SimulatedChat({
           fanName={fanName}
           media={media}
           showDebug={showDebug}
+          operatorDiagnostics={operatorDiagnostics}
         />
       ))}
       <div ref={endRef} />
@@ -174,11 +188,13 @@ function Bubble({
   fanName,
   media,
   showDebug,
+  operatorDiagnostics,
 }: {
   message: Message
   fanName: string
   media: SimulationMedia
   showDebug: boolean
+  operatorDiagnostics: boolean
 }) {
   const isFan = message.role === 'fan'
   const ppv = ppvPresentation(message.media_context)
@@ -224,12 +240,20 @@ function Bubble({
         <PpvCard presentation={ppv} media={media} showDebug={showDebug} />
       )}
 
+      {/* Which stack answered is a product-level fact and stays. What it
+          routed to is owner diagnostics, so it is rendered only for an account
+          that is allowed to have it — the transcript is read straight from the
+          table, where old rows still carry the full marker. */}
       {showDebug && stack && (
         <div style={{ fontSize: 10, color: 'var(--text-faint)' }}>
           {stack.profile}
-          {stack.route ? ` · ${stack.route}` : ''}
-          {stack.model ? ` · ${stack.model}` : ''}
-          {stack.prompt_version ? ` · ${stack.prompt_version}` : ''}
+          {operatorDiagnostics && (
+            <>
+              {stack.route ? ` · ${stack.route}` : ''}
+              {stack.model ? ` · ${stack.model}` : ''}
+              {stack.prompt_version ? ` · ${stack.prompt_version}` : ''}
+            </>
+          )}
         </div>
       )}
     </div>
