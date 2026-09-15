@@ -206,6 +206,15 @@ export type SimulationState = {
   affordability: Record<string, unknown> | null
   price_learning: Record<string, unknown> | null
   commercial: Record<string, unknown>
+  /**
+   * The conversational scene (backend: services/experience_director.py).
+   *
+   * It is the half of a fan's state that OUTLIVES a purchase. A commercial
+   * session is one unlock and is finished the moment it is paid, so without
+   * this the panel went blank between a sale and the next offer and there was
+   * no way to see why nothing was being offered.
+   */
+  scene: Record<string, unknown> | null
   active_session: Record<string, unknown> | null
   pending_ppv: Record<string, unknown> | null
   fan_intelligence: Record<string, unknown>

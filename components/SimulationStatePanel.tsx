@@ -58,6 +58,7 @@ export default function SimulationStatePanel({
   const affordability = state.affordability ?? null
   const lifecycle = state.lifecycle ?? null
   const session = state.active_session ?? null
+  const scene = state.scene ?? null
   const facts = (state.fan_intelligence?.facts as Record<string, unknown>[]) ?? []
 
   const plan = Array.isArray((session as Record<string, unknown>)?.plan)
@@ -171,22 +172,55 @@ export default function SimulationStatePanel({
 
       <Section title="Active session">
         {session ? (
-          <>
-            <Row
-              label="Step"
-              value={`${Number((session as Record<string, unknown>).current_index ?? 0) + 1} of ${plan.length || '?'}`}
-            />
-            <Row
-              label="Cooldown"
-              value={
-                (session as Record<string, unknown>).post_ppv_cooldown
-                  ? `${Number((session as Record<string, unknown>).cooldown_messages_remaining ?? 0)} messages left`
-                  : 'no'
-              }
-            />
-          </>
+          <Row
+            label="Step"
+            value={`${Number((session as Record<string, unknown>).current_index ?? 0) + 1} of ${plan.length || '?'}`}
+          />
         ) : (
           <Muted>No paid session is active.</Muted>
+        )}
+      </Section>
+
+      {/* The "Cooldown: N messages left" row used to live above. It read a
+          counter that one-unlock sessions made unreachable — the plan completes
+          on the purchase and the completion path cleared the counter — so it
+          showed "no" forever. The Scene below is the state that actually
+          governs when another offer may appear, and unlike the counter it
+          survives the session it came from. */}
+      <Section title="Scene">
+        {scene ? (
+          <>
+            <Row label="Beat" value={String(scene.beat ?? '—')} />
+            <Row label="Premise" value={String(scene.premise || '—')} />
+            <Row
+              label="His last reaction"
+              value={String(scene.last_fan_reaction ?? 'NONE')}
+            />
+            <Row
+              label="Reaction answered"
+              value={scene.reaction_processed ? 'yes' : 'not yet'}
+            />
+            <Row
+              label="Intimacy / tension"
+              value={`${Number(scene.intimacy_level ?? 0)} / ${Number(scene.tension_level ?? 0)}`}
+            />
+            <Row label="Open hook" value={String(scene.open_hook || '—')} />
+            <Row
+              label="Where he is steering"
+              value={String(scene.desired_direction || '—')}
+            />
+            <Row
+              label="Another unlock ready"
+              value={scene.another_unlock_ready ? 'yes' : 'no'}
+            />
+            <Row
+              label="Unlocks this scene"
+              value={String(Number(scene.unlocks_in_scene ?? 0))}
+            />
+            <Row label="Why" value={String(scene.transition_reason ?? '—')} />
+          </>
+        ) : (
+          <Muted>No scene has started yet.</Muted>
         )}
       </Section>
 

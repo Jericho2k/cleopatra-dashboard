@@ -82,6 +82,43 @@ describe('one offer budget replaces the pair', () => {
   })
 })
 
+describe('the fixed post-purchase cooldown is gone, not hidden', () => {
+  /**
+   * It configured "wait N creator messages after a purchase before offering
+   * again" — a window one-unlock sessions made unreachable, because a
+   * single-step plan completes ON the purchase and the completion path cleared
+   * the counter on the same line that would have set it. The dial was live,
+   * stored per creator, and did nothing. What replaced it is not a number an
+   * operator sets: the scene re-opens on a real conversational bridge, or
+   * immediately if the fan asks for more.
+   */
+  it('does not read or write post_purchase_cooldown_messages', () => {
+    expect(MONETIZATION).not.toContain('post_purchase_cooldown_messages')
+  })
+
+  it('renders no control labelled with the old wording', () => {
+    expect(MONETIZATION).not.toContain(
+      'Text messages after a purchase before the next offer',
+    )
+  })
+
+  it('states the behaviour as an invariant instead of a setting', () => {
+    expect(MONETIZATION).toContain(
+      'After a purchase the conversation continues before anything else is offered',
+    )
+  })
+
+  it('leaves no cooldown row in the simulator panel reading a dead field', () => {
+    expect(SIMULATION_PANEL).not.toContain('post_ppv_cooldown')
+    expect(SIMULATION_PANEL).not.toContain('cooldown_messages_remaining')
+  })
+
+  it('shows the scene that actually governs the next offer', () => {
+    expect(SIMULATION_PANEL).toContain('Another unlock ready')
+    expect(SIMULATION_PANEL).toContain('state.scene')
+  })
+})
+
 describe('the state panels show one offer, not an ordered menu', () => {
   it('reads the singular pending offer', () => {
     expect(SIMULATION_PANEL).toContain('commercial.pending_offer')
