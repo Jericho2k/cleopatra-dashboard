@@ -89,6 +89,116 @@ export type SimulatedTurn = {
 }
 
 /**
+ * The three states a durable simulated turn can be in, from here.
+ *
+ * The backend also distinguishes "recorded" from "started", which is a
+ * difference only it can act on; both arrive here as `processing`.
+ */
+export type TurnState = 'processing' | 'completed' | 'failed'
+
+/**
+ * One durable turn, as the backend reports it.
+ *
+ * A turn is no longer the lifetime of a browser request. The POST records it
+ * and returns; the pipeline runs behind it; this is polled until it is
+ * terminal. That is the whole of the fix for the incident where the browser
+ * reported `Timeout: The simulated turn did not finish within 180s` while the
+ * backend was still working and went on to persist a reply — leaving the
+ * screen and the database disagreeing about whether the turn had happened.
+ *
+ * `deadline_exceeded` is the backend's own ceiling, not a browser's. When it
+ * appears, the turn really is over: nothing further will be persisted for it.
+ */
+export type SimulationTurn = {
+  turn_id: string
+  status: TurnState
+  outcome?: SimulationOutcome | 'deadline_exceeded' | 'backend_error' | null
+  fan_message_id?: string | null
+  creator_message_ids?: string[]
+  creator_messages?: SimulatedCreatorMessage[]
+  analysis_degraded?: boolean
+  created_at?: string | null
+  started_at?: string | null
+  finished_at?: string | null
+  /** Owner diagnostics. Absent for an agency operator. */
+  error?: string | null
+  error_id?: string | null
+  /** True only on the response that CREATED the turn, never on a poll. */
+  created?: boolean
+}
+
+export function turnIsTerminal(turn: SimulationTurn | null): boolean {
+  return turn?.status === 'completed' || turn?.status === 'failed'
+}
+
+/**
+ * How often to ask, while a turn is running.
+ *
+ * Two seconds: fast enough that a turn which finished in five feels immediate,
+ * slow enough that a turn spending a minute on writer recovery costs about
+ * thirty reads rather than hundreds. A poll is a pure read on the backend — it
+ * never starts a generation — so the only cost of being wrong here is noise.
+ */
+export const TURN_POLL_INTERVAL_MS = 2_000
+
+/**
+ * When the wait stops being ordinary.
+ *
+ * Below this the operator is told the reply is being generated, which is all
+ * they need. Above it, silence starts to read as a hang, so the UI explains —
+ * at PRODUCT level. An agency operator is never told that a provider is rate
+ * limiting, which provider it is, which model is being pursued, or that a
+ * fallback exists. "The primary writer is temporarily busy" is true, useful,
+ * and says none of it.
+ */
+export const SLOW_TURN_NOTICE_MS = 45_000
+
+export function turnProgressMessage(elapsedMs: number): string {
+  return elapsedMs >= SLOW_TURN_NOTICE_MS
+    ? 'Still generating — the primary writer is temporarily busy.'
+    : 'Generating reply…'
+}
+
+/**
+ * What to tell the operator about a turn that ended without a reply.
+ *
+ * A failed turn is terminal in the strong sense: the backend will not persist
+ * anything for it afterwards, so "try again" is safe advice rather than the
+ * duplicate-reply trap the old timeout message set.
+ */
+export function turnFailureMessage(turn: SimulationTurn): string {
+  if (turn.status !== 'failed') return ''
+  if (turn.outcome === 'deadline_exceeded') {
+    return (
+      'The turn ran past the backend time limit and was stopped. Nothing was ' +
+      'sent, and nothing will arrive later — it is safe to try again.'
+    )
+  }
+  const reference = turn.error_id ? ` (error ${turn.error_id})` : ''
+  return `The simulated turn failed in the backend${reference}. Nothing was sent.`
+}
+
+/**
+ * The turn's result, expressed in the existing outcome vocabulary.
+ *
+ * A completed turn reports what Full Auto decided; a failed one is a backend
+ * failure and is not one of those decisions.
+ */
+export function completedTurnMessage(turn: SimulationTurn): string {
+  if (turn.status === 'failed') return turnFailureMessage(turn)
+  if (turn.status !== 'completed') return ''
+  if ((turn.creator_messages ?? []).length > 0) return ''
+  return turnOutcomeMessage({
+    status: 'ok',
+    simulation: true,
+    fan_message_id: turn.fan_message_id ?? '',
+    creator_messages: turn.creator_messages ?? [],
+    analysis_degraded: turn.analysis_degraded,
+    outcome: (turn.outcome ?? undefined) as SimulationOutcome | undefined,
+  })
+}
+
+/**
  * The outcome of a turn, tolerating a backend that has not deployed yet.
  *
  * An older backend sends no `outcome`. Falling back to `analysis_degraded` and
@@ -248,28 +358,106 @@ export async function fetchSimulationCreators(): Promise<SimulationCreator[]> {
 }
 
 /**
- * Send one simulated fan message and wait for the Auto turn it triggers.
+ * A key identifying ONE press of Send.
  *
- * A turn runs the analyzer, the writer (including its retry schedule) and the
- * extractor inside one request, so it is genuinely slow and needs its own
- * ceiling rather than the browser's. Every failure comes back as an `ApiError`
- * that says which layer failed, so the UI never has to render "Failed to fetch".
+ * Sent with the submission and reused if it has to be sent again, so a double
+ * click, a retried POST and a browser that reconnects mid-request all resolve
+ * to the same turn on the backend. Without it, "the request failed, try again"
+ * is how one fan message becomes two creator replies.
  */
-export async function sendSimulatedFanMessage(
+export function newIdempotencyKey(): string {
+  const cryptoApi = globalThis.crypto
+  if (cryptoApi && typeof cryptoApi.randomUUID === 'function') {
+    return cryptoApi.randomUUID()
+  }
+  return `turn-${Date.now()}-${Math.random().toString(36).slice(2, 12)}`
+}
+
+/** Raised when the fan already has a turn running. Carries the one to watch. */
+export class SimulationTurnBusyError extends Error {
+  readonly turnId: string | null
+
+  constructor(turnId: string | null) {
+    super('A simulated turn is still running for this fan.')
+    this.name = 'SimulationTurnBusyError'
+    this.turnId = turnId
+  }
+}
+
+/**
+ * Submit one simulated fan message. Returns as soon as the turn is RECORDED.
+ *
+ * Deliberately does not wait for the reply. A turn runs the analyzer, the
+ * writer — including its whole provider-recovery ladder — and the extractor,
+ * and that can legitimately outlast any request a browser is willing to hold
+ * open. The turn is durable, so the answer is polled rather than awaited, and
+ * a timeout on THIS call now means only "the submission did not land", which
+ * is a thing the operator can safely retry with the same key.
+ *
+ * A short ceiling for the same reason: recording a turn is one insert.
+ */
+export async function startSimulatedTurn(
   creatorId: string,
   fanId: string,
   message: string,
   fast: boolean,
-): Promise<SimulatedTurn> {
-  return apiJson<SimulatedTurn>(
-    `/creator/${creatorId}/fan/${fanId}/simulate-inbound`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ message, fast }),
-    },
-    { label: 'The simulated turn' },
+  idempotencyKey: string,
+): Promise<SimulationTurn> {
+  try {
+    return await apiJson<SimulationTurn>(
+      `/creator/${creatorId}/fan/${fanId}/simulate-inbound`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          message,
+          fast,
+          idempotency_key: idempotencyKey,
+        }),
+      },
+      { label: 'The simulated turn', timeoutMs: 30_000 },
+    )
+  } catch (caught) {
+    if (caught instanceof ApiError && caught.status === 409) {
+      throw new SimulationTurnBusyError(caught.turnId ?? null)
+    }
+    throw caught
+  }
+}
+
+/**
+ * Read one turn. A pure read: it never starts or restarts a generation.
+ */
+export async function fetchSimulationTurn(
+  creatorId: string,
+  fanId: string,
+  turnId: string,
+): Promise<SimulationTurn> {
+  return apiJson<SimulationTurn>(
+    `/creator/${creatorId}/fan/${fanId}/simulation/turn/${turnId}`,
+    {},
+    { label: 'The simulated turn', timeoutMs: 30_000 },
   )
+}
+
+/**
+ * The newest turn for this conversation, or null if there has never been one.
+ *
+ * What a reloaded browser asks. It knows which fan it is looking at and
+ * nothing else, and it needs either to resume watching a turn still in flight
+ * or to render the one that finished while it was away — which is exactly the
+ * state the old design could not represent at all.
+ */
+export async function fetchLatestSimulationTurn(
+  creatorId: string,
+  fanId: string,
+): Promise<SimulationTurn | null> {
+  const body = await apiJson<SimulationTurn & { turn_id: string | null }>(
+    `/creator/${creatorId}/fan/${fanId}/simulation/turn`,
+    {},
+    { label: 'The simulated turn', timeoutMs: 30_000 },
+  )
+  return body.turn_id ? body : null
 }
 
 export async function simulatePpvOutcome(
@@ -293,16 +481,29 @@ export async function simulatePpvOutcome(
  *
  * The kind is what matters: a network failure means look at connectivity, a
  * server failure means look at the backend logs (and the error id says which
- * line), a timeout means the turn is probably still running.
+ * line), a timeout means the SUBMISSION did not land.
+ *
+ * That last one changed meaning entirely and the advice with it. A timeout no
+ * longer means "a turn may be running somewhere you cannot see" — the turn is
+ * durable, so pressing Send again either starts the one that never began or is
+ * refused with the id of the one that did, and either way exactly one turn
+ * exists. Retrying is now the correct thing to do rather than the thing that
+ * produced a duplicate reply.
  */
 export function describeSimulationFailure(caught: unknown): string {
+  if (caught instanceof SimulationTurnBusyError) {
+    return 'That fan already has a turn running. Waiting for it to finish.'
+  }
   if (caught instanceof ApiError) {
     const suffix = caught.errorId ? ` (error ${caught.errorId})` : ''
     switch (caught.kind) {
       case 'network':
         return `Network: ${caught.message}`
       case 'timeout':
-        return `Timeout: ${caught.message}`
+        return (
+          `Timeout: ${caught.message} Press Send again — a turn that did start ` +
+          'will be picked up rather than duplicated.'
+        )
       case 'server':
         return `Backend ${caught.status ?? 500}: ${caught.message}${suffix}`
       case 'malformed':
