@@ -54,6 +54,7 @@ import {
 import { dedupeMessages } from '../../lib/messages'
 import {
   canMirrorCatalog,
+  canSeeOperatorDiagnostics,
   canSimulate,
   fetchSimulationCapabilities,
   fetchSimulationCreators,
@@ -149,6 +150,7 @@ export default function SimulatorPage() {
 
   const allowed = canSimulate(capabilities)
   const mayMirror = canMirrorCatalog(capabilities)
+  const maySeeDiagnostics = canSeeOperatorDiagnostics(capabilities)
   const creator = useMemo(
     () => creators.find(row => row.id === creatorId) ?? null,
     [creators, creatorId],
@@ -541,6 +543,7 @@ export default function SimulatorPage() {
             messages={messages}
             loading={historyLoading}
             showDebug={showDebug}
+            operatorDiagnostics={maySeeDiagnostics}
           />
         </div>
 
@@ -649,9 +652,12 @@ export default function SimulatorPage() {
                   style={{ ...PANEL, width: '100%', padding: '6px 8px', color: 'var(--text-primary)', fontSize: 12 }}
                 >
                   <option value="">Inherit creator / production default</option>
+                  {/* The reduced representation an agency receives is exactly
+                      what this control needs: an id to send and a name to
+                      show. */}
                   {(registry?.profiles ?? []).map(profile => (
-                    <option key={profile.profile_id} value={profile.profile_id}>
-                      {profile.label}
+                    <option key={profile.id} value={profile.id}>
+                      {profile.name}
                     </option>
                   ))}
                 </select>

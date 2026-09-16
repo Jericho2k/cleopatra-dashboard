@@ -6,6 +6,11 @@
  * that contract: what a profile detail reads as, where an effective profile came
  * from, and that a generated message can be attributed to the stack that wrote
  * it months later from the row alone.
+ *
+ * And the depth question the backend now decides: an agency account receives
+ * `{ id, name }` per profile and nothing else, so the Simulator's selector has
+ * to work from that alone. These tests assert it does — the redaction itself is
+ * the backend's and is proven there.
  */
 
 import { describe, expect, it } from 'vitest'
@@ -15,6 +20,7 @@ import {
   describeStage,
   findProfile,
   messageAIStack,
+  normalizeProfile,
   profileLabel,
   type AIStackRegistry,
   type AIStackStage,
@@ -37,22 +43,35 @@ const stage = (overrides: Partial<AIStackStage> = {}): AIStackStage => ({
   ...overrides,
 })
 
+/** What the platform owner receives: identity plus the whole routing. */
 const registry: AIStackRegistry = {
   environment_profile: 'cleo_v2',
   environment_variable: 'AI_STACK_PROFILE',
+  diagnostics: true,
   profiles: [
     {
-      profile_id: 'cleo_legacy_v1',
-      label: 'Cleo Legacy v1',
+      id: 'cleo_legacy_v1',
+      name: 'Cleo Legacy v1',
       summary: 'Frozen snapshot.',
       stages: [stage({ prompt_version: 'writer_v1' })],
     },
     {
-      profile_id: 'cleo_v2',
-      label: 'Cleo V2',
+      id: 'cleo_v2',
+      name: 'Cleo V2',
       summary: 'One writer voice.',
       stages: [stage()],
     },
+  ],
+}
+
+/** What an agency account receives. The selector must work from this alone. */
+const agencyRegistry: AIStackRegistry = {
+  environment_profile: 'cleo_v3',
+  diagnostics: false,
+  profiles: [
+    { id: 'cleo_legacy_v1', name: 'Cleo Legacy v1' },
+    { id: 'cleo_v2', name: 'Cleo V2' },
+    { id: 'cleo_v3', name: 'Cleo V3' },
   ],
 }
 
@@ -76,11 +95,69 @@ describe('profile detail', () => {
   })
 
   it('finds a profile by id and falls back to the raw id for a label', () => {
-    expect(findProfile(registry, 'cleo_v2')?.label).toBe('Cleo V2')
+    expect(findProfile(registry, 'cleo_v2')?.name).toBe('Cleo V2')
     expect(findProfile(registry, 'nope')).toBeNull()
     expect(profileLabel(registry, 'cleo_legacy_v1')).toBe('Cleo Legacy v1')
     expect(profileLabel(registry, 'unknown_profile')).toBe('unknown_profile')
     expect(profileLabel(registry, null)).toBe('—')
+  })
+})
+
+describe('the reduced representation an agency receives', () => {
+  it('is enough to render and resolve the Simulator dropdown', () => {
+    // What the <option> elements are built from: a value to send and a label
+    // to show, for every profile in the registry.
+    expect(
+      agencyRegistry.profiles.map(profile => [profile.id, profile.name]),
+    ).toEqual([
+      ['cleo_legacy_v1', 'Cleo Legacy v1'],
+      ['cleo_v2', 'Cleo V2'],
+      ['cleo_v3', 'Cleo V3'],
+    ])
+    // And selecting Cleo V3 resolves, which is what the control needs to
+    // confirm the choice back to the operator.
+    expect(findProfile(agencyRegistry, 'cleo_v3')?.name).toBe('Cleo V3')
+    expect(profileLabel(agencyRegistry, 'cleo_v3')).toBe('Cleo V3')
+  })
+
+  it('carries no routing for the UI to render even by accident', () => {
+    for (const profile of agencyRegistry.profiles) {
+      expect(profile.stages).toBeUndefined()
+      expect(profile.summary).toBeUndefined()
+    }
+    expect(agencyRegistry.environment_variable).toBeUndefined()
+    expect(JSON.stringify(agencyRegistry).toLowerCase()).not.toContain('kimi')
+  })
+})
+
+describe('normalizeProfile', () => {
+  it('reads the reduced shape', () => {
+    expect(normalizeProfile({ id: 'cleo_v3', name: 'Cleo V3' })).toEqual({
+      id: 'cleo_v3',
+      name: 'Cleo V3',
+    })
+  })
+
+  it('still reads a backend that has not shipped the reduced shape yet', () => {
+    // `profile_id`/`label` are the owner payload's names for the same two
+    // facts. Accepted so the dropdown is never empty mid-deploy.
+    const profile = normalizeProfile({
+      profile_id: 'cleo_v2',
+      label: 'Cleo V2',
+      summary: 'One writer voice.',
+      stages: [stage()],
+    })
+
+    expect(profile?.id).toBe('cleo_v2')
+    expect(profile?.name).toBe('Cleo V2')
+    expect(profile?.stages).toHaveLength(1)
+  })
+
+  it('falls back to the id for a name, and drops a row with no id', () => {
+    expect(normalizeProfile({ id: 'cleo_v9' })?.name).toBe('cleo_v9')
+    expect(normalizeProfile({ name: 'Nameless' })).toBeNull()
+    expect(normalizeProfile(null)).toBeNull()
+    expect(normalizeProfile('cleo_v3')).toBeNull()
   })
 })
 
@@ -110,6 +187,18 @@ describe('messageAIStack', () => {
     expect(marker?.profile).toBe('cleo_v2')
     expect(marker?.route).toBe('commercial_complex')
     expect(marker?.model).toBe('moonshotai/kimi-k2.6')
+  })
+
+  it('reads a redacted marker as the profile alone', () => {
+    // What an agency receives: the backend strips route, prompt version,
+    // provider and model out of the simulated-turn response.
+    const marker = messageAIStack({ ai_stack: { profile: 'cleo_v3' } })
+
+    expect(marker?.profile).toBe('cleo_v3')
+    expect(marker?.model).toBeUndefined()
+    expect(marker?.provider).toBeUndefined()
+    expect(marker?.route).toBeUndefined()
+    expect(marker?.prompt_version).toBeUndefined()
   })
 
   it('returns null for a row written before the marker existed', () => {
