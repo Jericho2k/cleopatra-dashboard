@@ -46,22 +46,39 @@ export class ApiError extends Error {
   readonly status?: number
   /** Correlates with the backend log line for the same failure, when it sent one. */
   readonly errorId?: string
+  /**
+   * The durable turn this refusal is about, when the backend named one.
+   *
+   * A 409 from the Simulator is not a dead end — it means "that fan already
+   * has a turn running, and here it is". The id travels on a response header
+   * so the UI can go and watch the right thing instead of telling the
+   * operator to try again, which is how one fan message becomes two replies.
+   */
+  readonly turnId?: string
 
   constructor(
     message: string,
     kind: ApiFailureKind,
-    options: { status?: number; errorId?: string } = {},
+    options: { status?: number; errorId?: string; turnId?: string } = {},
   ) {
     super(message)
     this.name = 'ApiError'
     this.kind = kind
     this.status = options.status
     this.errorId = options.errorId
+    this.turnId = options.turnId
   }
 }
 
-/** Default ceiling for a simulated turn: it runs analyzer, writer and extractor. */
-export const LONG_REQUEST_TIMEOUT_MS = 180_000
+/**
+ * Default ceiling for a backend call.
+ *
+ * Was 180s, because a simulated turn ran the whole Full Auto pipeline inside
+ * one request. It no longer does: a turn is recorded and polled, so nothing
+ * here waits on model recovery and no request needs a three-minute budget.
+ * Every remaining caller is a read or a single write.
+ */
+export const LONG_REQUEST_TIMEOUT_MS = 60_000
 
 /**
  * A backend call whose failures are legible: does the caller need to look at
@@ -123,6 +140,7 @@ export async function apiJson<T>(
     throw new ApiError(detail || fallback, kind, {
       status: response.status,
       errorId,
+      turnId: response.headers.get('X-Simulation-Turn-Id') ?? undefined,
     })
   }
 

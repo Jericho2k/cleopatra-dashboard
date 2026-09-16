@@ -56,15 +56,23 @@ import {
   canMirrorCatalog,
   canSeeOperatorDiagnostics,
   canSimulate,
+  completedTurnMessage,
+  fetchLatestSimulationTurn,
   fetchSimulationCapabilities,
   fetchSimulationCreators,
+  fetchSimulationTurn,
   describeSimulationFailure,
-  sendSimulatedFanMessage,
+  newIdempotencyKey,
   simulatePpvOutcome,
-  turnOutcomeMessage,
+  startSimulatedTurn,
+  SimulationTurnBusyError,
+  turnIsTerminal,
+  turnProgressMessage,
+  TURN_POLL_INTERVAL_MS,
   type SimulationCapabilities,
   type SimulationCreator,
   type SimulationTestFan,
+  type SimulationTurn,
 } from '../../lib/simulation'
 import {
   actionOutcomeMessage,
@@ -102,6 +110,12 @@ export default function SimulatorPage() {
   const [state, setState] = useState<SimulationState | null>(null)
   const [stateLoading, setStateLoading] = useState(false)
   const [draft, setDraft] = useState('')
+  // The turn currently being watched. Non-terminal means the pipeline is
+  // running on the backend, which is a completely different thing from this
+  // browser waiting on a request — the browser can reload, and this comes back.
+  const [turn, setTurn] = useState<SimulationTurn | null>(null)
+  const [turnStartedAt, setTurnStartedAt] = useState<number | null>(null)
+  const [elapsedMs, setElapsedMs] = useState(0)
   // Which pane a narrow viewport is showing. Chat is the default surface, the
   // way it is the default on a desktop with all three up. Desktop CSS ignores
   // this entirely, so setting it there is harmless.
@@ -214,42 +228,164 @@ export default function SimulatorPage() {
     setState(found)
   }, [creatorId, fanId])
 
-  useEffect(() => {
-    setError('')
-    setNotice('')
-    setLastActionResult('')
-    void loadHistory()
-    void loadState()
-  }, [loadHistory, loadState])
-
   const refresh = useCallback(async () => {
     await Promise.all([loadHistory(), loadState()])
   }, [loadHistory, loadState])
 
+  /**
+   * Adopt a turn and, when it has finished, show what it produced.
+   *
+   * One place decides what the operator is told about a turn, so the poll, the
+   * submission and the reload-recovery cannot drift into three different
+   * vocabularies for the same three states.
+   */
+  const adoptTurn = useCallback(
+    async (next: SimulationTurn) => {
+      setTurn(next)
+      if (!turnIsTerminal(next)) {
+        setNotice('')
+        return
+      }
+      // Terminal. Fetch the persisted reply automatically — the operator must
+      // never have to press Refresh to find out what happened.
+      await refresh()
+      setNotice(completedTurnMessage(next))
+    },
+    [refresh],
+  )
+
+  useEffect(() => {
+    setError('')
+    setNotice('')
+    setLastActionResult('')
+    setTurn(null)
+    setTurnStartedAt(null)
+    void loadHistory()
+    void loadState()
+  }, [loadHistory, loadState])
+
+  /**
+   * Resume whatever this conversation was doing, on open and after a reload.
+   *
+   * The incident's second failure mode was that a turn in flight existed
+   * nowhere the browser could see it. It does now, so arriving at a
+   * conversation asks: is something running, and did anything finish while I
+   * was away? A turn that is still processing is adopted and watched; one that
+   * already finished is left alone, because its reply is in the transcript the
+   * history read is loading anyway.
+   */
+  useEffect(() => {
+    if (!creatorId || !fanId) return
+    let cancelled = false
+    void fetchLatestSimulationTurn(creatorId, fanId)
+      .then(found => {
+        if (cancelled || !found || turnIsTerminal(found)) return
+        setTurn(found)
+        setTurnStartedAt(Date.parse(found.created_at ?? '') || Date.now())
+      })
+      // A backend that has not deployed the durable turn yet, or a read that
+      // failed: there is simply nothing to resume. Never a reason to show an
+      // error on a conversation the operator has only just opened.
+      .catch(() => {})
+    return () => {
+      cancelled = true
+    }
+  }, [creatorId, fanId])
+
+  const watching = turn !== null && !turnIsTerminal(turn)
+
+  /**
+   * Poll the turn while it runs.
+   *
+   * A poll is a pure read on the backend — it starts nothing and restarts
+   * nothing — so this is free to keep asking until the turn is terminal. A
+   * transient read failure is ignored rather than surfaced: the turn is
+   * durable, and the next tick will find it.
+   */
+  useEffect(() => {
+    if (!watching || !creatorId || !fanId || !turn) return
+    let cancelled = false
+    const timer = window.setInterval(() => {
+      void fetchSimulationTurn(creatorId, fanId, turn.turn_id)
+        .then(next => {
+          if (!cancelled) void adoptTurn(next)
+        })
+        .catch(() => {})
+    }, TURN_POLL_INTERVAL_MS)
+    return () => {
+      cancelled = true
+      window.clearInterval(timer)
+    }
+  }, [watching, creatorId, fanId, turn, adoptTurn])
+
+  // Drives the "still generating" wording. Separate from the poll so the
+  // message advances on its own clock rather than only when a read lands.
+  useEffect(() => {
+    if (!watching || turnStartedAt === null) {
+      setElapsedMs(0)
+      return
+    }
+    setElapsedMs(Date.now() - turnStartedAt)
+    const timer = window.setInterval(
+      () => setElapsedMs(Date.now() - turnStartedAt),
+      1_000,
+    )
+    return () => window.clearInterval(timer)
+  }, [watching, turnStartedAt])
+
+  /**
+   * Submit one fan message.
+   *
+   * Returns as soon as the turn is RECORDED. The reply arrives through the
+   * poll above, so a writer spending a minute on provider recovery is a
+   * progress message rather than the "Timeout ... and was cancelled" this
+   * screen used to show while the backend was still working — and then
+   * persisted a reply anyway.
+   *
+   * The idempotency key is generated once per press and kept for the whole
+   * submission, so a retry of a request that may or may not have landed cannot
+   * become a second turn.
+   */
   const send = async () => {
     const message = draft.trim()
-    if (!message || !creatorId || !fanId || busy) return
+    if (!message || !creatorId || !fanId || busy || watching) return
     setBusy(true)
     setError('')
     setNotice('')
     setDraft('')
+    const key = newIdempotencyKey()
     try {
-      const turn = await sendSimulatedFanMessage(creatorId, fanId, message, fast)
-      if (turn.creator_messages.length === 0) {
-        // Reported by the real Auto path, not inferred from an empty
-        // transcript: a writer failure must never read as a decision.
-        setNotice(turnOutcomeMessage(turn))
-      }
+      const started = await startSimulatedTurn(creatorId, fanId, message, fast, key)
+      setTurnStartedAt(Date.now())
+      await adoptTurn(started)
+      // The fan's own message is already persisted, so show it immediately
+      // rather than leaving the composer looking like nothing happened.
+      await loadHistory()
     } catch (caught) {
-      setError(describeSimulationFailure(caught))
+      if (caught instanceof SimulationTurnBusyError) {
+        // Not an error the operator has to resolve: it names the turn they
+        // should already be watching. Adopt it instead of asking them to
+        // retry, which is how one fan message becomes two creator replies.
+        setDraft(message)
+        if (caught.turnId) {
+          setTurnStartedAt(Date.now())
+          setTurn({ turn_id: caught.turnId, status: 'processing' })
+        }
+        setNotice('That fan already has a turn running. Waiting for it to finish.')
+      } else {
+        setDraft(message)
+        setError(describeSimulationFailure(caught))
+      }
     } finally {
       setBusy(false)
-      await refresh()
     }
   }
 
   const ppvOutcome = async (outcome: 'purchase' | 'decline') => {
-    if (!creatorId || !fanId || busy) return
+    // Not while a turn is mid-flight: moving commercial state underneath a
+    // running pipeline is exactly the interleaving the per-fan serialisation
+    // exists to prevent.
+    if (!creatorId || !fanId || busy || watching) return
     setBusy(true)
     setError('')
     setNotice('')
@@ -547,7 +683,42 @@ export default function SimulatorPage() {
           />
         </div>
 
-        {(error || notice) && (
+        {/* A turn in flight is a PRODUCT status, not a spinner and not a
+            provider diagnosis. An agency operator is never told that a host is
+            rate limiting, which host, which model, or that a fallback exists.
+            The owner's Debug details toggle adds the turn id, which is all an
+            operator needs to find it in the logs. */}
+        {watching && (
+          <div
+            style={{
+              padding: '8px 14px',
+              fontSize: 11,
+              borderTop: '1px solid var(--border)',
+              color: 'var(--text-secondary)',
+              display: 'flex',
+              gap: 8,
+              alignItems: 'center',
+            }}
+            role="status"
+            aria-live="polite"
+          >
+            <span
+              style={{
+                width: 6,
+                height: 6,
+                borderRadius: '50%',
+                background: 'var(--purple)',
+                flexShrink: 0,
+              }}
+            />
+            <span>{turnProgressMessage(elapsedMs)}</span>
+            {showDebug && maySeeDiagnostics && turn && (
+              <span style={{ color: 'var(--text-faint)' }}>turn {turn.turn_id}</span>
+            )}
+          </div>
+        )}
+
+        {(error || notice) && !watching && (
           <div
             style={{
               padding: '8px 14px',
@@ -572,23 +743,26 @@ export default function SimulatorPage() {
                 }
               }}
               placeholder="type as fan..."
-              disabled={busy || !fanId}
+              disabled={busy || watching || !fanId}
               style={{ ...PANEL, flex: 1, minWidth: 0, padding: '8px 10px', color: 'var(--text-primary)' }}
             />
+            {/* Disabled while this fan has a turn running. The backend refuses
+                a second concurrent turn outright, so this is the UI agreeing
+                with a rule rather than being the rule. */}
             <button
               type="button"
               onClick={() => void send()}
-              disabled={busy || !fanId || draft.trim() === ''}
+              disabled={busy || watching || !fanId || draft.trim() === ''}
               style={{
                 ...PANEL,
                 flexShrink: 0,
                 padding: '8px 14px',
-                cursor: busy ? 'wait' : 'pointer',
+                cursor: busy || watching ? 'wait' : 'pointer',
                 color: 'var(--silver)',
-                opacity: busy || !fanId ? 0.6 : 1,
+                opacity: busy || watching || !fanId ? 0.6 : 1,
               }}
             >
-              {busy ? 'Running…' : 'Send as fan'}
+              {busy || watching ? 'Running…' : 'Send as fan'}
             </button>
           </div>
 
@@ -607,7 +781,7 @@ export default function SimulatorPage() {
             <button
               type="button"
               onClick={() => void ppvOutcome('purchase')}
-              disabled={busy || !fanId}
+              disabled={busy || watching || !fanId}
               style={{ ...PANEL, padding: '4px 10px', color: 'var(--text-secondary)', cursor: 'pointer' }}
             >
               Simulate purchase
@@ -615,7 +789,7 @@ export default function SimulatorPage() {
             <button
               type="button"
               onClick={() => void ppvOutcome('decline')}
-              disabled={busy || !fanId}
+              disabled={busy || watching || !fanId}
               style={{ ...PANEL, padding: '4px 10px', color: 'var(--text-secondary)', cursor: 'pointer' }}
             >
               Simulate decline
