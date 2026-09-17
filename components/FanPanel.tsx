@@ -10,6 +10,11 @@ import {
   summarizeHistoryImport,
   type FanHistoryProgress,
 } from '../lib/fanHistory'
+import {
+  describePaidItem,
+  summarizeContentAccess,
+  type ContentAccessEvidence,
+} from '../lib/contentAccess'
 import { useRealtimeRecovery } from '../lib/realtime-recovery'
 
 export interface FanPanelProps {
@@ -27,6 +32,22 @@ export interface FanPanelProps {
 }
 
 type Tab = 'profile' | 'sales'
+
+/** The review reason services/content_access.py writes. */
+const CONTENT_ACCESS_REASON = 'content_access_issue'
+
+type ReviewResolution =
+  | 'repair_ppv'
+  | 'mark_purchased'
+  | 'mark_not_sent'
+  | 'mark_not_purchased'
+  | 'resume_ai'
+  // Content-access holds. The backend refuses plain 'resume_ai' for these, so
+  // an operator has to record what actually happened rather than putting
+  // automation back in front of an unanswered complaint.
+  | 'resend_paid_content'
+  | 'access_restored'
+  | 'not_an_access_issue'
 
 type FullAutoStatus = {
   effective_auto_mode: boolean
@@ -154,6 +175,11 @@ export default function FanPanel({ fan, creatorId, onHistoryLoaded, showToast, o
   const [mediaPreview, setMediaPreview] = useState<{ items: MediaPreviewItem[]; index: number } | null>(null)
   const [fullAutoStatus, setFullAutoStatus] = useState<FullAutoStatus | null>(null)
   const [reviewResolution, setReviewResolution] = useState<string | null>(null)
+  // Evidence behind a content-access hold. Null while it loads; the panel shows
+  // a loading line rather than a verdict, because "not loaded" and "nothing
+  // was bought" lead an operator to opposite actions.
+  const [accessEvidence, setAccessEvidence] = useState<ContentAccessEvidence | null>(null)
+  const [accessError, setAccessError] = useState('')
   const [statusRefresh, setStatusRefresh] = useState(0)
 
   const mediaIdsForEntry = (entry: SalesEntry): string[] => {
@@ -358,10 +384,38 @@ export default function FanPanel({ fan, creatorId, onHistoryLoaded, showToast, o
     }
   }
 
-  async function resolveReview(resolution: 'repair_ppv' | 'mark_purchased' | 'mark_not_sent' | 'mark_not_purchased' | 'resume_ai') {
+  // The evidence is fetched only for the hold it belongs to, so an ordinary
+  // frozen conversation costs no extra request.
+  useEffect(() => {
+    if (!fan?.id || needsReview.reason !== CONTENT_ACCESS_REASON) {
+      setAccessEvidence(null)
+      setAccessError('')
+      return
+    }
+    let cancelled = false
+    setAccessEvidence(null)
+    setAccessError('')
+    apiFetch(`/fan/${fan.id}/content-access`)
+      .then(async response => {
+        const body = await response.json().catch(() => ({}))
+        if (cancelled) return
+        if (!response.ok) {
+          setAccessError(body.detail || 'Could not read what this customer paid for')
+          return
+        }
+        setAccessEvidence(body as ContentAccessEvidence)
+      })
+      .catch(error => {
+        if (!cancelled) setAccessError(String(error instanceof Error ? error.message : error))
+      })
+    return () => { cancelled = true }
+  }, [fan?.id, needsReview.reason, statusRefresh])
+
+  async function resolveReview(resolution: ReviewResolution) {
     if (!fan?.id || reviewResolution) return
     if (resolution === 'mark_not_sent' && !window.confirm('Confirm that this PPV did not reach the fan. This will make the session eligible to send again.')) return
     if (resolution === 'mark_not_purchased' && !window.confirm('Confirm on Fansly that this locked PPV was not purchased. It will be recorded as abandoned and may receive the configured follow-up.')) return
+    if (resolution === 'resend_paid_content' && !window.confirm('Send this customer the content they already paid for, again and free of charge. They will not be charged a second time.')) return
     setReviewResolution(resolution)
     try {
       const response = await apiFetch(`/fan/${fan.id}/resolve-review`, {
@@ -378,6 +432,9 @@ export default function FanPanel({ fan, creatorId, onHistoryLoaded, showToast, o
         : resolution === 'mark_purchased' ? 'Purchase recorded — AI resumed'
         : resolution === 'mark_not_sent' ? 'PPV marked not sent — AI resumed'
         : resolution === 'mark_not_purchased' ? 'PPV marked not purchased — AI resumed'
+        : resolution === 'resend_paid_content' ? 'Paid content sent again, free — AI resumed'
+        : resolution === 'access_restored' ? 'Access recorded as restored — AI resumed'
+        : resolution === 'not_an_access_issue' ? 'Recorded as not an access problem — AI resumed'
         : 'AI resumed for this fan'
       )
     } catch (error) {
@@ -556,9 +613,18 @@ export default function FanPanel({ fan, creatorId, onHistoryLoaded, showToast, o
                 ? 'The PPV was sent, but Fansly purchase verification is unavailable. Check the fan on Fansly, then record whether it was purchased.'
                 : needsReview.reason === 'ppv_sent_but_reconciliation_not_persisted' || needsReview.reason === 'delivery_sent_but_not_persisted'
                 ? 'The PPV may have reached the fan, but payment tracking was not fully saved. Choose the outcome below before AI can resume.'
+                : needsReview.reason === CONTENT_ACCESS_REASON
+                ? 'This customer says they cannot open something. AI stopped rather than answering a support problem with another offer.'
                 : `This conversation was frozen${needsReview.reason ? ` (${needsReview.reason})` : ''}. Review it, then resume AI when you're ready.`}
             </div>
-            {needsReview.reason === 'ppv_purchase_verification_unavailable' ? (
+            {needsReview.reason === CONTENT_ACCESS_REASON ? (
+              <ContentAccessResolution
+                evidence={accessEvidence}
+                error={accessError}
+                busy={reviewResolution}
+                onResolve={resolveReview}
+              />
+            ) : needsReview.reason === 'ppv_purchase_verification_unavailable' ? (
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
                 <button type="button" disabled={!!reviewResolution} onClick={() => void resolveReview('mark_purchased')} style={{ padding: '8px 12px', borderRadius: 8, fontSize: 12, fontWeight: 600, background: 'rgba(155,143,212,0.12)', border: '1px solid var(--purple)', color: 'var(--purple)', cursor: reviewResolution ? 'wait' : 'pointer', opacity: reviewResolution ? 0.55 : 1 }}>
                   {reviewResolution === 'mark_purchased' ? 'Recording…' : 'Mark purchased'}
@@ -1075,5 +1141,112 @@ export default function FanPanel({ fan, creatorId, onHistoryLoaded, showToast, o
       </div>
     )}
     </>
+  )
+}
+
+
+/**
+ * The evidence behind a content-access hold, and what may be done about it.
+ *
+ * Separate from the panel body because it is the one review reason where the
+ * operator needs to see something before choosing, rather than choosing between
+ * outcomes they already know. The resend button appears only when the backend's
+ * evidence says a resend is valid; offering it otherwise would teach an operator
+ * to click through an error.
+ */
+function ContentAccessResolution({
+  evidence,
+  error,
+  busy,
+  onResolve,
+}: {
+  evidence: ContentAccessEvidence | null
+  error: string
+  busy: string | null
+  onResolve: (resolution: ReviewResolution) => void | Promise<void>
+}) {
+  const summary = summarizeContentAccess(evidence)
+
+  const secondary = {
+    padding: '8px 12px', borderRadius: 8, fontSize: 12, fontWeight: 600,
+    background: 'transparent', border: '1px solid var(--border)',
+    color: 'var(--text-secondary)', cursor: busy ? 'wait' : 'pointer',
+    opacity: busy ? 0.55 : 1,
+  } as const
+
+  return (
+    <div>
+      {error ? (
+        <div style={{ fontSize: 12, color: '#e57689', marginBottom: 10 }}>
+          {error} — you can still record the outcome below.
+        </div>
+      ) : !summary ? (
+        <div style={{ fontSize: 12, color: 'var(--text-faint)', marginBottom: 10 }}>
+          Checking what this customer paid for…
+        </div>
+      ) : (
+        <div style={{
+          marginBottom: 10, padding: '10px 12px', borderRadius: 8,
+          background: 'var(--bg-elevated)', border: '1px solid var(--border-subtle)',
+        }}>
+          <div style={{ fontSize: 12.5, fontWeight: 650, color: 'var(--text-primary)', marginBottom: 4 }}>
+            {summary.headline}
+            {summary.uncertain && (
+              <span style={{ marginLeft: 6, fontWeight: 500, color: 'var(--text-faint)' }}>
+                (unverified)
+              </span>
+            )}
+          </div>
+          <div style={{ fontSize: 12, color: 'var(--text-muted)', lineHeight: 1.45 }}>
+            {summary.detail}
+          </div>
+          {evidence && evidence.paid_items.length > 0 && (
+            <ul style={{ margin: '8px 0 0', padding: 0, listStyle: 'none' }}>
+              {evidence.paid_items.slice(0, 3).map(item => (
+                <li
+                  key={item.reference || item.platform_message_id}
+                  style={{ fontSize: 11.5, color: 'var(--text-faint)', marginTop: 3 }}
+                >
+                  {describePaidItem(item)}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+        {summary?.canResend && (
+          <button
+            type="button"
+            disabled={!!busy}
+            onClick={() => void onResolve('resend_paid_content')}
+            style={{
+              padding: '8px 12px', borderRadius: 8, fontSize: 12, fontWeight: 600,
+              background: 'rgba(94,214,154,0.12)', border: '1px solid var(--green)',
+              color: 'var(--green)', cursor: busy ? 'wait' : 'pointer',
+              opacity: busy ? 0.55 : 1,
+            }}
+          >
+            {busy === 'resend_paid_content' ? 'Sending…' : 'Resend it free'}
+          </button>
+        )}
+        <button
+          type="button"
+          disabled={!!busy}
+          onClick={() => void onResolve('access_restored')}
+          style={secondary}
+        >
+          {busy === 'access_restored' ? 'Recording…' : 'I fixed it myself'}
+        </button>
+        <button
+          type="button"
+          disabled={!!busy}
+          onClick={() => void onResolve('not_an_access_issue')}
+          style={secondary}
+        >
+          {busy === 'not_an_access_issue' ? 'Recording…' : 'Not an access problem'}
+        </button>
+      </div>
+    </div>
   )
 }
