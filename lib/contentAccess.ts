@@ -34,6 +34,31 @@ export type PaidItem = {
   purchased_at: string
   platform_state: PaidItemState
   platform_detail: string
+  /** The repair already attempted for THIS purchase under the current hold. */
+  repair?: RepairState | null
+}
+
+/**
+ * One durable repair attempt, as the backend records it.
+ *
+ * Four outcomes, and `unknown` is the one that matters: a send whose result
+ * could not be proven is neither a failure to retry nor a success to report.
+ * The backend refuses to repeat it on its own, and the panel has to say so
+ * rather than showing a button that will be rejected.
+ */
+export type RepairState = {
+  id: string
+  reference: string
+  review_case_id: string
+  status: 'claimed' | 'confirmed' | 'failed' | 'unknown'
+  media_ids: string[]
+  platform_message_id: string | null
+  claimed_by: string
+  detail: string
+  claimed_at: string
+  resolved_at: string | null
+  settled: boolean
+  needs_operator_decision: boolean
 }
 
 export type ContentAccessEvidence = {
@@ -41,10 +66,23 @@ export type ContentAccessEvidence = {
   creator_id: string
   frozen: boolean
   review_reason: string
+  /**
+   * The identity of the hold this evidence describes.
+   *
+   * Sent back with the resolution so the backend applies the decision to the
+   * hold that was on screen. Without it, a hold cleared and re-raised — or a
+   * crisis hold raised meanwhile — is indistinguishable from the one the
+   * operator read, and the resolution lands on the wrong one.
+   */
+  review_case_id: string
   paid_items: PaidItem[]
   repairable_count: number
   platform_error: string
   has_paid_content: boolean
+  /** True when more than one purchase could be the one they mean. */
+  selection_required: boolean
+  /** Every repair attempted for this customer, newest first. */
+  repairs: RepairState[]
 }
 
 export type ContentAccessSummary = {
@@ -56,6 +94,16 @@ export type ContentAccessSummary = {
   canResend: boolean
   /** True when the platform side is unknown, not when it is fine. */
   uncertain: boolean
+  /**
+   * Whether the operator must choose WHICH purchase before resending.
+   *
+   * The backend refuses an unqualified resend when more than one purchase is
+   * repairable. It used to assume the most recent, so a complaint about an
+   * older item resent a newer one: the customer got a second copy of something
+   * that worked, still could not open what they wrote in about, and the hold
+   * was cleared as though it had been repaired.
+   */
+  selectionRequired: boolean
 }
 
 function dollars(cents: number): string {
@@ -84,6 +132,7 @@ export function summarizeContentAccess(
         'something they were shown rather than something they bought.',
       canResend: false,
       uncertain: false,
+      selectionRequired: false,
     }
   }
 
@@ -104,6 +153,7 @@ export function summarizeContentAccess(
         'original is still on the platform.',
       canResend: evidence.repairable_count > 0,
       uncertain: true,
+      selectionRequired: evidence.selection_required,
     }
   }
 
@@ -116,6 +166,7 @@ export function summarizeContentAccess(
         'again at no charge.',
       canResend: evidence.repairable_count > 0,
       uncertain: false,
+      selectionRequired: evidence.selection_required,
     }
   }
 
@@ -128,6 +179,7 @@ export function summarizeContentAccess(
         'it. Resending sends the same media again at no charge.',
       canResend: evidence.repairable_count > 0,
       uncertain: false,
+      selectionRequired: evidence.selection_required,
     }
   }
 
@@ -140,6 +192,7 @@ export function summarizeContentAccess(
         'checked. A resend is still safe and free.',
       canResend: evidence.repairable_count > 0,
       uncertain: true,
+      selectionRequired: evidence.selection_required,
     }
   }
 
@@ -152,6 +205,7 @@ export function summarizeContentAccess(
       'out.',
     canResend: evidence.repairable_count > 0,
     uncertain: false,
+    selectionRequired: evidence.selection_required,
   }
 }
 
@@ -161,4 +215,95 @@ export function describePaidItem(item: PaidItem): string {
   const count = item.media_ids.length
   const pieces = count === 1 ? '1 item' : `${count} items`
   return `${dollars(item.price_cents)} · ${pieces} · bought ${when}`
+}
+
+
+/**
+ * What the panel may do about one purchase, given what already happened to it.
+ *
+ * The backend is the authority and refuses the rest, but an operator reading a
+ * button that will be rejected learns to ignore the panel. So the same four
+ * outcomes are spelled out here, in the words an operator needs:
+ *
+ * - **confirmed** — already resent, and the platform acknowledged it. Offering
+ *   the button again offers a second copy.
+ * - **claimed** — in flight. Two operators pressing this is exactly how two
+ *   copies used to go out.
+ * - **unknown** — the send may or may not have arrived. This is the only state
+ *   where resending again is a real decision with a real cost, so it is put to
+ *   the operator instead of being hidden behind a disabled button.
+ * - **failed** — nothing left the backend, so there is nothing to undo.
+ */
+export type RepairOffer = {
+  /** Whether the resend button is live for this item. */
+  canResend: boolean
+  /** One line under the item. Empty when there is nothing to report. */
+  note: string
+  /** True when the operator is being asked to decide, not merely informed. */
+  needsDecision: boolean
+}
+
+export function repairOffer(item: PaidItem): RepairOffer {
+  const repairable = item.media_ids.length > 0
+  const repair = item.repair
+  if (!repair) {
+    return {
+      canResend: repairable,
+      note: repairable
+        ? ''
+        : 'The purchase does not record which media it delivered, so there is ' +
+          'nothing safe to resend.',
+      needsDecision: false,
+    }
+  }
+  if (repair.status === 'confirmed') {
+    return {
+      canResend: false,
+      note:
+        'Already resent for this hold, and the platform confirmed it. Sending ' +
+        'again would give them a second copy.',
+      needsDecision: false,
+    }
+  }
+  if (repair.status === 'claimed') {
+    return {
+      canResend: false,
+      note: 'A resend for this item is in progress. Reload in a moment.',
+      needsDecision: false,
+    }
+  }
+  if (repair.status === 'unknown') {
+    return {
+      canResend: false,
+      note:
+        'A resend reached the platform but could not be confirmed, so it is ' +
+        'not known whether they received it. Check the conversation before ' +
+        'sending again — this is the one case where a retry may deliver twice.',
+      needsDecision: true,
+    }
+  }
+  return {
+    canResend: repairable,
+    note: repair.detail
+      ? `An earlier attempt did not send (${repair.detail}). Nothing reached them.`
+      : 'An earlier attempt did not send. Nothing reached them.',
+    needsDecision: false,
+  }
+}
+
+/**
+ * Which purchase the panel should have selected when it opens.
+ *
+ * Deliberately nothing when more than one is repairable. A pre-selected
+ * default is the same mistake as the backend's old "assume the most recent" —
+ * the operator confirms what was already chosen for them, and the complaint
+ * about the older item is answered by resending the newer one.
+ */
+export function initialSelection(
+  evidence: ContentAccessEvidence | null | undefined,
+): string {
+  if (!evidence) return ''
+  const repairable = evidence.paid_items.filter(item => item.media_ids.length > 0)
+  if (repairable.length !== 1) return ''
+  return repairable[0].reference
 }
