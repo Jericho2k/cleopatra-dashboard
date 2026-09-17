@@ -136,6 +136,14 @@ function ConversationView({
   onOpenProfile,
 }: ConversationViewProps) {
   const [suggestions, setSuggestions] = useState<string[]>(['', '', ''])
+  // Provenance for the candidates currently on screen, and which one the
+  // operator picked. Held together so a reply can be attributed to the turn
+  // that produced it; cleared the moment either stops describing what is
+  // actually in the box, because a wrong attribution is worse than none.
+  const [suggestionToken, setSuggestionToken] = useState('')
+  const [pickedSuggestion, setPickedSuggestion] = useState<
+    { index: number; text: string } | null
+  >(null)
   const recoveryTick = useRealtimeRecovery()
   const [suggestionsOpen, setSuggestionsOpen] = useState(true)
   const [stage, setStage] = useState<string>('WARMING_UP')
@@ -190,6 +198,8 @@ function ConversationView({
   useEffect(() => {
     if (!fan) return
     setSuggestions(['', '', ''])
+    setSuggestionToken('')
+    setPickedSuggestion(null)
     setLoading(false)
     let cancelled = false
     getLatestSuggestions(fan.id, creatorId).then((res) => {
@@ -210,7 +220,20 @@ function ConversationView({
         (payload) => {
           const s = payload.new as { suggestions: string[]; stage: string }
           if (s?.suggestions?.length > 0) {
-            setSuggestions(s.suggestions)
+            // The realtime row carries the text but not the provenance handle,
+            // so an arrival that is NOT the echo of the generation this tab
+            // just made is a different turn: drop the token rather than let it
+            // attribute a reply to a turn it did not come from.
+            setSuggestions((current) => {
+              const sameTurn =
+                current.length === s.suggestions.length &&
+                current.every((candidate, i) => candidate === s.suggestions[i])
+              if (!sameTurn) {
+                setSuggestionToken('')
+                setPickedSuggestion(null)
+              }
+              return s.suggestions
+            })
             setStage(s.stage ?? 'WARMING_UP')
             setLoading(false)
           }
@@ -404,11 +427,12 @@ function ConversationView({
     }
   }
 
-  const handleSuggestionClick = (suggestion: string) => {
+  const handleSuggestionClick = (suggestion: string, index: number) => {
     if (!suggestion.trim()) return
     const parts = suggestion.split(' | ').map(p => p.trim()).filter(Boolean)
     setInputValue(parts[0])
     setQueuedMessages(parts.slice(1))
+    setPickedSuggestion({ index, text: parts[0] ?? '' })
     textareaRef.current?.focus()
   }
 
@@ -418,12 +442,23 @@ function ConversationView({
     if (!lastFanMessage) return
     setLoading(true)
     setReplyError('')
-    void generateSuggestions(fan.id, creatorId, lastFanMessage.content).catch(error => {
-      setLoading(false)
-      setReplyError(String(error instanceof Error ? error.message : error))
-    })
-    // New suggestions will arrive via Supabase realtime subscription
-    // which already sets setSuggestions and setLoading(false)
+    setSuggestionToken('')
+    setPickedSuggestion(null)
+    void generateSuggestions(fan.id, creatorId, lastFanMessage.content)
+      .then(result => {
+        // The realtime row will carry the same text, but only this response
+        // carries the provenance handle for the turn that produced it.
+        if (result.suggestions.length > 0) {
+          setSuggestions(result.suggestions)
+          setStage(result.stage)
+          setLoading(false)
+        }
+        setSuggestionToken(result.suggestionToken)
+      })
+      .catch(error => {
+        setLoading(false)
+        setReplyError(String(error instanceof Error ? error.message : error))
+      })
   }
 
   const openPpvComposer = async (mode: OperatorPPVMode = 'manual') => {
@@ -519,9 +554,31 @@ function ConversationView({
     setReplySending(true)
     setReplyError('')
     try {
-      const result = await sendReply(fan.id, creatorId, value, false)
+      // Attributed only when this tab generated the candidates AND the
+      // operator picked one of them. `edited` compares what is actually being
+      // sent against the candidate as it was offered, so a reply the operator
+      // rewrote is never recorded as the model's words.
+      const attribution =
+        suggestionToken && pickedSuggestion
+          ? {
+              token: suggestionToken,
+              index: pickedSuggestion.index,
+              edited: value !== pickedSuggestion.text,
+            }
+          : null
+      const result = await sendReply(
+        fan.id,
+        creatorId,
+        value,
+        Boolean(attribution),
+        attribution,
+      )
       onReplySent(value, result.message_id)
       setInputValue('')
+      // One turn's record redeems one send. Clearing here is what stops the
+      // next message in the same conversation inheriting it.
+      setSuggestionToken('')
+      setPickedSuggestion(null)
       handleAfterSend()
     } catch (error) {
       setReplyError(String(error instanceof Error ? error.message : error))
@@ -1022,7 +1079,7 @@ function ConversationView({
               key={i}
               type="button"
               disabled={loading || !s.trim()}
-              onClick={() => handleSuggestionClick(s)}
+              onClick={() => handleSuggestionClick(s, i)}
               onMouseEnter={() => setHoveredSuggestion(i)}
               onMouseLeave={() => setHoveredSuggestion(null)}
               style={{

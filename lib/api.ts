@@ -159,17 +159,52 @@ export async function warmBackend() {
   apiFetch('/health').catch(() => {})
 }
 
+/**
+ * Which generated turn an operator-sent reply came from.
+ *
+ * The backend holds the turn's provenance record — the fan message that
+ * triggered it, the context it saw, and the model that actually wrote the
+ * candidates — behind an opaque token returned with the suggestions. Handing
+ * the token back on send is what lets that record close with the delivery
+ * receipt instead of the sent message having no attributable origin.
+ *
+ * Every field is optional, and a send with none of them is an ordinary send.
+ * A reply typed from scratch genuinely has no suggestion behind it, and saying
+ * so is the accurate answer, not a gap to paper over.
+ */
+export type ReplyAttribution = {
+  /** The token from the SuggestionResponse these candidates arrived in. */
+  token: string
+  /** Which candidate the operator picked, 0-based. */
+  index: number
+  /** Whether they changed the text before sending it. */
+  edited: boolean
+}
+
 // 2. Send a selected reply back to the backend (apifansly) to save and deliver
 export async function sendReply(
   fanId: string,
   creatorId: string,
   content: string,
-  wasAiSuggested: boolean
+  wasAiSuggested: boolean,
+  attribution?: ReplyAttribution | null,
 ): Promise<{ status: string; message_id: string }> {
   const response = await apiFetch('/reply', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ fan_id: fanId, creator_id: creatorId, content, was_ai_suggested: wasAiSuggested }),
+    body: JSON.stringify({
+      fan_id: fanId,
+      creator_id: creatorId,
+      content,
+      was_ai_suggested: wasAiSuggested,
+      ...(attribution
+        ? {
+            suggestion_token: attribution.token,
+            suggestion_index: attribution.index,
+            suggestion_edited: attribution.edited,
+          }
+        : {}),
+    }),
   })
   const body = await response.json().catch(() => ({}))
   if (!response.ok) {
@@ -178,11 +213,30 @@ export async function sendReply(
   return body as { status: string; message_id: string }
 }
 
+export type GeneratedSuggestions = {
+  suggestions: string[]
+  stage: string
+  /**
+   * The provenance handle for this turn, or '' when the backend did not supply
+   * one. It is opaque: never parsed, never displayed, and only ever handed back
+   * to sendReply.
+   */
+  suggestionToken: string
+}
+
+/**
+ * Ask for fresh candidates.
+ *
+ * The same candidates also arrive over the Supabase realtime subscription, and
+ * that path is what a second operator's tab sees. The response is read here
+ * anyway because it is the only place the provenance token exists: the
+ * suggestions table row carries the text, not the handle.
+ */
 export async function generateSuggestions(
   fanId: string,
   creatorId: string,
   fanMessage: string,
-): Promise<void> {
+): Promise<GeneratedSuggestions> {
   const response = await apiFetch('/regenerate-suggestions', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -192,11 +246,16 @@ export async function generateSuggestions(
       message: fanMessage,
     }),
   })
+  const body = await response.json().catch(() => ({}))
   if (!response.ok) {
-    const body = await response.json().catch(() => ({}))
     throw new Error(body.detail || `Suggestion generation failed (${response.status})`)
   }
-  // Response comes via Supabase realtime subscription
+  return {
+    suggestions: Array.isArray(body.suggestions) ? (body.suggestions as string[]) : [],
+    stage: typeof body.stage === 'string' ? body.stage : 'WARMING_UP',
+    // An older backend has no such field; that reply simply sends unattributed.
+    suggestionToken: typeof body.suggestion_token === 'string' ? body.suggestion_token : '',
+  }
 }
 
 export async function getLatestSuggestions(
