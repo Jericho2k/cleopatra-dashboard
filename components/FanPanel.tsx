@@ -17,6 +17,16 @@ import {
   repairOffer,
   type ContentAccessEvidence,
 } from '../lib/contentAccess'
+import {
+  controlsFor,
+  describeEpisode,
+  describeKind,
+  describeSource,
+  needsAttention,
+  summarizeMemory,
+  type ConversationMemory,
+  type MemoryThread,
+} from '../lib/conversationMemory'
 import { useRealtimeRecovery } from '../lib/realtime-recovery'
 
 export interface FanPanelProps {
@@ -187,6 +197,11 @@ export default function FanPanel({ fan, creatorId, onHistoryLoaded, showToast, o
   // rather than assuming the newest, and the panel must not quietly supply the
   // assumption it removed.
   const [accessSelection, setAccessSelection] = useState<string>('')
+  // What the conversation remembers. Null while it loads, which is
+  // deliberately not the same as "carrying nothing".
+  const [memory, setMemory] = useState<ConversationMemory | null>(null)
+  const [memoryError, setMemoryError] = useState('')
+  const [memoryBusy, setMemoryBusy] = useState<string | null>(null)
   const [accessError, setAccessError] = useState('')
   const [statusRefresh, setStatusRefresh] = useState(0)
 
@@ -423,6 +438,82 @@ export default function FanPanel({ fan, creatorId, onHistoryLoaded, showToast, o
       })
     return () => { cancelled = true }
   }, [fan?.id, needsReview.reason, statusRefresh])
+
+  useEffect(() => {
+    if (!fan?.id) {
+      setMemory(null)
+      setMemoryError('')
+      return
+    }
+    let cancelled = false
+    setMemory(null)
+    setMemoryError('')
+    apiFetch(`/fan/${fan.id}/conversation-memory`)
+      .then(async response => {
+        const body = await response.json().catch(() => ({}))
+        if (cancelled) return
+        if (!response.ok) {
+          setMemoryError(body.detail || 'Could not read what this conversation remembers')
+          return
+        }
+        setMemory(body as ConversationMemory)
+      })
+      .catch(error => {
+        if (!cancelled) setMemoryError(String(error instanceof Error ? error.message : error))
+      })
+    return () => { cancelled = true }
+  }, [fan?.id, statusRefresh])
+
+  async function actOnThread(
+    thread: MemoryThread,
+    action: 'resolve' | 'cancel' | 'correct',
+  ) {
+    if (!fan?.id || memoryBusy) return
+
+    let correctedSummary = ''
+    if (action === 'correct') {
+      const next = window.prompt(
+        'What should this say instead? The old version is kept and stops ' +
+        'being used.',
+        thread.summary,
+      )
+      if (!next || !next.trim() || next.trim() === thread.summary) return
+      correctedSummary = next.trim()
+    }
+    if (action === 'cancel' && !window.confirm(
+      'Record that this was never real — a bad extraction — rather than ' +
+      'something that was dealt with?'
+    )) return
+
+    setMemoryBusy(thread.id)
+    try {
+      const { data: { user } } = await supabase.auth.getUser()
+      const response = await apiFetch(
+        `/fan/${fan.id}/conversation-memory/threads/${thread.id}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            cancelled: action === 'cancel',
+            corrected_summary: correctedSummary,
+            resolved_by: user?.id ?? null,
+          }),
+        },
+      )
+      const body = await response.json().catch(() => ({}))
+      if (!response.ok) throw new Error(body.detail || 'Could not update that record')
+      setStatusRefresh(value => value + 1)
+      showToast?.(
+        action === 'correct' ? 'Corrected — the old version stopped being used'
+        : action === 'cancel' ? 'Recorded as never real'
+        : 'Marked as done'
+      )
+    } catch (error) {
+      setMemoryError(String(error instanceof Error ? error.message : error))
+    } finally {
+      setMemoryBusy(null)
+    }
+  }
 
   async function resolveReview(resolution: ReviewResolution) {
     if (!fan?.id || reviewResolution) return
@@ -1020,6 +1111,13 @@ export default function FanPanel({ fan, creatorId, onHistoryLoaded, showToast, o
               </div>
             )}
 
+            <ConversationMemoryPanel
+              memory={memory}
+              error={memoryError}
+              busy={memoryBusy}
+              onAct={actOnThread}
+            />
+
             <div style={LABEL_STYLE}>FAN DETAILS</div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 20 }}>
               {[
@@ -1366,5 +1464,147 @@ function ContentAccessResolution({
         </button>
       </div>
     </div>
+  )
+}
+
+
+/**
+ * What the conversation remembers, and what an operator may do about it.
+ *
+ * The reason this is worth screen space: every record here is given to the AI
+ * on each reply. One that is wrong keeps being used, and shows up as the model
+ * behaving strangely for reasons nobody can trace. Before this panel there was
+ * no way to see that an obligation was being carried at all.
+ *
+ * Source is shown on every line rather than tucked behind a toggle. Something
+ * read out of an ambiguous message and something the customer said outright
+ * are different claims, and an operator deciding whether to correct one needs
+ * that more than they need the summary.
+ */
+function ConversationMemoryPanel({
+  memory,
+  error,
+  busy,
+  onAct,
+}: {
+  memory: ConversationMemory | null
+  error: string
+  busy: string | null
+  onAct: (thread: MemoryThread, action: 'resolve' | 'cancel' | 'correct') => void | Promise<void>
+}) {
+  const summary = summarizeMemory(memory)
+
+  // Matches the LABEL_STYLE inside the panel body. Repeated rather than
+  // hoisted: lifting a local const out of a 1,400-line component to share it
+  // with one new section is a bigger change than this section, and a bigger
+  // change is a bigger thing to review.
+  const label = {
+    fontSize: 11,
+    textTransform: 'uppercase' as const,
+    letterSpacing: '0.06em',
+    color: 'var(--text-muted)',
+    marginBottom: 12,
+  }
+
+  const control = {
+    padding: '4px 8px', borderRadius: 6, fontSize: 10.5, fontWeight: 600,
+    background: 'transparent', border: '1px solid var(--border)',
+    color: 'var(--text-secondary)', cursor: busy ? 'wait' : 'pointer',
+  } as const
+
+  return (
+    <>
+      <div style={label}>WHAT THIS CONVERSATION REMEMBERS</div>
+      <div style={{ marginBottom: 20 }}>
+        {error ? (
+          <div style={{ fontSize: 12, color: '#e57689' }}>{error}</div>
+        ) : !summary ? (
+          <div style={{ fontSize: 12, color: 'var(--text-faint)' }}>
+            Reading what it is carrying…
+          </div>
+        ) : (
+          <>
+            <div style={{ fontSize: 12.5, fontWeight: 650, color: 'var(--text-primary)' }}>
+              {summary.headline}
+              {summary.attention > 0 && (
+                <span style={{ marginLeft: 6, fontWeight: 500, color: '#e0b64f' }}>
+                  ({summary.attention} worth checking)
+                </span>
+              )}
+            </div>
+            <div style={{ fontSize: 11.5, color: 'var(--text-muted)', lineHeight: 1.45, marginTop: 3 }}>
+              {summary.detail}
+            </div>
+
+            {memory && memory.open_threads.length > 0 && (
+              <ul style={{ margin: '10px 0 0', padding: 0, listStyle: 'none' }}>
+                {memory.open_threads.map(thread => {
+                  const controls = controlsFor(thread)
+                  const flagged = needsAttention(thread)
+                  return (
+                    <li
+                      key={thread.id}
+                      style={{
+                        marginTop: 8, padding: '8px 10px', borderRadius: 8,
+                        background: 'var(--bg-elevated)',
+                        border: `1px solid ${flagged ? 'rgba(224,182,79,0.45)' : 'var(--border-subtle)'}`,
+                      }}
+                    >
+                      <div style={{ fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--text-faint)' }}>
+                        {describeKind(thread.kind)}
+                        {thread.waiting_on_us ? ' · waiting on us' : ' · waiting on him'}
+                      </div>
+                      <div style={{ fontSize: 12, color: 'var(--text-primary)', marginTop: 2 }}>
+                        {thread.summary}
+                      </div>
+                      {/* Where it came from, always. */}
+                      <div style={{ fontSize: 10.5, color: flagged ? '#e0b64f' : 'var(--text-faint)', marginTop: 2 }}>
+                        {describeSource(thread)}
+                      </div>
+                      <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
+                        {controls.canResolve && (
+                          <button type="button" disabled={!!busy} style={control}
+                            onClick={() => void onAct(thread, 'resolve')}>
+                            {busy === thread.id ? '…' : 'Done'}
+                          </button>
+                        )}
+                        {controls.canCorrect && (
+                          <button type="button" disabled={!!busy} style={control}
+                            onClick={() => void onAct(thread, 'correct')}>
+                            Fix wording
+                          </button>
+                        )}
+                        {controls.canCancel && (
+                          <button type="button" disabled={!!busy} style={control}
+                            onClick={() => void onAct(thread, 'cancel')}
+                            title="It was never real — a bad extraction, not something that was dealt with">
+                            Never happened
+                          </button>
+                        )}
+                      </div>
+                    </li>
+                  )
+                })}
+              </ul>
+            )}
+
+            {memory && memory.episodes.length > 0 && (
+              <>
+                <div style={{ fontSize: 10.5, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--text-faint)', marginTop: 12 }}>
+                  Earlier conversations
+                </div>
+                <ul style={{ margin: '4px 0 0', padding: 0, listStyle: 'none' }}>
+                  {memory.episodes.map(episode => (
+                    <li key={episode.id} style={{ fontSize: 11, color: 'var(--text-faint)', marginTop: 3 }}>
+                      {describeEpisode(episode)}
+                    </li>
+                  ))}
+                </ul>
+              </>
+            )}
+          </>
+        )}
+      </div>
+    </>
   )
 }
