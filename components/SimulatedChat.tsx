@@ -49,12 +49,21 @@ type Props = {
    * Whether this account may see the AI stack's ROUTING, not just which
    * profile answered.
    *
-   * The backend redacts provider, model, writer route and prompt version out
-   * of the simulated-turn response for anyone who is not the platform owner.
-   * This transcript, though, is read straight from the `messages` table, where
-   * the marker is persisted in full — so the same boundary is applied again
-   * here rather than relying on the response shape for rows that never came
-   * through it.
+   * This used to be the only thing standing between an agency operator and the
+   * supply chain. The transcript is read straight from the `messages` table
+   * (app/simulator/page.tsx), not through a redacted response, and the marker
+   * was persisted there in full — so a UI gate was all there was, and a UI gate
+   * never removed the value from the browser that rendered it.
+   *
+   * The backend now splits routing out of `messages.media_context` before the
+   * row is written, into a table the browser has no grant on at all
+   * (db/owner_only_diagnostics_v1.sql). A row written by a current deployment
+   * therefore carries `{ profile }` and nothing else, and this flag has nothing
+   * left to hide.
+   *
+   * It stays because rows written before that migration ran still carry the
+   * full marker, and because a gate that costs nothing is worth keeping on the
+   * side of the boundary that can be read by a person.
    */
   operatorDiagnostics: boolean
 }
@@ -241,9 +250,9 @@ function Bubble({
       )}
 
       {/* Which stack answered is a product-level fact and stays. What it
-          routed to is owner diagnostics, so it is rendered only for an account
-          that is allowed to have it — the transcript is read straight from the
-          table, where old rows still carry the full marker. */}
+          routed to is owner diagnostics, and on a current row it is not here to
+          render — the backend keeps it out of the table this transcript reads.
+          The gate covers rows written before that change. */}
       {showDebug && stack && (
         <div style={{ fontSize: 10, color: 'var(--text-faint)' }}>
           {stack.profile}

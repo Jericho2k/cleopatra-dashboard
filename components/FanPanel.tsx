@@ -13,8 +13,20 @@ import {
 import {
   describePaidItem,
   summarizeContentAccess,
+  initialSelection,
+  repairOffer,
   type ContentAccessEvidence,
 } from '../lib/contentAccess'
+import {
+  controlsFor,
+  describeEpisode,
+  describeKind,
+  describeSource,
+  needsAttention,
+  summarizeMemory,
+  type ConversationMemory,
+  type MemoryThread,
+} from '../lib/conversationMemory'
 import { useRealtimeRecovery } from '../lib/realtime-recovery'
 
 export interface FanPanelProps {
@@ -179,6 +191,17 @@ export default function FanPanel({ fan, creatorId, onHistoryLoaded, showToast, o
   // a loading line rather than a verdict, because "not loaded" and "nothing
   // was bought" lead an operator to opposite actions.
   const [accessEvidence, setAccessEvidence] = useState<ContentAccessEvidence | null>(null)
+  // Which purchase the operator says the complaint is about. Empty means "not
+  // chosen yet", and when more than one purchase is repairable that is exactly
+  // what it stays until they choose: the backend refuses an unqualified resend
+  // rather than assuming the newest, and the panel must not quietly supply the
+  // assumption it removed.
+  const [accessSelection, setAccessSelection] = useState<string>('')
+  // What the conversation remembers. Null while it loads, which is
+  // deliberately not the same as "carrying nothing".
+  const [memory, setMemory] = useState<ConversationMemory | null>(null)
+  const [memoryError, setMemoryError] = useState('')
+  const [memoryBusy, setMemoryBusy] = useState<string | null>(null)
   const [accessError, setAccessError] = useState('')
   const [statusRefresh, setStatusRefresh] = useState(0)
 
@@ -390,11 +413,13 @@ export default function FanPanel({ fan, creatorId, onHistoryLoaded, showToast, o
     if (!fan?.id || needsReview.reason !== CONTENT_ACCESS_REASON) {
       setAccessEvidence(null)
       setAccessError('')
+      setAccessSelection('')
       return
     }
     let cancelled = false
     setAccessEvidence(null)
     setAccessError('')
+    setAccessSelection('')
     apiFetch(`/fan/${fan.id}/content-access`)
       .then(async response => {
         const body = await response.json().catch(() => ({}))
@@ -403,7 +428,10 @@ export default function FanPanel({ fan, creatorId, onHistoryLoaded, showToast, o
           setAccessError(body.detail || 'Could not read what this customer paid for')
           return
         }
-        setAccessEvidence(body as ContentAccessEvidence)
+        const evidence = body as ContentAccessEvidence
+        setAccessEvidence(evidence)
+        // Pre-selected only when there is nothing to choose between.
+        setAccessSelection(initialSelection(evidence))
       })
       .catch(error => {
         if (!cancelled) setAccessError(String(error instanceof Error ? error.message : error))
@@ -411,21 +439,135 @@ export default function FanPanel({ fan, creatorId, onHistoryLoaded, showToast, o
     return () => { cancelled = true }
   }, [fan?.id, needsReview.reason, statusRefresh])
 
+  useEffect(() => {
+    if (!fan?.id) {
+      setMemory(null)
+      setMemoryError('')
+      return
+    }
+    let cancelled = false
+    setMemory(null)
+    setMemoryError('')
+    apiFetch(`/fan/${fan.id}/conversation-memory`)
+      .then(async response => {
+        const body = await response.json().catch(() => ({}))
+        if (cancelled) return
+        if (!response.ok) {
+          setMemoryError(body.detail || 'Could not read what this conversation remembers')
+          return
+        }
+        setMemory(body as ConversationMemory)
+      })
+      .catch(error => {
+        if (!cancelled) setMemoryError(String(error instanceof Error ? error.message : error))
+      })
+    return () => { cancelled = true }
+  }, [fan?.id, statusRefresh])
+
+  async function actOnThread(
+    thread: MemoryThread,
+    action: 'resolve' | 'cancel' | 'correct',
+  ) {
+    if (!fan?.id || memoryBusy) return
+
+    let correctedSummary = ''
+    if (action === 'correct') {
+      const next = window.prompt(
+        'What should this say instead? The old version is kept and stops ' +
+        'being used.',
+        thread.summary,
+      )
+      if (!next || !next.trim() || next.trim() === thread.summary) return
+      correctedSummary = next.trim()
+    }
+    if (action === 'cancel' && !window.confirm(
+      'Record that this was never real — a bad extraction — rather than ' +
+      'something that was dealt with?'
+    )) return
+
+    setMemoryBusy(thread.id)
+    try {
+      const { data: { user } } = await supabase.auth.getUser()
+      const response = await apiFetch(
+        `/fan/${fan.id}/conversation-memory/threads/${thread.id}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            cancelled: action === 'cancel',
+            corrected_summary: correctedSummary,
+            resolved_by: user?.id ?? null,
+          }),
+        },
+      )
+      const body = await response.json().catch(() => ({}))
+      if (!response.ok) throw new Error(body.detail || 'Could not update that record')
+      setStatusRefresh(value => value + 1)
+      showToast?.(
+        action === 'correct' ? 'Corrected — the old version stopped being used'
+        : action === 'cancel' ? 'Recorded as never real'
+        : 'Marked as done'
+      )
+    } catch (error) {
+      setMemoryError(String(error instanceof Error ? error.message : error))
+    } finally {
+      setMemoryBusy(null)
+    }
+  }
+
   async function resolveReview(resolution: ReviewResolution) {
     if (!fan?.id || reviewResolution) return
+    // The backend refuses an unqualified resend when more than one purchase is
+    // repairable. Catching it here means the operator is asked rather than
+    // shown an error, but the backend refusal is the boundary that matters:
+    // this check is a courtesy, not the rule.
+    if (
+      resolution === 'resend_paid_content' &&
+      accessEvidence?.selection_required &&
+      !accessSelection
+    ) {
+      setAccessError('Choose which purchase they cannot open before resending.')
+      return
+    }
     if (resolution === 'mark_not_sent' && !window.confirm('Confirm that this PPV did not reach the fan. This will make the session eligible to send again.')) return
     if (resolution === 'mark_not_purchased' && !window.confirm('Confirm on Fansly that this locked PPV was not purchased. It will be recorded as abandoned and may receive the configured follow-up.')) return
     if (resolution === 'resend_paid_content' && !window.confirm('Send this customer the content they already paid for, again and free of charge. They will not be charged a second time.')) return
     setReviewResolution(resolution)
     try {
+      // Who is resolving it, the same way the PPV approval flow records it
+      // (app/monetization/page.tsx). A repair that sent a customer a free copy
+      // of something needs an actor on the record; "the backend did it" is not
+      // an auditable answer.
+      const { data: { user } } = await supabase.auth.getUser()
+      const operatorId = user?.id ?? null
       const response = await apiFetch(`/fan/${fan.id}/resolve-review`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ resolution }),
+        body: JSON.stringify({
+          resolution,
+          // Which purchase, and which hold. Both are sent so the repair is
+          // bound to what was actually on screen: the reference stops an
+          // older item's complaint resending a newer item, and the case id
+          // stops the decision landing on a hold raised since it was read.
+          reference: accessSelection,
+          review_case_id: accessEvidence?.review_case_id ?? '',
+          resolved_by: operatorId,
+        }),
       })
       const body = await response.json().catch(() => ({}))
       if (!response.ok) throw new Error(body.detail || 'Could not resolve this conversation')
-      setNeedsReview({ frozen: false, reason: '' })
+      // The repair can succeed while the conversation stays frozen — a crisis
+      // hold raised during the platform call is not this resolution's to
+      // clear. Believing the local optimistic update in that case would show
+      // an operator a resumed conversation that is still stopped.
+      if (body.hold_superseded) {
+        setAccessError(
+          'Sent. This conversation is still on hold for something else, ' +
+          'raised while the repair was running — reopen it to see what.',
+        )
+      } else {
+        setNeedsReview({ frozen: false, reason: '' })
+      }
       setStatusRefresh(value => value + 1)
       showToast?.(
         resolution === 'repair_ppv' ? 'Payment tracking repaired — AI resumed'
@@ -622,6 +764,8 @@ export default function FanPanel({ fan, creatorId, onHistoryLoaded, showToast, o
                 evidence={accessEvidence}
                 error={accessError}
                 busy={reviewResolution}
+                selection={accessSelection}
+                onSelect={setAccessSelection}
                 onResolve={resolveReview}
               />
             ) : needsReview.reason === 'ppv_purchase_verification_unavailable' ? (
@@ -967,6 +1111,13 @@ export default function FanPanel({ fan, creatorId, onHistoryLoaded, showToast, o
               </div>
             )}
 
+            <ConversationMemoryPanel
+              memory={memory}
+              error={memoryError}
+              busy={memoryBusy}
+              onAct={actOnThread}
+            />
+
             <div style={LABEL_STYLE}>FAN DETAILS</div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 20 }}>
               {[
@@ -1158,14 +1309,27 @@ function ContentAccessResolution({
   evidence,
   error,
   busy,
+  selection,
+  onSelect,
   onResolve,
 }: {
   evidence: ContentAccessEvidence | null
   error: string
   busy: string | null
+  /** The purchase the operator says the complaint is about. '' when unchosen. */
+  selection: string
+  onSelect: (reference: string) => void
   onResolve: (resolution: ReviewResolution) => void | Promise<void>
 }) {
   const summary = summarizeContentAccess(evidence)
+  const items = evidence?.paid_items ?? []
+  const chosen = items.find(item => item.reference === selection) ?? null
+  // What may be done about the CHOSEN item, not about the customer. A repair
+  // already confirmed for one purchase says nothing about another.
+  const offer = chosen ? repairOffer(chosen) : null
+  const blocked = Boolean(summary?.selectionRequired) && !selection
+  const canResend =
+    Boolean(summary?.canResend) && !blocked && (offer ? offer.canResend : true)
 
   const secondary = {
     padding: '8px 12px', borderRadius: 8, fontSize: 12, fontWeight: 600,
@@ -1200,17 +1364,57 @@ function ContentAccessResolution({
           <div style={{ fontSize: 12, color: 'var(--text-muted)', lineHeight: 1.45 }}>
             {summary.detail}
           </div>
-          {evidence && evidence.paid_items.length > 0 && (
-            <ul style={{ margin: '8px 0 0', padding: 0, listStyle: 'none' }}>
-              {evidence.paid_items.slice(0, 3).map(item => (
-                <li
-                  key={item.reference || item.platform_message_id}
-                  style={{ fontSize: 11.5, color: 'var(--text-faint)', marginTop: 3 }}
-                >
-                  {describePaidItem(item)}
-                </li>
-              ))}
-            </ul>
+          {items.length > 0 && (
+            <>
+              {summary?.selectionRequired && (
+                <div style={{ fontSize: 11.5, color: 'var(--text-secondary)', marginTop: 8, fontWeight: 600 }}>
+                  Which one can&apos;t they open?
+                </div>
+              )}
+              <ul style={{ margin: '8px 0 0', padding: 0, listStyle: 'none' }}>
+                {items.map(item => {
+                  const itemOffer = repairOffer(item)
+                  const reference = item.reference || item.platform_message_id
+                  const picked = selection === item.reference
+                  return (
+                    <li
+                      key={reference}
+                      style={{ fontSize: 11.5, color: 'var(--text-faint)', marginTop: 5 }}
+                    >
+                      <label style={{
+                        display: 'flex', alignItems: 'flex-start', gap: 6,
+                        cursor: item.media_ids.length ? 'pointer' : 'default',
+                      }}>
+                        {/* A radio even when there is one item: it is the
+                            record of what the operator chose, and it is what
+                            is sent back with the resolution. */}
+                        <input
+                          type="radio"
+                          name="content-access-item"
+                          checked={picked}
+                          disabled={!item.media_ids.length || !!busy}
+                          onChange={() => onSelect(item.reference)}
+                          style={{ marginTop: 2 }}
+                        />
+                        <span>
+                          <span style={{ color: picked ? 'var(--text-secondary)' : undefined }}>
+                            {describePaidItem(item)}
+                          </span>
+                          {itemOffer.note && (
+                            <span style={{
+                              display: 'block', marginTop: 2,
+                              color: itemOffer.needsDecision ? '#e0b64f' : 'var(--text-faint)',
+                            }}>
+                              {itemOffer.note}
+                            </span>
+                          )}
+                        </span>
+                      </label>
+                    </li>
+                  )
+                })}
+              </ul>
+            </>
           )}
         </div>
       )}
@@ -1218,16 +1422,28 @@ function ContentAccessResolution({
         {summary?.canResend && (
           <button
             type="button"
-            disabled={!!busy}
+            disabled={!!busy || !canResend}
             onClick={() => void onResolve('resend_paid_content')}
+            title={
+              blocked
+                ? 'Choose which purchase they cannot open'
+                : offer && !offer.canResend
+                ? offer.note
+                : undefined
+            }
             style={{
               padding: '8px 12px', borderRadius: 8, fontSize: 12, fontWeight: 600,
               background: 'rgba(94,214,154,0.12)', border: '1px solid var(--green)',
-              color: 'var(--green)', cursor: busy ? 'wait' : 'pointer',
-              opacity: busy ? 0.55 : 1,
+              color: 'var(--green)',
+              cursor: busy ? 'wait' : canResend ? 'pointer' : 'not-allowed',
+              opacity: busy || !canResend ? 0.55 : 1,
             }}
           >
-            {busy === 'resend_paid_content' ? 'Sending…' : 'Resend it free'}
+            {busy === 'resend_paid_content'
+              ? 'Sending…'
+              : blocked
+              ? 'Choose an item to resend'
+              : 'Resend it free'}
           </button>
         )}
         <button
@@ -1248,5 +1464,147 @@ function ContentAccessResolution({
         </button>
       </div>
     </div>
+  )
+}
+
+
+/**
+ * What the conversation remembers, and what an operator may do about it.
+ *
+ * The reason this is worth screen space: every record here is given to the AI
+ * on each reply. One that is wrong keeps being used, and shows up as the model
+ * behaving strangely for reasons nobody can trace. Before this panel there was
+ * no way to see that an obligation was being carried at all.
+ *
+ * Source is shown on every line rather than tucked behind a toggle. Something
+ * read out of an ambiguous message and something the customer said outright
+ * are different claims, and an operator deciding whether to correct one needs
+ * that more than they need the summary.
+ */
+function ConversationMemoryPanel({
+  memory,
+  error,
+  busy,
+  onAct,
+}: {
+  memory: ConversationMemory | null
+  error: string
+  busy: string | null
+  onAct: (thread: MemoryThread, action: 'resolve' | 'cancel' | 'correct') => void | Promise<void>
+}) {
+  const summary = summarizeMemory(memory)
+
+  // Matches the LABEL_STYLE inside the panel body. Repeated rather than
+  // hoisted: lifting a local const out of a 1,400-line component to share it
+  // with one new section is a bigger change than this section, and a bigger
+  // change is a bigger thing to review.
+  const label = {
+    fontSize: 11,
+    textTransform: 'uppercase' as const,
+    letterSpacing: '0.06em',
+    color: 'var(--text-muted)',
+    marginBottom: 12,
+  }
+
+  const control = {
+    padding: '4px 8px', borderRadius: 6, fontSize: 10.5, fontWeight: 600,
+    background: 'transparent', border: '1px solid var(--border)',
+    color: 'var(--text-secondary)', cursor: busy ? 'wait' : 'pointer',
+  } as const
+
+  return (
+    <>
+      <div style={label}>WHAT THIS CONVERSATION REMEMBERS</div>
+      <div style={{ marginBottom: 20 }}>
+        {error ? (
+          <div style={{ fontSize: 12, color: '#e57689' }}>{error}</div>
+        ) : !summary ? (
+          <div style={{ fontSize: 12, color: 'var(--text-faint)' }}>
+            Reading what it is carrying…
+          </div>
+        ) : (
+          <>
+            <div style={{ fontSize: 12.5, fontWeight: 650, color: 'var(--text-primary)' }}>
+              {summary.headline}
+              {summary.attention > 0 && (
+                <span style={{ marginLeft: 6, fontWeight: 500, color: '#e0b64f' }}>
+                  ({summary.attention} worth checking)
+                </span>
+              )}
+            </div>
+            <div style={{ fontSize: 11.5, color: 'var(--text-muted)', lineHeight: 1.45, marginTop: 3 }}>
+              {summary.detail}
+            </div>
+
+            {memory && memory.open_threads.length > 0 && (
+              <ul style={{ margin: '10px 0 0', padding: 0, listStyle: 'none' }}>
+                {memory.open_threads.map(thread => {
+                  const controls = controlsFor(thread)
+                  const flagged = needsAttention(thread)
+                  return (
+                    <li
+                      key={thread.id}
+                      style={{
+                        marginTop: 8, padding: '8px 10px', borderRadius: 8,
+                        background: 'var(--bg-elevated)',
+                        border: `1px solid ${flagged ? 'rgba(224,182,79,0.45)' : 'var(--border-subtle)'}`,
+                      }}
+                    >
+                      <div style={{ fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--text-faint)' }}>
+                        {describeKind(thread.kind)}
+                        {thread.waiting_on_us ? ' · waiting on us' : ' · waiting on him'}
+                      </div>
+                      <div style={{ fontSize: 12, color: 'var(--text-primary)', marginTop: 2 }}>
+                        {thread.summary}
+                      </div>
+                      {/* Where it came from, always. */}
+                      <div style={{ fontSize: 10.5, color: flagged ? '#e0b64f' : 'var(--text-faint)', marginTop: 2 }}>
+                        {describeSource(thread)}
+                      </div>
+                      <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
+                        {controls.canResolve && (
+                          <button type="button" disabled={!!busy} style={control}
+                            onClick={() => void onAct(thread, 'resolve')}>
+                            {busy === thread.id ? '…' : 'Done'}
+                          </button>
+                        )}
+                        {controls.canCorrect && (
+                          <button type="button" disabled={!!busy} style={control}
+                            onClick={() => void onAct(thread, 'correct')}>
+                            Fix wording
+                          </button>
+                        )}
+                        {controls.canCancel && (
+                          <button type="button" disabled={!!busy} style={control}
+                            onClick={() => void onAct(thread, 'cancel')}
+                            title="It was never real — a bad extraction, not something that was dealt with">
+                            Never happened
+                          </button>
+                        )}
+                      </div>
+                    </li>
+                  )
+                })}
+              </ul>
+            )}
+
+            {memory && memory.episodes.length > 0 && (
+              <>
+                <div style={{ fontSize: 10.5, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--text-faint)', marginTop: 12 }}>
+                  Earlier conversations
+                </div>
+                <ul style={{ margin: '4px 0 0', padding: 0, listStyle: 'none' }}>
+                  {memory.episodes.map(episode => (
+                    <li key={episode.id} style={{ fontSize: 11, color: 'var(--text-faint)', marginTop: 3 }}>
+                      {describeEpisode(episode)}
+                    </li>
+                  ))}
+                </ul>
+              </>
+            )}
+          </>
+        )}
+      </div>
+    </>
   )
 }

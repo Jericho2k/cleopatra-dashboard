@@ -262,10 +262,17 @@ export async function saveSimulationFanAIStack(
  * predate it and return null, which is reported as "unknown" rather than being
  * attributed to whatever profile happens to be current.
  *
- * `profile` is the only field an agency account ever receives: the backend
- * redacts the rest of the marker out of the simulated-turn response, exactly as
- * it redacts the registry. Everything after `profile` is therefore optional and
- * owner-only, and the UI reading it is gated accordingly.
+ * `profile` is the only field this can return for a row written by a current
+ * backend. The rest of the marker — route, prompt version, provider, model — no
+ * longer reaches `messages.media_context` at all: it is split off before the
+ * row is written and stored in a table the browser holds no grant on
+ * (db/owner_only_diagnostics_v1.sql in the backend).
+ *
+ * That replaced a response-level redaction which this file could not rely on,
+ * because the transcript is read straight from Supabase rather than through a
+ * redacted response. The optional fields remain typed here for rows written
+ * before that change, and the UI reading them is still gated on owner
+ * diagnostics.
  */
 export type MessageAIStack = {
   profile: string
