@@ -109,3 +109,23 @@ test('operator takeover discards an in-flight result and rollback restores super
   await page.getByRole('button', { name: 'Generate' }).click()
   await expect(page.getByTestId('generation-state')).toHaveText('accepted: late model reply')
 })
+
+test('semantic PPV completion renders the durable locked card without a refresh', async ({ page }) => {
+  await page.route('**/__adapter/semantic-turn', route => route.fulfill({ json: {
+    turn_id: 'semantic-1', status: 'completed', outcome: 'replied',
+    creator_messages: [{
+      id: 'ppv-1', role: 'creator', content: 'knew you would 😏', sent_at: null,
+      media_context: { ppv: {
+        media_ids: ['approved-1', 'approved-2'], price_cents: 3000,
+        set_id: 'set-1', payment_reference: 'payment-1', access_type: 'ppv',
+      } },
+    }],
+  } }))
+  await page.route('**/vault-media-urls/creator-1', route => route.fulfill({ json: { media: {} } }))
+  const simulator = page.getByRole('region', { name: 'semantic simulator' })
+  await simulator.getByRole('button', { name: 'Poll semantic turn' }).click()
+  await expect(simulator.getByText('knew you would 😏')).toBeVisible()
+  await expect(simulator.getByText(/Locked.*\$30/)).toBeVisible()
+  await expect(page.getByTestId('simulation-notice')).toBeEmpty()
+  await expect(simulator.getByText(/to unlock/)).toHaveCount(0)
+})

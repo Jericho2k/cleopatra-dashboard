@@ -348,3 +348,37 @@ describe('completedTurnMessage', () => {
     expect(completedTurnMessage(turn({ status: 'processing' }))).toBe('')
   })
 })
+
+// Semantic V1 receipts use the durable production PPV shape. Polling returns
+// that attachment, so the next render can show the card without a Refresh.
+describe('semantic locked offer completion', () => {
+  it('returns the exact PPV card with its natural caption on the completion poll', async () => {
+    const { ppvPresentation } = await import('../simulationWorkspace')
+    serve([[200, {
+      turn_id: 'semantic-1', status: 'completed', outcome: 'replied',
+      creator_messages: [{
+        id: 'ppv-1', role: 'creator', content: 'knew you would 😏', sent_at: null,
+        media_context: { ppv: {
+          media_ids: ['approved-1', 'approved-2'], price_cents: 3000,
+          set_id: 'set-1', payment_reference: 'payment-1', access_type: 'ppv',
+        } },
+      }],
+    }]])
+    const completed = await fetchSimulationTurn('c1', 'f1', 'semantic-1')
+    const message = completed.creator_messages![0]
+    expect(message.content).toBe('knew you would 😏')
+    expect(completedTurnMessage(completed)).toBe('')
+    expect(ppvPresentation(message.media_context)).toMatchObject({
+      kind: 'locked', price: 30, priceCents: 3000,
+      mediaIds: ['approved-1', 'approved-2'], setId: 'set-1', purchased: false,
+    })
+  })
+
+  it('shows exhausted semantic repair as controlled human review, not a failed turn', () => {
+    const completed = turn({ status: 'completed', outcome: 'human_review', creator_messages: [] })
+    expect(turnIsTerminal(completed)).toBe(true)
+    expect(completedTurnMessage(completed)).toContain('handed to a person')
+    expect(turnFailureMessage(completed)).toBe('')
+    expect(completedTurnMessage(completed)).not.toContain('safe to try again')
+  })
+})

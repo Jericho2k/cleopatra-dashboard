@@ -2,6 +2,10 @@
 
 import { useRef, useState } from 'react'
 
+import SimulatedChat from '../../components/SimulatedChat'
+import { completedTurnMessage, type SimulationTurn } from '../../lib/simulation'
+import type { Message } from '../../types'
+
 import {
   ContentAccessResolution,
   ConversationMemoryPanel,
@@ -93,6 +97,17 @@ export default function OperatorFlowHarness() {
   const [trace, setTrace] = useState<ReplyTraceResponse | null>(null)
   const [generation, setGeneration] = useState('idle')
   const takeover = useRef(false)
+  const [simulationMessages, setSimulationMessages] = useState<Message[]>([])
+  const [simulationNotice, setSimulationNotice] = useState('')
+
+  async function pollSemanticTurn() {
+    const result: SimulationTurn = await json('/__adapter/semantic-turn')
+    setSimulationMessages((result.creator_messages ?? []).map(row => ({
+      ...row, fan_id: 'fan-1', creator_id: 'creator-1',
+      sent_at: row.sent_at ?? '', was_ai_suggested: true, was_selected: true,
+    })))
+    setSimulationNotice(completedTurnMessage(result))
+  }
 
   async function resolveRepair(resolution: ReviewResolution) {
     if (resolution !== 'resend_paid_content') return
@@ -159,6 +174,13 @@ export default function OperatorFlowHarness() {
         <textarea aria-label="Assisted reply text" value={draft} onChange={event => setDraft(event.target.value)} />
         <button type="button" onClick={() => void approveAssisted()}>Approve Assisted reply</button>
         {trace && <ReplyTracePanel trace={trace} error="" />}
+      </section>
+      <section aria-label="semantic simulator">
+        <h2>Semantic simulator</h2>
+        <button type="button" onClick={() => void pollSemanticTurn()}>Poll semantic turn</button>
+        <div data-testid="simulation-notice">{simulationNotice}</div>
+        <SimulatedChat creatorId="creator-1" fanName="Test Fan" messages={simulationMessages}
+          loading={false} showDebug={false} operatorDiagnostics={false} />
       </section>
       <section aria-label="takeover and rollback">
         <h2>Takeover and rollback</h2>
