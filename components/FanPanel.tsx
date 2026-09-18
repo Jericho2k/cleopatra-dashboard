@@ -27,6 +27,14 @@ import {
   type ConversationMemory,
   type MemoryThread,
 } from '../lib/conversationMemory'
+import {
+  summarizeReplyTrace,
+  type ReplyTraceResponse,
+} from '../lib/replyTrace'
+import {
+  canSeeOperatorDiagnostics,
+  fetchSimulationCapabilities,
+} from '../lib/simulation'
 import { useRealtimeRecovery } from '../lib/realtime-recovery'
 
 export interface FanPanelProps {
@@ -48,7 +56,7 @@ type Tab = 'profile' | 'sales'
 /** The review reason services/content_access.py writes. */
 const CONTENT_ACCESS_REASON = 'content_access_issue'
 
-type ReviewResolution =
+export type ReviewResolution =
   | 'repair_ppv'
   | 'mark_purchased'
   | 'mark_not_sent'
@@ -202,8 +210,23 @@ export default function FanPanel({ fan, creatorId, onHistoryLoaded, showToast, o
   const [memory, setMemory] = useState<ConversationMemory | null>(null)
   const [memoryError, setMemoryError] = useState('')
   const [memoryBusy, setMemoryBusy] = useState<string | null>(null)
+  // Owner identity is answered by the backend. False until that answer arrives
+  // so private diagnostics never flash into an agency UI.
+  const [ownerDiagnostics, setOwnerDiagnostics] = useState(false)
+  const [replyTrace, setReplyTrace] = useState<ReplyTraceResponse | null>(null)
+  const [replyTraceError, setReplyTraceError] = useState('')
   const [accessError, setAccessError] = useState('')
   const [statusRefresh, setStatusRefresh] = useState(0)
+
+  useEffect(() => {
+    let cancelled = false
+    void fetchSimulationCapabilities().then(capabilities => {
+      if (!cancelled) {
+        setOwnerDiagnostics(canSeeOperatorDiagnostics(capabilities))
+      }
+    })
+    return () => { cancelled = true }
+  }, [])
 
   const mediaIdsForEntry = (entry: SalesEntry): string[] => {
     const primary = entry.media_id || (entry.item?.startsWith('PPV media ') ? entry.item.slice('PPV media '.length).trim() : '')
@@ -291,6 +314,33 @@ export default function FanPanel({ fan, creatorId, onHistoryLoaded, showToast, o
         })
       })
   }, [fan?.id, statusRefresh])
+
+  useEffect(() => {
+    if (!ownerDiagnostics || !fan?.id || !creatorId) {
+      setReplyTrace(null)
+      setReplyTraceError('')
+      return
+    }
+    let cancelled = false
+    setReplyTrace(null)
+    setReplyTraceError('')
+    apiFetch(`/creator/${creatorId}/fan/${fan.id}/reply-trace?limit=10`)
+      .then(async response => {
+        const body = await response.json().catch(() => ({}))
+        if (cancelled) return
+        if (!response.ok) {
+          setReplyTraceError(body.detail || 'Could not read reply diagnostics')
+          return
+        }
+        setReplyTrace(body as ReplyTraceResponse)
+      })
+      .catch(error => {
+        if (!cancelled) {
+          setReplyTraceError(String(error instanceof Error ? error.message : error))
+        }
+      })
+    return () => { cancelled = true }
+  }, [creatorId, fan?.id, ownerDiagnostics, statusRefresh])
 
   useEffect(() => {
     if (!fan?.id) { setFullAutoStatus(null); return }
@@ -1118,6 +1168,10 @@ export default function FanPanel({ fan, creatorId, onHistoryLoaded, showToast, o
               onAct={actOnThread}
             />
 
+            {ownerDiagnostics && (
+              <ReplyTracePanel trace={replyTrace} error={replyTraceError} />
+            )}
+
             <div style={LABEL_STYLE}>FAN DETAILS</div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 20 }}>
               {[
@@ -1305,7 +1359,7 @@ export default function FanPanel({ fan, creatorId, onHistoryLoaded, showToast, o
  * evidence says a resend is valid; offering it otherwise would teach an operator
  * to click through an error.
  */
-function ContentAccessResolution({
+export function ContentAccessResolution({
   evidence,
   error,
   busy,
@@ -1481,7 +1535,7 @@ function ContentAccessResolution({
  * are different claims, and an operator deciding whether to correct one needs
  * that more than they need the summary.
  */
-function ConversationMemoryPanel({
+export function ConversationMemoryPanel({
   memory,
   error,
   busy,
@@ -1603,6 +1657,70 @@ function ConversationMemoryPanel({
               </>
             )}
           </>
+        )}
+      </div>
+    </>
+  )
+}
+
+
+/** Owner-only ground truth for the most recent visible replies. */
+export function ReplyTracePanel({
+  trace,
+  error,
+}: {
+  trace: ReplyTraceResponse | null
+  error: string
+}) {
+  const label = {
+    fontSize: 11,
+    textTransform: 'uppercase' as const,
+    letterSpacing: '0.06em',
+    color: 'var(--text-muted)',
+    marginBottom: 12,
+  }
+  const rows = trace?.messages.map(summarizeReplyTrace) ?? []
+
+  return (
+    <>
+      <div style={label}>OWNER REPLY TRACE</div>
+      <div style={{ marginBottom: 20 }}>
+        {error ? (
+          <div style={{ fontSize: 12, color: '#e57689' }}>{error}</div>
+        ) : !trace ? (
+          <div style={{ fontSize: 12, color: 'var(--text-faint)' }}>Reading reply diagnostics…</div>
+        ) : rows.length === 0 ? (
+          <div style={{ fontSize: 12, color: 'var(--text-faint)' }}>No creator replies to inspect.</div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {rows.map(row => (
+              <details
+                key={row.id}
+                style={{
+                  padding: '8px 10px', borderRadius: 8,
+                  background: 'var(--bg-elevated)',
+                  border: `1px solid ${row.attributionAvailable ? 'var(--border-subtle)' : 'rgba(229,118,137,0.45)'}`,
+                }}
+              >
+                <summary style={{ cursor: 'pointer', fontSize: 11.5, color: 'var(--text-primary)' }}>
+                  {formatOperationalTime(row.sentAt)} · {row.attributionAvailable ? row.writer : 'Attribution unavailable'}
+                </summary>
+                {!row.attributionAvailable && (
+                  <div style={{ marginTop: 7, color: '#e57689', fontSize: 11 }}>
+                    {row.unavailableBecause || 'No attribution was recorded.'}
+                  </div>
+                )}
+                <dl style={{ margin: '8px 0 0', display: 'grid', gridTemplateColumns: '92px 1fr', gap: '4px 8px', fontSize: 10.5 }}>
+                  <dt style={{ color: 'var(--text-faint)' }}>Trigger</dt><dd style={{ margin: 0 }}>{row.trigger}</dd>
+                  <dt style={{ color: 'var(--text-faint)' }}>Evidence</dt><dd style={{ margin: 0 }}>{row.evidenceFingerprint}</dd>
+                  <dt style={{ color: 'var(--text-faint)' }}>Writer</dt><dd style={{ margin: 0 }}>{row.writer}</dd>
+                  <dt style={{ color: 'var(--text-faint)' }}>Decision</dt><dd style={{ margin: 0 }}>{row.decision}</dd>
+                  <dt style={{ color: 'var(--text-faint)' }}>Transforms</dt><dd style={{ margin: 0 }}>{row.transformations.join(', ') || 'none recorded'}</dd>
+                  <dt style={{ color: 'var(--text-faint)' }}>Delivery</dt><dd style={{ margin: 0 }}>{row.delivery}</dd>
+                </dl>
+              </details>
+            ))}
+          </div>
         )}
       </div>
     </>
