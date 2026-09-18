@@ -11,8 +11,9 @@
  *
  * The scheduled-actions block is how delayed behaviour is tested without a fake
  * clock. "Run now" fires the pending action through the worker's own handler,
- * inside the simulation scope, so the real revalidation, planner, writer and
- * state transitions all run and only the wait is skipped.
+ * inside the simulation scope, so the selected runtime's real revalidation,
+ * owner, writer, executor and state transitions all run and only the wait is
+ * skipped.
  */
 
 import React from 'react'
@@ -75,6 +76,17 @@ export default function SimulationStatePanel({
           value={state.ai_stack?.ai_stack_profile ?? 'unknown'}
         />
         <Row label="Selected by" value={sourceLabel(state.ai_stack?.ai_stack_source)} />
+      </Section>
+
+      <Section title="Conversation runtime">
+        <Row
+          label="Selected core"
+          value={state.conversation_core?.conversation_core ?? 'unknown'}
+        />
+        <Row
+          label="Selected by"
+          value={state.conversation_core?.conversation_core_source ?? 'unknown'}
+        />
       </Section>
 
       <Section title="Lifecycle & spend">

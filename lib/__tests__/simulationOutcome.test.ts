@@ -84,11 +84,19 @@ describe('turnOutcomeMessage', () => {
   })
 
   it('gives every outcome its own distinct message', () => {
-    const messages = (['no_send', 'analyzer_degraded', 'writer_failed'] as const).map(
-      outcome => turnOutcomeMessage(turn({ outcome })),
-    )
+    const messages = (
+      [
+        'no_send',
+        'analyzer_degraded',
+        'writer_failed',
+        'owner_failed',
+        'stale_generation',
+        'approval_required',
+        'human_review',
+      ] as const
+    ).map(outcome => turnOutcomeMessage(turn({ outcome })))
 
-    expect(new Set(messages).size).toBe(3)
+    expect(new Set(messages).size).toBe(messages.length)
     expect(messages.every(message => message.length > 0)).toBe(true)
   })
 })

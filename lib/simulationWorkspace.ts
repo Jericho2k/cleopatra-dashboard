@@ -36,6 +36,7 @@ export type SimulationTestFanSummary = {
   display_name: string
   platform_fan_id?: string
   ai_stack_profile?: string | null
+  conversation_core?: string | null
 }
 
 /** Whether one media id belongs to the owner-only simulation catalog. */
@@ -195,6 +196,10 @@ export type SimulationState = {
     sale_paused_at: string | null
   }
   ai_stack: { ai_stack_profile: string; ai_stack_source: string } | null
+  conversation_core?: {
+    conversation_core: string
+    conversation_core_source: string
+  } | null
   spend: {
     total_spent: number
     purchase_count: number

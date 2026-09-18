@@ -4,9 +4,9 @@
  * The Full Auto simulator — a persistent testing workspace.
  *
  * Type as the fan; the REAL Full Auto pipeline answers as the creator. Nothing
- * here is a second engine: the backend runs the same analyzer, commercial
- * orchestrator, session planning, conversation director and writer that
- * production runs, then persists the reply locally. No API Fansly traffic
+ * here is a second engine: the backend runs whichever persistent conversation
+ * core this test fan resolves to, through the same application entry point
+ * used by production, then persists the reply locally. No API Fansly traffic
  * happens at any point.
  *
  * Three panes:
@@ -51,6 +51,12 @@ import {
   saveSimulationFanAIStack,
   type AIStackRegistry,
 } from '../../lib/aiStack'
+import {
+  canSelectConversationCore,
+  fetchConversationCores,
+  saveSimulationFanConversationCore,
+  type ConversationCoreRegistry,
+} from '../../lib/conversationCore'
 import { dedupeMessages } from '../../lib/messages'
 import {
   canMirrorCatalog,
@@ -102,6 +108,7 @@ const HISTORY_LIMIT = 300
 export default function SimulatorPage() {
   const [capabilities, setCapabilities] = useState<SimulationCapabilities | null>(null)
   const [registry, setRegistry] = useState<AIStackRegistry | null>(null)
+  const [coreRegistry, setCoreRegistry] = useState<ConversationCoreRegistry | null>(null)
   const [creators, setCreators] = useState<SimulationCreator[]>([])
   const [creatorId, setCreatorId] = useState('')
   const [fanId, setFanId] = useState('')
@@ -147,6 +154,13 @@ export default function SimulatorPage() {
       void fetchAIStackRegistry().then(found => {
         if (!cancelled) setRegistry(found)
       })
+      // Conversational architecture selection can affect live creator traffic,
+      // so its registry and controls are platform-owner only.
+      if (value.operator_diagnostics) {
+        void fetchConversationCores().then(found => {
+          if (!cancelled) setCoreRegistry(found)
+        })
+      }
       // Mirror SOURCES come from their own owner-only, cross-tenant listing,
       // and are requested ONLY by an account the backend said may mirror.
       // Asking on behalf of an agency would be a wasted 404 at best and, if
@@ -165,11 +179,12 @@ export default function SimulatorPage() {
   const allowed = canSimulate(capabilities)
   const mayMirror = canMirrorCatalog(capabilities)
   const maySeeDiagnostics = canSeeOperatorDiagnostics(capabilities)
+  const maySelectCore = canSelectConversationCore(capabilities)
   const creator = useMemo(
     () => creators.find(row => row.id === creatorId) ?? null,
     [creators, creatorId],
   )
-  const fans = creator?.test_fans ?? []
+  const fans = useMemo(() => creator?.test_fans ?? [], [creator])
   const fan = useMemo(
     () => fans.find(row => row.id === fanId) ?? null,
     [fans, fanId],
@@ -498,6 +513,33 @@ export default function SimulatorPage() {
     }
   }
 
+  const setFanCore = async (coreId: string) => {
+    if (!creatorId || !fanId || !maySelectCore) return
+    setError('')
+    try {
+      const stored = await saveSimulationFanConversationCore(
+        creatorId,
+        fanId,
+        coreId || null,
+      )
+      setCreators(current =>
+        current.map(row =>
+          row.id === creatorId
+            ? {
+                ...row,
+                test_fans: row.test_fans.map(entry =>
+                  entry.id === fanId ? { ...entry, conversation_core: stored } : entry,
+                ),
+              }
+            : row,
+        ),
+      )
+      await loadState()
+    } catch (caught) {
+      setError(describeSimulationFailure(caught))
+    }
+  }
+
   // Not allowed, or not answered yet: render nothing. No access-denied screen,
   // because the feature must look as though it does not exist.
   if (!allowed) return null
@@ -568,7 +610,8 @@ export default function SimulatorPage() {
             >
               <div>{entry.display_name}</div>
               <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 2 }}>
-                {entry.ai_stack_profile ?? 'inherits creator'}
+                {entry.ai_stack_profile ?? 'inherits AI stack'}
+                {maySeeDiagnostics && ` · ${entry.conversation_core ?? 'inherits core'}`}
               </div>
             </button>
           ))}
@@ -816,6 +859,7 @@ export default function SimulatorPage() {
           onRunAction={action => void runAction(action)}
           aiStackControl={
             fanId ? (
+              <div style={{ display: 'grid', gap: 10 }}>
               <div style={{ ...PANEL, padding: 12 }}>
                 <div style={{ fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--text-muted)', marginBottom: 8 }}>
                   AI stack for this test fan
@@ -840,6 +884,29 @@ export default function SimulatorPage() {
                   fan at the legacy stack and another at V2 to compare them turn
                   for turn. Real fans are never affected.
                 </div>
+              </div>
+              {maySelectCore && coreRegistry && (
+                <div style={{ ...PANEL, padding: 12 }}>
+                  <div style={{ fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--text-muted)', marginBottom: 8 }}>
+                    Conversation core for this test fan
+                  </div>
+                  <select
+                    value={fan?.conversation_core ?? ''}
+                    onChange={event => void setFanCore(event.target.value)}
+                    style={{ ...PANEL, width: '100%', padding: '6px 8px', color: 'var(--text-primary)', fontSize: 12 }}
+                  >
+                    <option value="">Inherit creator / deployment (rollback)</option>
+                    {coreRegistry.cores.map(core => (
+                      <option key={core.id} value={core.id}>{core.name}</option>
+                    ))}
+                  </select>
+                  <div style={{ fontSize: 10, color: 'var(--text-faint)', marginTop: 6, lineHeight: 1.5 }}>
+                    Owner-only and persistent. Select Semantic owner v1 to test
+                    the replacement through the real Simulator/Full Auto path;
+                    clear it to roll back immediately. Real fans are unaffected.
+                  </div>
+                </div>
+              )}
               </div>
             ) : null
           }
