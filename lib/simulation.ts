@@ -45,6 +45,8 @@ export type SimulationTestFan = {
    * migration has not been applied yet.
    */
   ai_stack_profile?: string | null
+  /** Owner-only architecture override. Null inherits creator/deployment. */
+  conversation_core?: string | null
 }
 
 export type SimulationCreator = {
@@ -77,6 +79,10 @@ export type SimulationOutcome =
   | 'writer_failed'
   | 'plan_unrecoverable'
   | 'inventory_unsafe'
+  | 'owner_failed'
+  | 'stale_generation'
+  | 'approval_required'
+  | 'human_review'
 
 export type SimulatedTurn = {
   status: string
@@ -224,6 +230,14 @@ export function turnOutcomeMessage(turn: SimulatedTurn): string {
       return ''
     case 'writer_failed':
       return 'Writer generation failed — no message was sent. Every configured writer model failed or returned unusable output; check the backend logs.'
+    case 'owner_failed':
+      return 'The semantic decision owner failed closed. No legacy controller ran and no message was sent.'
+    case 'stale_generation':
+      return 'Conversation or transaction state changed during generation, so the stale decision was discarded.'
+    case 'approval_required':
+      return 'The exact locked message is waiting for operator approval. Nothing was presented or delivered yet.'
+    case 'human_review':
+      return 'The conversation was handed to a person. No automated message or commercial operation was sent.'
     case 'analyzer_degraded':
       return 'Full Auto sent nothing: the situation analyzer was degraded and failed closed.'
     case 'plan_unrecoverable':
@@ -351,6 +365,8 @@ export async function fetchSimulationCreators(): Promise<SimulationCreator[]> {
               typeof fan.platform_fan_id === 'string' ? fan.platform_fan_id : null,
             ai_stack_profile:
               typeof fan.ai_stack_profile === 'string' ? fan.ai_stack_profile : null,
+            conversation_core:
+              typeof fan.conversation_core === 'string' ? fan.conversation_core : null,
           }))
         : [],
     }))
