@@ -307,6 +307,16 @@ describe('turnFailureMessage', () => {
 })
 
 describe('completedTurnMessage', () => {
+  it('shows a persisted owner review reason on a completed turn', () => {
+    const result = completedTurnMessage(turn({
+      status: 'completed', outcome: 'human_review', creator_messages: [],
+      error: 'semantic_execution_refused: selected_set_unavailable',
+    }))
+    expect(result).toContain('selected_set_unavailable')
+    expect(result).toContain('paused for review')
+    expect(result).not.toContain('handed to a person')
+    expect(result).not.toContain('safe to try again')
+  })
   it('says nothing when the turn produced a reply', () => {
     expect(
       completedTurnMessage(
@@ -377,7 +387,8 @@ describe('semantic locked offer completion', () => {
   it('shows exhausted semantic repair as controlled human review, not a failed turn', () => {
     const completed = turn({ status: 'completed', outcome: 'human_review', creator_messages: [] })
     expect(turnIsTerminal(completed)).toBe(true)
-    expect(completedTurnMessage(completed)).toContain('handed to a person')
+    expect(completedTurnMessage(completed)).toContain('paused for review')
+    expect(completedTurnMessage(completed)).not.toContain('handed to a person')
     expect(turnFailureMessage(completed)).toBe('')
     expect(completedTurnMessage(completed)).not.toContain('safe to try again')
   })
