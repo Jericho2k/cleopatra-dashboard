@@ -227,6 +227,21 @@ export type SimulationState = {
   generated_at: string
 }
 
+/** Clear a review hold through the existing authorized recovery action.
+ * This does not send or replay a message; delivery recovery remains backend-owned.
+ */
+export async function resumeSimulationReview(fanId: string): Promise<void> {
+  const response = await apiFetch(`/fan/${encodeURIComponent(fanId)}/resolve-review`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ resolution: 'resume_ai' }),
+  })
+  const body = await response.json().catch(() => ({}))
+  if (!response.ok || body.status !== 'resumed') {
+    throw new Error(typeof body.detail === 'string' ? body.detail : 'Could not resume this conversation.')
+  }
+}
+
 export async function fetchSimulationState(
   creatorId: string,
   fanId: string,

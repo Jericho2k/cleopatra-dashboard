@@ -90,6 +90,7 @@ import {
   mirrorSimulationCatalog,
   mirrorSummary,
   runSimulationActionNow,
+  resumeSimulationReview,
   type MirrorSource,
   type SimulationScheduledAction,
   type SimulationState,
@@ -141,6 +142,8 @@ export default function SimulatorPage() {
   const [notice, setNotice] = useState('')
   // Guards a late history read from overwriting a newer one after a fan switch.
   const historyToken = useRef(0)
+  const selectionRef = useRef(fanId)
+  selectionRef.current = fanId
 
   useEffect(() => {
     let cancelled = false
@@ -294,7 +297,11 @@ export default function SimulatorPage() {
     let cancelled = false
     void fetchLatestSimulationTurn(creatorId, fanId)
       .then(found => {
-        if (cancelled || !found || turnIsTerminal(found)) return
+        if (cancelled || !found) return
+        if (turnIsTerminal(found)) {
+          if (found.outcome === 'human_review') setTurn(found)
+          return
+        }
         setTurn(found)
         setTurnStartedAt(Date.parse(found.created_at ?? '') || Date.now())
       })
@@ -308,6 +315,7 @@ export default function SimulatorPage() {
   }, [creatorId, fanId])
 
   const watching = turn !== null && !turnIsTerminal(turn)
+  const reviewPaused = state?.fan.id === fanId && state.fan.needs_human_review
 
   /**
    * Poll the turn while it runs.
@@ -363,7 +371,7 @@ export default function SimulatorPage() {
    */
   const send = async () => {
     const message = draft.trim()
-    if (!message || !creatorId || !fanId || busy || watching) return
+    if (!message || !creatorId || !fanId || busy || watching || reviewPaused) return
     setBusy(true)
     setError('')
     setNotice('')
@@ -391,6 +399,24 @@ export default function SimulatorPage() {
         setDraft(message)
         setError(describeSimulationFailure(caught))
       }
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const resumeReview = async () => {
+    if (!fanId || busy || watching || !reviewPaused) return
+    const selected = fanId
+    setBusy(true)
+    setError('')
+    try {
+      await resumeSimulationReview(selected)
+      if (selectionRef.current !== selected) return
+      await refresh()
+      setTurn(null)
+      setNotice('Review pause cleared. Send the next test message to continue; nothing was resent.')
+    } catch (caught) {
+      if (selectionRef.current === selected) setError(describeSimulationFailure(caught))
     } finally {
       setBusy(false)
     }
@@ -761,7 +787,20 @@ export default function SimulatorPage() {
           </div>
         )}
 
-        {(error || notice) && !watching && (
+        {reviewPaused && !watching && (
+          <div role="status" style={{ padding: '10px 14px', borderTop: '1px solid var(--border)', fontSize: 12 }}>
+            <p style={{ margin: '0 0 8px' }}>
+              This test conversation is paused. Inspect the last turn, then resume to continue testing.
+              {maySeeDiagnostics && turn?.error ? ` Reason: ${turn.error}` : ''}
+            </p>
+            <button type="button" onClick={() => void resumeReview()} disabled={busy}
+              style={{ ...PANEL, padding: '6px 12px', color: 'var(--text-primary)', cursor: busy ? 'wait' : 'pointer' }}>
+              {busy ? 'Resuming…' : 'Resume test conversation'}
+            </button>
+          </div>
+        )}
+
+        {(error || (notice && !reviewPaused)) && !watching && (
           <div
             style={{
               padding: '8px 14px',
@@ -795,7 +834,7 @@ export default function SimulatorPage() {
             <button
               type="button"
               onClick={() => void send()}
-              disabled={busy || watching || !fanId || draft.trim() === ''}
+              disabled={busy || watching || !fanId || draft.trim() === '' || reviewPaused}
               style={{
                 ...PANEL,
                 flexShrink: 0,
