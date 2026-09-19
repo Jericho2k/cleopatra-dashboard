@@ -194,6 +194,10 @@ export function completedTurnMessage(turn: SimulationTurn): string {
   if (turn.status === 'failed') return turnFailureMessage(turn)
   if (turn.status !== 'completed') return ''
   if ((turn.creator_messages ?? []).length > 0) return ''
+  if (turn.outcome === 'human_review' && turn.error) {
+    // The backend only includes this diagnostic for the platform owner.
+    return `Automation is paused for review. Reason: ${turn.error}`
+  }
   return turnOutcomeMessage({
     status: 'ok',
     simulation: true,
@@ -237,7 +241,7 @@ export function turnOutcomeMessage(turn: SimulatedTurn): string {
     case 'approval_required':
       return 'The exact locked message is waiting for operator approval. Nothing was presented or delivered yet.'
     case 'human_review':
-      return 'The conversation was handed to a person. No automated message or commercial operation was sent.'
+      return 'Automation is paused for review. This status does not mean a person has taken over.'
     case 'analyzer_degraded':
       return 'Full Auto sent nothing: the situation analyzer was degraded and failed closed.'
     case 'plan_unrecoverable':
